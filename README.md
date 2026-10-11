@@ -12,6 +12,7 @@ sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool xcape
 
 ## Install
 
+TVWCS is written in python and can be extracted to any folder, and just needs the dependencies installed and for an include to be added to ~/.config/i3/config that points to the tvwcs.conf file in the folder. a install.sh file is included that will move the files to ~/.config/i3/tvwcs and check if the include has been added to the i3 config file.
 TVWCS is meant to live in **`~/.config/i3/tvwcs`**, next to your i3 config.
 
 ```bash
@@ -28,6 +29,9 @@ include ~/.config/i3/tvwcs/tvwcs.conf
 `tvwcs.conf` starts TVWCS, includes your hotkeys and sets the window rules, so nothing else in your i3 config needs editing. `include` needs i3 4.20 or newer; on older versions paste the file's contents into your config instead. If you install elsewhere, edit the `exec` path in `tvwcs.conf`.
 
 Your own data stays separate from the program in `~/.config/tvwcs/` (`config.json`, `hotkeys.conf`), so replacing the program folder to upgrade never touches your channels, favorites or hotkeys.
+
+#Note: setting the launcher key to the Windows key in the settings is still somewhat dodgy. It might be better to determine the key number and then add a line in your i3 config like the following ("133" should be the left windows key)
+`bindcode --release 133 exec --no-startup-id ~/.config/i3/tvwcs/tvwcs toggle`
 
 ## Using it
 
@@ -122,3 +126,12 @@ The PIN is entered on an on-screen keypad you can drive with the D-pad (or type 
 - `tvwcs.conf` — i3 fragment; `install.sh` — installer; `tvwcs` — launcher script
 - `test_*.py` — unit tests that need no display (`python3 -m unittest`)
 - `CHANGELOG.md`, `PROJECT_OVERVIEW.md`, `VERSION`
+
+## License
+
+TVWCS is intended to be distributed under the MIT License. See the `LICENSE` file for details.
+
+## Project Notes:
+ - This project consists primarily of AI generated code where an AI was given a description of the project to make and then repeatedly given a list of revisions to remake the project to.
+ - This project is not distributed with any code of conduct.
+ - This project is free to copy, steal, plagiarize, mimic, reference, etc. 
