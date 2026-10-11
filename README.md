@@ -1,6 +1,8 @@
-# TVWCS — Phase 2.5
+# TVWCS
 
 TVWCS (TV Window Channel Switcher) is a lightweight, remote-friendly, TV-style interface for launching and switching between ordinary Linux desktop applications on i3. It is not a media center and needs no application-specific plugins. See `PROJECT_OVERVIEW.md` for goals and intended behaviour.
+
+Quick menu: <img src="TVWCS%20Quick%20Menu.png" height="300">  Full Menu: <img src="TVWCS%20Quick%20and%20Guide%20Menus.png" height="300">
 
 ## Requirements
 
