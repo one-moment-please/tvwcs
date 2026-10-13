@@ -85,10 +85,11 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_size_request(width,-1); pane.set_hexpand(False)
         header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_bottom(S(10))
         title=Gtk.Label(label="TVWCS"); title.add_css_class("brand"); title.set_xalign(0); title.set_hexpand(True); header.append(title)
-        guide_btn=Gtk.Button(); guide_btn.set_child(glyph("list-add-symbolic","＋ ›")); guide_btn.set_tooltip_text("Open the applications window (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
         controls=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=0); controls.add_css_class("window-controls")
         close_btn=icon_button("window-close-symbolic","✕","Close"); close_btn.add_css_class("close-button"); close_btn.connect("clicked",lambda *_:self.app.hide_window()); controls.append(close_btn)
-        header.append(controls); pane.append(header); self._header_group=[guide_btn,close_btn]
+        header.append(controls)   # the ✕ sits where the + used to be: left of the applications button
+        guide_btn=Gtk.Button(); guide_btn.set_child(glyph("list-add-symbolic","＋ ›")); guide_btn.set_tooltip_text("Open the applications window (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
+        pane.append(header); self._header_group=[close_btn,guide_btn]   # focus order matches left-to-right layout
         body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_vexpand(True); pane.append(body)
         self.search_entry=Gtk.SearchEntry(); self.search_entry.set_placeholder_text("Type to search apps, channels, workspaces…"); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search); body.append(self.search_entry)
         self.results_scroll=Gtk.ScrolledWindow(); self.results_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); self.results_scroll.set_max_content_height(S(280)); self.results_scroll.set_propagate_natural_height(True); self.results_scroll.set_visible(False)
