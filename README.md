@@ -54,7 +54,7 @@ include ~/.config/i3/tvwcs/tvwcs.conf
 
 `tvwcs.conf` starts TVWCS, loads your hotkeys and sets up its window rules. To install somewhere else, run `TVWCS_DEST=/some/path install.sh` and change the `exec` path in `tvwcs.conf` to match.
 
-**Upgrading:** use **Settings › Check for updates**, or run the installer again from a newer zip or a fresh `git pull`. The installer replaces the program files but never changes your data. If you edited `tvwcs.conf` by hand, your copy is saved as `tvwcs.conf.bak`.
+**Upgrading:** use **Settings › Check for updates**, or run the installer again from a newer zip or a fresh `git pull`. The installer replaces the program files but never changes your data. If TVWCS is running, it asks whether to restart it on the new version. If you edited `tvwcs.conf` by hand, your copy is saved as `tvwcs.conf.bak`.
 
 ## Using it
 

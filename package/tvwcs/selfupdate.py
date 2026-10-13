@@ -83,7 +83,7 @@ def install_release(release,dest):
         script=unpacked/"tvwcs"/"install.sh"
         if not script.is_file() or not (unpacked/"tvwcs"/"tvwcs"/"main.py").is_file():
             raise UpdateError("The downloaded zip does not look like a TVWCS release.")
-        env={**os.environ,"TVWCS_DEST":str(dest)}
+        env={**os.environ,"TVWCS_DEST":str(dest),"TVWCS_NO_RESTART":"1"}   # TVWCS restarts itself afterwards
         try:
             done=subprocess.run(["sh",str(script)],cwd=str(unpacked/"tvwcs"),env=env,stdin=subprocess.DEVNULL,
                                 capture_output=True,text=True,timeout=120)

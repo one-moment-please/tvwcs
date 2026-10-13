@@ -83,3 +83,42 @@ else
     echo "Add this line to $I3CFG and reload i3 (Mod+Shift+R):"
     echo "    include $DEST/tvwcs.conf"
 fi
+
+# A running TVWCS keeps using the old program until it is restarted. Offer to do that now. The in-app updater sets
+# TVWCS_NO_RESTART because it restarts TVWCS itself; without a terminal to ask in, only say what to do.
+PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/tvwcs.pid"
+PID=$(cat "$PIDFILE" 2>/dev/null || true)
+running() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && { [ ! -r "/proc/$1/cmdline" ] || grep -q tvwcs "/proc/$1/cmdline"; }; }
+start_tvwcs() {
+    # Start it the way i3 does (so it gets i3's environment), or detached from this terminal without i3.
+    if command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then
+        i3-msg -q "exec --no-startup-id '$DEST/bin/tvwcs'"
+    else
+        setsid nohup "$DEST/bin/tvwcs" >/dev/null 2>&1 < /dev/null &
+    fi
+}
+restart_tvwcs() {
+    "$DEST/bin/tvwcs" stop >/dev/null 2>&1 || true
+    n=0; while running "$PID" && [ $n -lt 50 ]; do sleep 0.1; n=$((n+1)); done
+    if running "$PID"; then echo "TVWCS did not stop; restart it yourself (or log in again) to load the new version." >&2; return; fi
+    start_tvwcs
+    n=0; while [ $n -lt 50 ]; do
+        NEW=$(cat "$PIDFILE" 2>/dev/null || true)
+        if [ "$NEW" != "$PID" ] && running "$NEW"; then echo "TVWCS restarted with version $VERSION."; return; fi
+        sleep 0.1; n=$((n+1))
+    done
+    echo "TVWCS was stopped but did not come back; start it with: $DEST/bin/tvwcs" >&2
+}
+if [ "$SRC" != "$DEST" ] && [ -z "${TVWCS_NO_RESTART:-}" ] && running "$PID"; then
+    echo
+    if [ -t 0 ]; then
+        printf "TVWCS is running. Restart it now to load the version just installed (%s)? [Y/n] " "$VERSION"
+        read -r ANSWER || ANSWER=n
+        case "$ANSWER" in
+            [Nn]*) echo "Left it running. Restart TVWCS later (or log in again) to load the new version." ;;
+            *) restart_tvwcs ;;
+        esac
+    else
+        echo "TVWCS is running. To load the version just installed, run: '$DEST/bin/tvwcs' stop && '$DEST/bin/tvwcs' &"
+    fi
+fi

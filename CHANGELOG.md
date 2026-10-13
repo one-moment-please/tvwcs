@@ -31,6 +31,7 @@
 **Install and release**
 - README rewritten: shorter, screenshots side by side with descriptions, and the zip install now extracts into a temporary folder instead of `~/.config/i3/`.
 - The installed copy reports its real version (it read `VERSION` from the wrong folder).
+- `install.sh` notices a running TVWCS and, after asking (Y/n), restarts it on the version just installed (through i3 when i3 is running). Without a terminal it only says how to restart; the in-app updater skips this and restarts TVWCS itself.
 - `make-release.sh` replaces an existing zip of the same name instead of adding to it.
 
 **Quick Menu**
