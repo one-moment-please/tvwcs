@@ -1,0 +1,12 @@
+#!/bin/sh
+# TVWCS launcher. Works from the repository layout (package/bin + package/tvwcs)
+# and from the install.sh layout (~/.config/i3/tvwcs with bin/tvwcs next to tvwcs/).
+set -eu
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+for CAND in "$DIR/.." "$DIR"; do
+    if [ -d "$CAND/tvwcs" ]; then ROOT=$CAND; break; fi
+done
+: "${ROOT:=$DIR/..}"
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+exec python3 -m tvwcs.main "$@"

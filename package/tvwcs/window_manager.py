@@ -1,7 +1,7 @@
 """Small i3 IPC adapter: monitor targeting, workspaces, per-profile workspace launch modes."""
 from __future__ import annotations
 import json, re, shutil, subprocess
-from model import LAUNCH_NEW_WORKSPACE, is_tvwcs_title
+from tvwcs.model import LAUNCH_NEW_WORKSPACE, is_tvwcs_title
 
 TVWCS_CRITERIA='[title="^TVWCS$"]'
 _BAR_CLASSES={"i3bar","swaybar","waybar","polybar","tint2","xfce4panel","matepanel","gnomepanel","plasmashell","latte","cairodock","plank","cairo dock","eww"}

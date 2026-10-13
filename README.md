@@ -2,7 +2,7 @@
 
 TVWCS (TV Window Channel Switcher) is a lightweight, remote-friendly, TV-style interface for launching and switching between ordinary Linux desktop applications on i3. It is not a media center and needs no application-specific plugins. See `PROJECT_OVERVIEW.md` for goals and intended behaviour.
 
-Quick menu: <img src="TVWCS%20Quick%20Menu.png" height="300">  Full Menu: <img src="TVWCS%20Quick%20and%20Guide%20Menus.png" height="300">
+Quick menu: <img src="assets/quick-menu.png" height="300">  Full Menu: <img src="assets/guide-menu.png" height="300">
 
 ## Requirements
 
@@ -18,7 +18,7 @@ TVWCS is written in python and can be extracted to any folder, and just needs th
 TVWCS is meant to live in **`~/.config/i3/tvwcs`**, next to your i3 config.
 
 ```bash
-unzip TVWCS_Phase2_Updated_2_5.zip -d ~/.config/i3/     # creates ~/.config/i3/tvwcs
+unzip TVWCS-2.5.0.zip -d ~/.config/i3/     # creates ~/.config/i3/tvwcs
 ~/.config/i3/tvwcs/install.sh                          # checks packages, creates default hotkeys, prints the next step
 ```
 
@@ -33,7 +33,7 @@ include ~/.config/i3/tvwcs/tvwcs.conf
 Your own data stays separate from the program in `~/.config/tvwcs/` (`config.json`, `hotkeys.conf`), so replacing the program folder to upgrade never touches your channels, favorites or hotkeys.
 
 #Note: setting the launcher key to the Windows key in the settings is still somewhat dodgy. It might be better to determine the key number and then add a line in your i3 config like the following ("133" should be the left windows key)
-`bindcode --release 133 exec --no-startup-id ~/.config/i3/tvwcs/tvwcs toggle`
+`bindcode --release 133 exec --no-startup-id ~/.config/i3/tvwcs/bin/tvwcs toggle`
 
 ## Using it
 
@@ -108,7 +108,7 @@ The PIN is entered on an on-screen keypad you can drive with the D-pad (or type 
 
 ## Troubleshooting
 
-- **Nothing appears on the hotkey:** start the controller once (`~/.config/i3/tvwcs/tvwcs`), then `i3-msg -t get_config | grep -i tvwcs`. If nothing matches, your i3 may be older than 4.20, or `~/.config/tvwcs/hotkeys.conf` is missing (run `install.sh`).
+- **Nothing appears on the hotkey:** start the controller once (`~/.config/i3/tvwcs/bin/tvwcs`), then `i3-msg -t get_config | grep -i tvwcs`. If nothing matches, your i3 may be older than 4.20, or `~/.config/tvwcs/hotkeys.conf` is missing (run `install.sh`).
 - **A lone-modifier hotkey (Super) does nothing:** install `xcape`; TVWCS runs it for you while it is open.
 - **"TVWCS is already running":** `cat "${XDG_RUNTIME_DIR:-/tmp}/tvwcs.pid"`; stop the stale process or delete the file.
 - **Menu overlaps your bar or sits in the wrong place:** TVWCS uses the workspace rectangle i3 reports. Raise `settings.margin`, and make sure `xdotool` is installed so the right monitor is chosen.
@@ -117,17 +117,30 @@ The PIN is entered on an on-screen keypad you can drive with the D-pad (or type 
 - **Missing icons or odd glyphs:** install an icon theme such as `adwaita-icon-theme`; TVWCS falls back to text glyphs.
 - Stop TVWCS before hand-editing `config.json`.
 
-## Files
+## Repository layout
 
-- `main.py` — application controller: launching, layout, workspaces, hotkeys, start-up, signals
-- `ui_window.py` — the window: three panels, navigation, dialogs; `ui_settings.py` — the Settings panel; `ui_editors.py` — profile editors
-- `widgets.py` — scaling, icons, navigation groups; `theme.py` — the Metro CSS
-- `model.py` — profiles, settings, layout maths, badges, search
-- `workspaces.py` — workspace entries and names; `hotkeys.py` — hotkey specs and i3 output; `pinlock.py` — PIN hashing and try limits; `ownership.py` — which profile launched which window
-- `applications.py` — XDG `.desktop` discovery and window-to-app matching; `window_manager.py` — i3 IPC; `system_actions.py` — power and lock commands
-- `tvwcs.conf` — i3 fragment; `install.sh` — installer; `tvwcs` — launcher script
-- `test_*.py` — unit tests that need no display (`python3 -m unittest`)
-- `CHANGELOG.md`, `PROJECT_OVERVIEW.md`, `VERSION`
+```
+package/tvwcs/   the application modules (main.py, model.py, ui_*.py, i3 + window managers, ...)
+package/bin/     tvwcs — launcher script used by i3 bindings
+package/tests/   unit tests that need no display
+data/tvwcs.conf  the i3 config fragment installed to ~/.config/i3/tvwcs
+scripts/         install.sh, run-tests.sh, make-release.sh
+docs/            RELEASES.md (beta -> publish workflow)
+assets/        screenshots; resources/ release zips
+```
+
+## Development
+
+```sh
+./scripts/run-tests.sh          # all 111 unit tests, no display needed
+python3 -m unittest discover -s package/tests -t package
+```
+
+## Releases (beta and published)
+
+Every push to the `beta` branch automatically builds a downloadable **beta zip** (GitHub Actions
+pre-release + artifact); pushing a `v*` tag publishes the final release. No GitHub? Build one
+yourself with `./scripts/make-release.sh --beta`. See `docs/RELEASES.md`.
 
 ## License
 

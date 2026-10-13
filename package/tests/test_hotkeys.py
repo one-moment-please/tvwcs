@@ -1,5 +1,5 @@
 import unittest
-from hotkeys import HotkeyCapture, describe, effective_binding, is_modifier_only, normalize_spec, parse_spec, render_i3, valid_spec, xcape_mapping
+from tvwcs.hotkeys import HotkeyCapture, describe, effective_binding, is_modifier_only, normalize_spec, parse_spec, render_i3, valid_spec, xcape_mapping
 
 class HotkeyTests(unittest.TestCase):
     def test_validation(self):

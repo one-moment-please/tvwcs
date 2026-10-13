@@ -1,6 +1,6 @@
 import unittest
-from applications import Application
-from workspaces import build_entries, short_app_name, workspace_label
+from tvwcs.applications import Application
+from tvwcs.workspaces import build_entries, short_app_name, workspace_label
 
 def app(name,wm_class): return Application(wm_class+".desktop",name,None,None,None,("Other",),"/x","x",(),wm_class)
 APPS=[app("Brave Web Browser","brave-browser"),app("Text Editor","gedit"),app("Files","nautilus")]

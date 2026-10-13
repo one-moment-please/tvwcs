@@ -1,6 +1,6 @@
 import tempfile, unittest
 from pathlib import Path
-from applications import _parse_desktop_file, match_window, Application
+from tvwcs.applications import _parse_desktop_file, match_window, Application
 
 def app(desktop_id,name,wm_class=None,icon=None):
     return Application(desktop_id,name,None,None,icon,("Other",),"/x",name.lower(),(),wm_class)

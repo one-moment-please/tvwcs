@@ -5,11 +5,11 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk
 
-from hotkeys import HotkeyCapture
-from model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
-from theme import render_css
-from ui_settings import build_settings_panel
-from widgets import (NavGroup, S, app_icon, child_marker, clear_box, glyph, icon_button, muted_label, section_title, usable)
+from tvwcs.hotkeys import HotkeyCapture
+from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
+from tvwcs.theme import render_css
+from tvwcs.ui_settings import build_settings_panel
+from tvwcs.widgets import (NavGroup, S, app_icon, child_marker, clear_box, glyph, icon_button, muted_label, section_title, usable)
 
 _TYPING_BLOCKED=Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.ALT_MASK|Gdk.ModifierType.SUPER_MASK|Gdk.ModifierType.META_MASK
 _I3_MODS=((Gdk.ModifierType.SUPER_MASK,"Mod4"),(Gdk.ModifierType.ALT_MASK,"Mod1"),(Gdk.ModifierType.CONTROL_MASK,"Control"),(Gdk.ModifierType.SHIFT_MASK,"Shift"))

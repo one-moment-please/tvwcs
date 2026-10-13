@@ -1,7 +1,7 @@
 import json, tempfile, unittest
 from pathlib import Path
-from model import (ConfigStore, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
-from applications import Application
+from tvwcs.model import (ConfigStore, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
+from tvwcs.applications import Application
 
 class ModelTests(unittest.TestCase):
     def test_channel_uniqueness_and_persistence(self):
@@ -71,7 +71,7 @@ class SettingsAndProfileTests(unittest.TestCase):
             a=ConfigStore(Path(d)/"a.json"); a.settings["hotkeys"]["menu"]="F9"
             self.assertEqual(ConfigStore(Path(d)/"b.json").settings["hotkeys"]["menu"],"F2")
     def test_pin_fields_persist_and_are_validated(self):
-        from pinlock import make_hash
+        from tvwcs.pinlock import make_hash
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; store=ConfigStore(path); h=make_hash("1234")
             store.set_profile(LaunchProfile("p","a.desktop","A",pin_hash=h,pin_scope=PIN_LAUNCH_AND_SHOW))

@@ -5,10 +5,10 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from model import (DIALOG_PREFIX, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAX_DESCRIPTION, PIN_SCOPE_LABELS, PIN_SCOPES,
+from tvwcs.model import (DIALOG_PREFIX, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAX_DESCRIPTION, PIN_SCOPE_LABELS, PIN_SCOPES,
                    LaunchProfile, profile_detail)
-from pinlock import make_hash, valid_pin
-from widgets import S, clear_box, section_title
+from tvwcs.pinlock import make_hash, valid_pin
+from tvwcs.widgets import S, clear_box, section_title
 
 def _page(window):
     box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); box.add_css_class("tvwcs-root")

@@ -1,6 +1,6 @@
 import unittest
-from window_manager import I3WindowManager
-from model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME
+from tvwcs.window_manager import I3WindowManager
+from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME
 
 def con(i,title,cls,urgent=False):
     return {"type":"con","id":i,"window":100+i,"name":title,"urgent":urgent,"window_properties":{"title":title,"class":cls,"instance":cls},"nodes":[],"floating_nodes":[]}
@@ -45,7 +45,7 @@ class WindowManagerTests(unittest.TestCase):
         by_id={x["con_id"]:x for x in wm.windows()}
         self.assertTrue(by_id[10]["workspace_visible"]); self.assertFalse(by_id[13]["workspace_visible"]); self.assertFalse(by_id[18]["workspace_visible"])   # 18: parked
     def test_find_matching_returns_the_window_without_focusing_it(self):
-        from model import LaunchProfile
+        from tvwcs.model import LaunchProfile
         wm=FakeWM(); found=wm.find_matching(LaunchProfile("p","xterm.desktop","Terminal"),None)
         self.assertEqual(found["con_id"],13); self.assertEqual(wm.sent,[])
         self.assertIsNone(wm.find_matching(LaunchProfile("p","nothing.desktop","Nope"),None))

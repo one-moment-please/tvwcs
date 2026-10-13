@@ -5,10 +5,10 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from hotkeys import DEFAULT_HOTKEYS, describe
-from model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES
-from system_actions import SYSTEM_ACTIONS
-from widgets import S, muted_label, section_title
+from tvwcs.hotkeys import DEFAULT_HOTKEYS, describe
+from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES
+from tvwcs.system_actions import SYSTEM_ACTIONS
+from tvwcs.widgets import S, muted_label, section_title
 
 def _on_off(flag): return "On" if flag else "Off"
 

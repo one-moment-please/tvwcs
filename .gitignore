@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.idea/
+.vscode/
+# release artifacts (built by scripts/make-release.sh)
+resources/*.zip
+!resources/TVWCS-2.5.0.zip
