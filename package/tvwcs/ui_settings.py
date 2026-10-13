@@ -8,7 +8,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
 from tvwcs import __version__, selfupdate
-from tvwcs.hotkeys import DEFAULT_HOTKEYS, describe
+from tvwcs.hotkeys import ACTIONS, DEFAULT_HOTKEYS, DEVICE_LABELS, DEVICES, describe, used_by
 from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES
 from tvwcs.system_actions import SYSTEM_ACTIONS
 from tvwcs.widgets import S, muted_label, section_title
@@ -83,21 +83,6 @@ def build_settings_panel(win, embedded=False):
     row("Button hints",_on_off(settings["button_hints"]),toggle("button_hints"),
         "Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
 
-    # ---- Hotkeys (second column)
-    lane[0]=1
-    put(section_title("HOTKEYS"))
-    labels={"menu":"Show / hide the Quick Menu","guide":"Open / close Applications"}; values={}
-    def change(name):
-        def got(spec):
-            other="guide" if name=="menu" else "menu"
-            if spec==settings["hotkeys"][other]: app.notify_message(f"{describe(spec)} is already used for “{labels[other]}”."); return
-            app.set_hotkey(name,spec); values[name].set_text(describe(spec))
-        return lambda:win.capture_hotkey(labels[name],got)
-    for name in ("menu","guide"): values[name]=row(labels[name],describe(settings["hotkeys"][name]),change(name))
-    def reset_keys():
-        for name,spec in DEFAULT_HOTKEYS.items(): app.set_hotkey(name,spec); values[name].set_text(describe(spec))
-    row("Reset hotkeys","Defaults",reset_keys,"Tapping Super (or another modifier) on its own works too, and Super combinations such as Super+Enter keep working. That needs xcape.")
-
     # ---- Start-up
     put(section_title("AT LOGIN"))
     names={p.id:p.name for p in store.profiles}
@@ -138,6 +123,29 @@ def build_settings_panel(win, embedded=False):
         busy[0]=True; _in_background(selfupdate.latest_release,checked,update_failed("Check failed")); return "Checking…"
     update_value=row("Check for updates",f"Version {__version__}",check_updates,
                      f"Looks for a newer release on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
+
+    # ---- Hotkeys (second column)
+    lane[0]=1
+    # One set of hotkeys per input device; each can show the Quick Menu and open Applications.
+    labels={"menu":"Quick Menu","guide":"Applications"}; values={}
+    def slot_name(device,name): return f"{DEVICE_LABELS[device]}: {labels[name]}"
+    def change(device,name):
+        def got(spec):
+            other=used_by(settings["hotkeys"],spec,(device,name)) if spec else None
+            if other: app.notify_message(f"{describe(spec)} is already the hotkey for “{slot_name(*other)}”."); return
+            app.set_hotkey(device,name,spec); values[device,name].set_text(describe(spec))
+        return lambda:win.capture_hotkey(slot_name(device,name),got,can_clear=True)
+    hints={"keyboard":"Tapping Super (or another modifier) on its own works, and Super combinations such as Super+Enter keep working. That needs xcape.",
+           "remote":"Most remotes send ordinary keys; F2 and Shift+F2 suit many of them.",
+           "gamepad":"A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys; then choose those keys here."}
+    for device in DEVICES:
+        put(section_title(f"{DEVICE_LABELS[device].upper()} HOTKEYS"))
+        for name in ACTIONS: values[device,name]=row(labels[name],describe(settings["hotkeys"][device][name]),change(device,name))
+        put(muted_label(hints[device]))
+    def reset_keys():
+        for device in DEVICES:
+            for name in ACTIONS: app.set_hotkey(device,name,DEFAULT_HOTKEYS[device][name]); values[device,name].set_text(describe(DEFAULT_HOTKEYS[device][name]))
+    row("Reset all hotkeys","Defaults",reset_keys,"Keyboard: tap Super. Remote: F2 and Shift+F2. Gamepad: none.")
 
     # ---- System: a grid across both columns; ↑/↓ keeps the column, ←/→ moves along a row
     body.append(section_title("SYSTEM"))

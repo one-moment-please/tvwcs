@@ -34,7 +34,7 @@ TVWCS is one borderless panel placed in the usable area of the active workspace,
 
 Every panel keeps the **same margin** from the screen edges and from its neighbours. The Quick Menu can be open on its own; the Applications pane always has the Quick Menu with it.
 
-The first hotkey shows or hides the Quick Menu; the second opens the Applications pane beside it (and closes it again). Navigation is spatial: **Right** past the last control of the Quick Menu opens the Applications pane; **Left** goes back, and **Esc** (or the remote's **Back** key) steps back one level: dialog, Settings, Applications, Quick Menu. With *Button hints* turned on in Settings (off by default), a button with only an icon shows its tooltip after it has been selected for 3 seconds, for 6 seconds, so a remote gets the same hints as a mouse. Typing any text, anywhere, goes straight into the search field.
+One hotkey shows or hides the Quick Menu, another opens the Applications pane beside it (and closes it again). Navigation is spatial: **Right** past the last control of the Quick Menu opens the Applications pane; **Left** goes back, and **Esc** (or the remote's **Back** key) steps back one level: dialog, Settings, Applications, Quick Menu. With *Button hints* turned on in Settings (off by default), a button with only an icon shows its tooltip after it has been selected for 3 seconds, for 6 seconds, so a remote gets the same hints as a mouse. Typing any text, anywhere, goes straight into the search field.
 
 ### 2. The Quick Menu
 
@@ -100,7 +100,7 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 - **Interface size:** Desktop, 10-foot (1080p TV) or 10-foot (4K TV), chosen from a small pop-up list.
 - **Close when clicking outside** TVWCS.
 - **Open running apps in a new workspace** (the toggle described under launch modes).
-- **Hotkeys:** which keys show the Quick Menu and the Guide. A modifier tapped on its own (such as Super) can be used; it is delivered only when pressed and released alone, so Super+Enter and every other Super shortcut keep working.
+- **Hotkeys:** three sets, for the keyboard (default: tap Super for the Quick Menu), the remote (default: F2 and Shift+F2) and a gamepad (unset by default; its buttons need mapping to keys with a tool such as AntiMicroX). Each set has a key for the Quick Menu and one for the Applications pane, any of which can be cleared, and a key can only do one thing. A modifier tapped on its own (such as Super) can be used; it is delivered only when pressed and released alone, so Super+Enter and every other Super shortcut keep working.
 - **At login:** open a chosen app (favorites listed first, then apps with channel numbers), or reopen the last app used, once per login.
 - **Check for updates:** asks GitHub for the latest published release; if it is newer, offers to download it, install it over the current copy (keeping the user's data), remove the download and restart TVWCS.
 - **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.

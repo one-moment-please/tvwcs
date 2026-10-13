@@ -20,6 +20,11 @@
 - *Your channels* is now *Channel Guide*. Each application's Edit button is a ✎ symbol, and it and the favorite star are square.
 - New *Button hints* setting (off by default): an icon-only button selected for 3 seconds shows its tooltip for 6 seconds.
 
+**Hotkeys: one set per device**
+- Separate hotkeys for the keyboard, the remote and a gamepad, each with a Quick Menu key and an Applications key. Defaults: keyboard taps Super for the Quick Menu; remote keeps F2 / Shift+F2; gamepad is unset (map its buttons to keys with a tool such as AntiMicroX, then capture them).
+- Any hotkey can be cleared from its capture dialog, and a key can only be used once across all sets.
+- An existing single hotkey pair is kept as the remote set.
+
 **Settings layout**
 - Settings uses the pane's width: two columns (Display and Behavior; Hotkeys, At login and Updates), with the System actions in a grid across the bottom. ← and → jump between the columns; ↑ and ↓ stay in one.
 

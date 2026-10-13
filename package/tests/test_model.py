@@ -57,19 +57,25 @@ class SettingsAndProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"
             s=ConfigStore(path).settings
-            self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"],s["hotkeys"],s["startup"]["mode"]),("desktop",False,False,{"menu":"F2","guide":"Shift+F2"},"none"))
-            path.write_text(json.dumps({"settings":{"scale":"huge","close_on_click_outside":True,"open_in_new_workspace":"yes","hotkeys":{"menu":"Mod4","guide":"bad key"},"startup":{"mode":"app","profile_id":"p1"}}}))
+            self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"],s["hotkeys"],s["startup"]["mode"]),("desktop",False,False,{"keyboard":{"menu":"Mod4","guide":""},"remote":{"menu":"F2","guide":"Shift+F2"},"gamepad":{"menu":"","guide":""}},"none"))
+            path.write_text(json.dumps({"settings":{"scale":"huge","close_on_click_outside":True,"open_in_new_workspace":"yes","hotkeys":{"keyboard":{"menu":"Mod1","guide":"bad key"},"gamepad":{"menu":"F7"}},"startup":{"mode":"app","profile_id":"p1"}}}))
             s=ConfigStore(path).settings
             self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"]),("desktop",True,False))
-            self.assertEqual(s["hotkeys"],{"menu":"Mod4","guide":"Shift+F2"}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
-    def test_identical_hotkeys_fall_back_to_defaults(self):
+            self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1","guide":""},"remote":{"menu":"F2","guide":"Shift+F2"},"gamepad":{"menu":"F7","guide":""}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
+    def test_a_key_used_twice_keeps_only_its_first_use(self):
         with tempfile.TemporaryDirectory() as d:
-            path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"menu":"F5","guide":"F5"}}}))
-            self.assertEqual(ConfigStore(path).settings["hotkeys"],{"menu":"F2","guide":"Shift+F2"})
+            path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"remote":{"menu":"F5","guide":"F5"},"gamepad":{"menu":"Mod4"}}}}))
+            hk=ConfigStore(path).settings["hotkeys"]
+            self.assertEqual((hk["remote"],hk["gamepad"]["menu"]),({"menu":"F5","guide":""},""))   # Mod4 is already the keyboard's
+    def test_old_single_hotkey_set_becomes_the_remote_set(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"menu":"F9","guide":"Shift+F9"}}}))
+            hk=ConfigStore(path).settings["hotkeys"]
+            self.assertEqual((hk["remote"],hk["keyboard"]["menu"]),({"menu":"F9","guide":"Shift+F9"},"Mod4"))
     def test_defaults_are_not_shared_between_stores(self):
         with tempfile.TemporaryDirectory() as d:
-            a=ConfigStore(Path(d)/"a.json"); a.settings["hotkeys"]["menu"]="F9"
-            self.assertEqual(ConfigStore(Path(d)/"b.json").settings["hotkeys"]["menu"],"F2")
+            a=ConfigStore(Path(d)/"a.json"); a.settings["hotkeys"]["remote"]["menu"]="F9"
+            self.assertEqual(ConfigStore(Path(d)/"b.json").settings["hotkeys"]["remote"]["menu"],"F2")
     def test_pin_fields_persist_and_are_validated(self):
         from tvwcs.pinlock import make_hash
         with tempfile.TemporaryDirectory() as d:

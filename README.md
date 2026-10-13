@@ -21,7 +21,7 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
 
 ## Requirements
 
-Debian, Ubuntu or Linux Mint with i3 (4.20 or newer), Python 3, GTK 4 and PyGObject. TVWCS uses `xdotool` to find the monitor under the pointer. `xcape` is optional; you need it to use a modifier key on its own, such as Super, as a hotkey.
+Debian, Ubuntu or Linux Mint with i3 (4.20 or newer), Python 3, GTK 4 and PyGObject. TVWCS uses `xdotool` to find the monitor under the pointer. `xcape` lets a modifier key on its own be a hotkey; the default keyboard hotkey (tapping Super) needs it.
 
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool xcape
@@ -60,21 +60,25 @@ include ~/.config/i3/tvwcs/tvwcs.conf
 
 | Key | Action |
 |---|---|
-| **F2** (default) | Show or hide the Quick Menu |
-| **Shift+F2** (default) | Open or close the Applications pane beside the Quick Menu |
+| **Super** tapped on its own (keyboard), **F2** (remote) | Show or hide the Quick Menu |
+| **Shift+F2** (remote) | Open or close the Applications pane beside the Quick Menu |
 | **↑ ↓ ← →** | Move around. Pressing **→** past the end of the Quick Menu opens Applications |
 | **Enter** | Launch, switch to, or activate the selected item |
 | **Esc** / remote **Back** | Go back one step: close a dialog, then Settings, then Applications, then the Quick Menu |
 | *any letter or digit* | Start a search. A channel number followed by Enter launches that channel |
 | **←** or right-click on a Quick Menu row | Open the row's options; they close again when you move away from them |
 
-With **Settings › Button hints** on (it is off by default), an icon-only button that stays selected for 3 seconds shows its tooltip for 6 seconds, so a remote gets the same hints a mouse would. From a terminal you can run `tvwcs toggle`, `tvwcs guide` and `tvwcs stop`.
+With **Settings › Button hints** on (it is off by default), an icon-only button that stays selected for 3 seconds shows its tooltip for 6 seconds, so a remote gets the same hints a mouse would.
+
+Hotkeys come in three sets, one each for the keyboard, the remote and a gamepad, each with a key for the Quick Menu and one for Applications. Change them under **Settings › Hotkeys**; the keyboard's Applications key and both gamepad keys start unset. A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys first.
+
+From a terminal you can run `tvwcs toggle`, `tvwcs guide` and `tvwcs stop`.
 
 **Quick Menu:** search, then your open applications grouped by workspace, then your favorites. A row's options can open an app the other way (tiled here, or in its own workspace), run its `.desktop` actions, move a workspace to another monitor, expand a workspace into its apps, or close it.
 
 **Applications:** the pane always opens on the applications guide. Categories fold with Enter. **Channel Guide** at the top lists every profile with a channel number. ☆ adds an app to your favorites, and ✎ (edit) manages its launch profiles. A profile can have a channel number, a launch mode (tiled or in its own workspace), a custom command or `.desktop` action, a description, and an optional PIN. The PIN is a convenience lock for a shared TV, not real security. The button at the top right switches between the guide and **Settings**.
 
-**Settings** (two columns, with the system actions in a grid below): interface size (desktop, 10-foot, 10-foot 4K), closing when you click outside, how running apps open, hiding the options buttons, button hints, hotkeys, an app to open at login, **Check for updates**, and system actions (Lock, Sleep, Log out, Reboot, Shut down). Log out, Reboot and Shut down ask you to confirm first.
+**Settings** (two columns, with the system actions in a grid below): interface size (desktop, 10-foot, 10-foot 4K), closing when you click outside, how running apps open, hiding the options buttons, button hints, keyboard / remote / gamepad hotkeys, an app to open at login, **Check for updates**, and system actions (Lock, Sleep, Log out, Reboot, Shut down). Log out, Reboot and Shut down ask you to confirm first.
 
 ## Troubleshooting
 

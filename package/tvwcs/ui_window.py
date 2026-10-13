@@ -752,10 +752,15 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(8)); cancel.connect("clicked",lambda *_:self.close_modal()); self.modal_card.append(cancel); groups.append(NavGroup([cancel]))
         self._modal_groups=groups; self._modal_back=self.close_modal; groups[0][0].grab_focus()
 
-    def capture_hotkey(self,label,callback):
+    def capture_hotkey(self,label,callback,can_clear=False):
+        """Wait for a key or combination and pass its spec to callback; with can_clear, a Clear button passes ""."""
         self._begin_modal(); self._title("New hotkey"); self.modal_card.append(muted_label(f"Press the key or key combination for “{label}”.\nTap a modifier on its own (such as Super) to use it by itself. Esc cancels."))
-        cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(14)); cancel.connect("clicked",lambda *_:self._end_capture(None)); self.modal_card.append(cancel)
-        self._modal_groups=[[cancel]]; self._modal_back=lambda:self._end_capture(None); self._capture=HotkeyCapture(); self._capture_cb=callback; cancel.grab_focus()
+        row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); row.set_homogeneous(True); row.set_margin_top(S(14))
+        cancel=Gtk.Button(label="Cancel"); cancel.connect("clicked",lambda *_:self._end_capture(None)); row.append(cancel); buttons=[cancel]
+        if can_clear:
+            clear=Gtk.Button(label="Clear"); clear.connect("clicked",lambda *_:self._end_capture("")); row.append(clear); buttons.append(clear)
+        self.modal_card.append(row)
+        self._modal_groups=[buttons]; self._modal_back=lambda:self._end_capture(None); self._capture=HotkeyCapture(); self._capture_cb=callback; cancel.grab_focus()
     def _capture_key(self,keyval,state):
         name=Gdk.keyval_name(keyval) or ""
         held=[m for mask,m in _I3_MODS if state & mask]
@@ -765,4 +770,4 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         return True
     def _end_capture(self,spec):
         callback=self._capture_cb; self._capture=None; self._capture_cb=None; self.close_modal()
-        if spec and callback: callback(spec)
+        if spec is not None and callback: callback(spec)   # "" is Clear

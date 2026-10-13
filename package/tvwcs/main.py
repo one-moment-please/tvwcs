@@ -286,8 +286,9 @@ class TVWCSApp(Gtk.Application):
         except OSError as exc: self.notify_message(f"Could not run {command[0]}: {exc}")
 
     # ---------------------------------------------------------- hotkeys and start-up
-    def set_hotkey(self,name,spec):
-        self.store.settings["hotkeys"][name]=spec; self.store.save_settings(); self.apply_hotkeys()
+    def set_hotkey(self,device,name,spec):
+        """Set (or, with "", clear) one device's hotkey for the Quick Menu ("menu") or Applications ("guide")."""
+        self.store.settings["hotkeys"][device][name]=spec; self.store.save_settings(); self.apply_hotkeys()
     def apply_hotkeys(self):
         """Write hotkeys.conf from the settings, ask i3 to reload if it changed, and run xcape for any lone-modifier hotkey."""
         text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER))
