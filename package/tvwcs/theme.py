@@ -21,7 +21,7 @@ button.active { background: @ACCENT@; }
 button.launch-row { text-align: left; }
 button.dialog-button { padding: 0 16px; }
 button.danger:focus, button.danger:focus-visible { background: #e81123; }
-.window-controls button { min-width: 52px; }
+button.square { min-width: 44px; min-height: 44px; padding: 0; }
 button.close-button { background: #c50f1f; color: #ffffff; }
 button.close-button:hover { background: #e81123; }
 button.close-button:focus, button.close-button:focus-visible, button.close-button:active { background: #e81123; outline: 3px solid #ffffff; outline-offset: -3px; }

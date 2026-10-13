@@ -34,7 +34,7 @@ TVWCS is one borderless panel placed in the usable area of the active workspace,
 
 Every panel keeps the **same margin** from the screen edges and from its neighbours. The Quick Menu can be open on its own; the Applications pane always has the Quick Menu with it.
 
-The first hotkey shows or hides the Quick Menu; the second opens the Applications pane beside it (and closes it again). Navigation is spatial: **Right** past the last control of the Quick Menu opens the Applications pane; **Left** goes back, and **Esc** (or the remote's **Back** key) steps back one level: dialog, Settings, Applications, Quick Menu. A button with only an icon shows its tooltip once it has been selected for a second, so a remote gets the same hints as a mouse. Typing any text, anywhere, goes straight into the search field.
+The first hotkey shows or hides the Quick Menu; the second opens the Applications pane beside it (and closes it again). Navigation is spatial: **Right** past the last control of the Quick Menu opens the Applications pane; **Left** goes back, and **Esc** (or the remote's **Back** key) steps back one level: dialog, Settings, Applications, Quick Menu. With *Button hints* turned on in Settings (off by default), a button with only an icon shows its tooltip after it has been selected for 3 seconds, for 6 seconds, so a remote gets the same hints as a mouse. Typing any text, anywhere, goes straight into the search field.
 
 ### 2. The Quick Menu
 
@@ -45,7 +45,7 @@ From top to bottom:
 - **Open applications, organised by workspace.** TVWCS treats a workspace, not a window, as the unit you "change channel" between. An application alone on its workspace is listed as that application. Applications that share a workspace are grouped into one workspace entry, **named after what is in it** ("Brave + Text Editor"), with their logos and any badges.
 - **Favorites**, pinned launch profiles, listed below the open applications.
 
-Each row mirrors the Guide: in the Guide the application is on the left and its controls on the right; in the Quick Menu the application is on the right and a single **options button** on the left (or Left on the remote) expands the row's options in place:
+Each row mirrors the Guide: in the Guide the application is on the left and its controls on the right; in the Quick Menu the application is on the right and a single **options button** (☰) on the left, or **Left** on the remote while the application is selected, expands the row's options in place. They fold away again as soon as the selection moves off them:
 
 - **An application:** open it the other way (tiled in the current workspace, or in a workspace of its own), its `.desktop` actions, and Close.
 - **A workspace:** move it to another monitor (the option only exists when there is another monitor, and then offers a choice of which), expand it into its individual apps (to open just one, or reach that app's own options), and close the workspace and every app on it (after a confirmation).

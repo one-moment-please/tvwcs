@@ -13,7 +13,8 @@ from tvwcs.ui_settings import build_settings_panel
 from tvwcs.widgets import (NavGroup, S, app_icon, child_marker, clear_box, glyph, icon_button, icon_only, muted_label, section_title, usable)
 
 APPS_VIEWS=("applications","settings")   # what the right-hand pane can show; it opens on the applications guide
-FOCUS_TIP_DELAY=1000                     # ms a selected icon-only button waits before showing its tooltip
+FOCUS_TIP_DELAY=3000                     # ms a selected icon-only button waits before showing its tooltip (Settings > Button hints)
+FOCUS_TIP_DURATION=6000                  # ms the tooltip then stays up
 
 _TYPING_BLOCKED=Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.ALT_MASK|Gdk.ModifierType.SUPER_MASK|Gdk.ModifierType.META_MASK
 _I3_MODS=((Gdk.ModifierType.SUPER_MASK,"Mod4"),(Gdk.ModifierType.ALT_MASK,"Mod1"),(Gdk.ModifierType.CONTROL_MASK,"Control"),(Gdk.ModifierType.SHIFT_MASK,"Shift"))
@@ -40,7 +41,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._groups={"quick":[],"guide":[],"options":[]}; self._header_group=[]
         self._search_results=[]; self._selected_result=0; self._result_groups=[]; self._result_mains=[]; self._stars={}
         self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None
-        self._all_guide_groups=None
+        self._all_guide_groups=None; self._open_row=None
 
     # ================================================================== construction
     def _build(self):
@@ -85,12 +86,12 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def _build_quick_pane(self,width):
         pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_size_request(width,-1); pane.set_hexpand(False)
-        header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_bottom(S(10))
+        header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_end(S(20)); header.set_margin_bottom(S(10))
         title=Gtk.Label(label="TVWCS"); title.add_css_class("brand"); title.set_xalign(0); title.set_hexpand(True); header.append(title)
         controls=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=0); controls.add_css_class("window-controls")
-        close_btn=icon_button("window-close-symbolic","✕","Close"); close_btn.add_css_class("close-button"); close_btn.connect("clicked",lambda *_:self.app.hide_window()); controls.append(close_btn)
-        header.append(controls)   # the ✕ sits where the + used to be: left of the applications button
-        guide_btn=Gtk.Button(); guide_btn.set_child(glyph("list-add-symbolic","＋ ›")); guide_btn.set_tooltip_text("Open the applications window (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
+        close_btn=icon_button("window-close-symbolic","✕","Close"); close_btn.add_css_class("close-button"); close_btn.add_css_class("square"); close_btn.connect("clicked",lambda *_:self.app.hide_window()); controls.append(close_btn)
+        header.append(controls)   # the ✕ sits left of the applications button, whose right edge lines up with the search field
+        guide_btn=Gtk.Button(); guide_btn.add_css_class("square"); guide_btn.set_child(glyph("open-menu-symbolic","☰")); guide_btn.set_tooltip_text("Open the applications window (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
         pane.append(header); self._header_group=[close_btn,guide_btn]   # focus order matches left-to-right layout
         body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_vexpand(True); pane.append(body)
         self.search_entry=Gtk.SearchEntry(); self.search_entry.set_placeholder_text("Type to search apps, channels, workspaces…"); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search); body.append(self.search_entry)
@@ -172,31 +173,37 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def _options_row(self,main,options):
         """Quick Menu rows mirror the Applications list: the application is on the right, its options on the left
-        behind one button that expands them in place. Right-clicking the application (or pressing ← while it is
-        selected) opens those options too — so they can be reached even when the ⋯ button is hidden in Settings."""
+        behind one button that expands them in place. Pressing ← while the application is selected (or right-clicking
+        it) opens those options too, so they can be reached even when the ☰ button is hidden in Settings. The options
+        fold away again as soon as the selection leaves them (see _focus_changed)."""
         options=[o for o in options if o is not None]
         row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4))
         if not options:
             row.append(main); return row,NavGroup([main],entry=main)
+        for b in options: b.add_css_class("square")
         hide=self.app.store.settings.get("hide_options_buttons",False)
-        toggle=Gtk.Button(); toggle.add_css_class("options-toggle"); toggle.set_visible(not hide)
+        toggle=Gtk.Button(); toggle.add_css_class("options-toggle"); toggle.add_css_class("square"); toggle.set_visible(not hide)
         opts=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); opts.set_visible(False)
         for b in options: opts.append(b)
+        group=NavGroup([toggle,*options,main],entry=main); group.toggle=toggle if not hide else None
         def style(expanded):
-            toggle.set_child(glyph("go-previous-symbolic","‹") if expanded else glyph("view-more-symbolic","⋯"))
+            toggle.set_child(glyph("go-previous-symbolic","‹") if expanded else glyph("open-menu-symbolic","☰"))
             toggle.set_tooltip_text("Hide options" if expanded else "Options")
             (toggle.add_css_class if expanded else toggle.remove_css_class)("active")
-        def flip(*_):
-            show=not opts.get_visible(); opts.set_visible(show); style(show)
+        def show(visible):
+            opts.set_visible(visible); style(visible)
+            if visible:
+                previous=self._open_row; self._open_row=group
+                if previous is not None and previous is not group and previous.expanded(): previous.collapse()   # one open row at a time
+        def flip(*_): show(not opts.get_visible())
         def open_options(*_):
-            if not opts.get_visible(): opts.set_visible(True); style(True); (options[0] if options else main).grab_focus()
+            if not opts.get_visible(): show(True); options[-1].grab_focus()   # the option right next to the application
             return True
         style(False); toggle.connect("clicked",flip)
         click=Gtk.GestureClick(); click.set_button(3); click.connect("pressed",lambda *_a:open_options()); main.add_controller(click)
         row.append(toggle); row.append(opts); row.append(main)
-        group=NavGroup([toggle,*options,main],entry=main); group.toggle=toggle if not hide else None
-        group.expanded=opts.get_visible; group.expand=lambda:(opts.set_visible(True),style(True))
-        group.open_options=open_options
+        group.expanded=opts.get_visible; group.expand=lambda:show(True); group.collapse=lambda:show(False)
+        group.open_options=open_options; group.menu=[toggle,*options]
         return row,group
 
     @staticmethod
@@ -205,7 +212,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def _mode_button(self,p):
         """Persistent per-profile setting: always launch in a new workspace, or tiled in the current one."""
-        b=Gtk.Button(); b.add_css_class("mode-button"); self._style_mode_button(b,p.launch_mode)
+        b=Gtk.Button(); b.add_css_class("mode-button"); b.add_css_class("square"); self._style_mode_button(b,p.launch_mode)
         b.connect("clicked",lambda _b,pid=p.id:self._toggle_mode(pid,_b)); return b
     def _style_mode_button(self,b,mode):
         if mode==LAUNCH_NEW_WORKSPACE:
@@ -310,7 +317,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         assigned=self.app.store.assigned()
         if self.apps_subtitle is not None: self.apps_subtitle.set_text(f"{len(assigned)} channels assigned")
         self.guide_scroll=self.apps_list_scroll
-        self.apps_content.append(section_title("YOUR CHANNELS"))
+        self.apps_content.append(section_title("CHANNEL GUIDE"))
         if not assigned: self.apps_content.append(muted_label("Assign channel numbers to launch profiles to build your own lineup."))
         for profile in assigned: self.apps_content.append(self._profile_row(profile,lineup=True))
         self.apps_content.append(section_title("ALL APPLICATIONS"))
@@ -361,9 +368,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             name.set_hexpand(True)
             if p.pin_hash: inner.append(self._lock_mark())
         main.set_child(inner); main.connect("clicked",lambda _b,profile=p:self.app.launch_profile(profile)); row.append(main)
-        fav=Gtk.Button(); self._style_star(fav,p.favorite); self._stars.setdefault(p.id,[]).append(fav)
+        fav=Gtk.Button(); fav.add_css_class("square"); self._style_star(fav,p.favorite); self._stars.setdefault(p.id,[]).append(fav)
         fav.connect("clicked",lambda _b,profile=p:self.app.toggle_favorite(profile)); row.append(fav)
-        edit=Gtk.Button(label="Edit"); edit.set_tooltip_text("Manage application profiles" if primary else "Edit launch profile")
+        edit=Gtk.Button(); edit.add_css_class("square"); edit.set_child(glyph("document-edit-symbolic","✎"))
+        edit.set_tooltip_text("Manage application profiles" if primary else "Edit launch profile")
         if primary: edit.connect("clicked",lambda _b,profile=p:self.app.edit_application_profiles(profile.desktop_id))
         else: edit.connect("clicked",lambda _b,profile=p:self.app.edit_profile(profile,None))
         row.append(edit); self._register("guide",main,fav,edit)
@@ -443,17 +451,28 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     # ---------------------------------------------------------- remote / keyboard navigation
     def _register(self,pane,*widgets,entry=None):
         group=NavGroup([w for w in widgets if w is not None],entry)
-        if group: self._groups[pane].append(group)
+        if group: self._groups[pane].append(group); return group
+        return None
     def _focus_changed(self,*_):
         w=self.get_focus()
         if w is not None: self._last_focus[self._pane_of(w)]=w
+        self._fold_options(w)
         self._schedule_focus_tip(w)
+    def _fold_options(self,focused):
+        """Close a Quick Menu row's options once the selection has left them. Not while a pop-up menu (desktop
+        actions, monitors) or a dialog opened from one of them is up: those come back to the option afterwards."""
+        row=self._open_row
+        if row is None or focused is None or self._popovers or self._modal_groups: return
+        if any(focused is w for w in row.menu): return
+        self._open_row=None
+        if row.expanded(): row.collapse()
 
     # ---------------------------------------------------------- tooltips for selected icon-only buttons
     # A remote has no pointer to hover with, so a button with no text shows its tooltip once it has been selected for a moment.
     def _schedule_focus_tip(self,w):
         self._hide_focus_tip()
-        if w is not None and icon_only(w): self._focus_tip_source=GLib.timeout_add(FOCUS_TIP_DELAY,self._show_focus_tip,w)
+        if w is not None and icon_only(w) and self.app.store.settings.get("button_hints",False):
+            self._focus_tip_source=GLib.timeout_add(FOCUS_TIP_DELAY,self._show_focus_tip,w)
     def _show_focus_tip(self,button):
         self._focus_tip_source=0
         hovered=button.get_state_flags() & Gtk.StateFlags.PRELIGHT   # the pointer is on it: GTK's own tooltip is showing
@@ -461,7 +480,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         tip=Gtk.Label(label=button.get_tooltip_text()); tip.set_wrap(True); tip.set_max_width_chars(48)
         pop=Gtk.Popover(); pop.add_css_class("focus-tip"); pop.set_autohide(False); pop.set_can_focus(False); pop.set_has_arrow(False)
         pop.set_position(Gtk.PositionType.BOTTOM); pop.set_child(tip); pop.set_parent(button); pop.popup()
-        self._focus_tip=pop; return GLib.SOURCE_REMOVE
+        self._focus_tip=pop; self._focus_tip_source=GLib.timeout_add(FOCUS_TIP_DURATION,self._expire_focus_tip)
+        return GLib.SOURCE_REMOVE
+    def _expire_focus_tip(self):
+        self._focus_tip_source=0; self._hide_focus_tip(); return GLib.SOURCE_REMOVE
     def _hide_focus_tip(self):
         if self._focus_tip_source: GLib.source_remove(self._focus_tip_source); self._focus_tip_source=0
         pop=self._focus_tip; self._focus_tip=None
@@ -512,6 +534,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         groups=[g for g in self._ordered_groups(pane) if any(usable(w) for w in g)]
         if not groups: return False
         current=self._group_index(groups,focused)
+        lane=getattr(groups[current],"lane",None) if current>=0 else None
+        if lane is not None:   # in a column layout ↑/↓ stays in its column (rows outside any column are shared)
+            groups=[g for g in groups if getattr(g,"lane",None) in (None,lane)]; current=self._group_index(groups,focused)
         column=next((k for k,w in enumerate(groups[current]) if w is focused),None) if current>=0 else None
         start=(current+step)%len(groups) if current>=0 else (0 if step>0 else len(groups)-1)
         for offset in range(len(groups)):
@@ -526,9 +551,13 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not active: return False
         i=next((k for k,w in enumerate(active) if w is focused),None)
         if i is None: i=next((k for k,w in enumerate(active) if self._contains(w,focused)),0)
+        open_options=getattr(group,"open_options",None)
+        if step<0 and pane=="quick" and open_options is not None and focused is group.entry and group.expanded is not None and not group.expanded():
+            return open_options()   # ← on a Quick Menu row opens its options, next to the application
         nxt=i+step
         if 0<=nxt<len(active): return active[nxt].grab_focus()
         if self._modal_groups: return active[nxt%len(active)].grab_focus()
+        if getattr(group,"lane",None) is not None and self._jump_lane(groups,group,active[i],step): return True
         toggle=getattr(group,"toggle",None)
         if step<0:
             if toggle is not None and active[i] is toggle:
@@ -544,6 +573,19 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             self.app.show_panels(True,False,focus="guide"); return True
         if pane=="guide" and self.options_open: return self.focus_pane("options")
         return True
+    def _jump_lane(self,groups,group,focused,step):
+        """←/→ past the edge of a row in a column layout: go to the row beside it in the neighbouring column."""
+        target=group.lane+step
+        candidates=[g for g in groups if getattr(g,"lane",None)==target and self._landing(g) is not None]
+        if not candidates: return False
+        y=self._middle_y(focused)
+        best=min(candidates,key=lambda g:abs(self._middle_y(self._landing(g))-y))
+        return self._landing(best).grab_focus()
+    def _middle_y(self,widget):
+        try:
+            ok,rect=widget.compute_bounds(self)
+            return rect.get_y()+rect.get_height()/2 if ok else 0.0
+        except (AttributeError,TypeError,ValueError): return 0.0
     def _result_index(self,focused):
         for i,g in enumerate(self._result_groups):
             if any(w is focused for w in g): return i

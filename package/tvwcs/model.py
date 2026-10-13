@@ -35,7 +35,8 @@ DEFAULT_SETTINGS={
     "scale":"desktop",              # key of SCALE_PRESETS
     "close_on_click_outside":False, # hide TVWCS when another window takes focus
     "open_in_new_workspace":False,  # selecting an open app gives it its own workspace instead of tiling it here
-    "hide_options_buttons":False,   # fold the ⋯ options buttons away; right-click (or ←) still opens each row's options
+    "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
+    "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
     "hotkeys":dict(DEFAULT_HOTKEYS),
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},
 }
@@ -74,7 +75,7 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    for key in ("close_on_click_outside","open_in_new_workspace","hide_options_buttons"):
+    for key in ("close_on_click_outside","open_in_new_workspace","hide_options_buttons","button_hints"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     hk=raw.get("hotkeys")
     if isinstance(hk,dict):
