@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**Applications pane**
+- Removed the Networking and Updates tabs (and their `network`, `updates`, `ui_network`, `ui_updates` modules); TVWCS no longer needs NetworkManager or apt.
+- No more tab bar: the pane always opens on the applications guide, and a button at its top right switches between the guide and Settings. Esc in Settings returns to the guide.
+- Settings rows are reachable with the arrow keys again (they were registered with a panel that no longer exists).
+
+**Settings**
+- New *Check for updates*: looks up the latest published GitHub release, and if it is newer asks whether to install it, then downloads it to a temporary folder, runs its `install.sh` over the current install (your data is kept), deletes the download and restarts TVWCS.
+
+**Look and feel**
+- Every close button is red.
+- A button showing only an icon pops up its tooltip after it has been selected for a second, so remote users get the same hints as mouse users.
+
+**Install and release**
+- README rewritten: shorter, screenshots side by side with descriptions, and the zip install now extracts into a temporary folder instead of `~/.config/i3/`.
+- The installed copy reports its real version (it read `VERSION` from the wrong folder).
+- `make-release.sh` replaces an existing zip of the same name instead of adding to it.
+
 **Quick Menu**
 - Swapped the positions of the "＋ ›" (open applications) button and the "✕" (close) button in the Quick Menu header; keyboard focus order follows the new left-to-right layout.
 

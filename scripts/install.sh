@@ -66,8 +66,6 @@ missing=""
 python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="$missing python3-gi gir1.2-gtk-4.0"
 command -v i3-msg    >/dev/null 2>&1 || missing="$missing i3"
 command -v xdotool   >/dev/null 2>&1 || missing="$missing xdotool"
-command -v nmcli     >/dev/null 2>&1 || echo "Optional: sudo apt install network-manager   (needed by the Networking tab)"
-command -v apt-get   >/dev/null 2>&1 || echo "Note: this distro has no apt — the Updates tab needs a Debian/Ubuntu/Mint base."
 command -v xcape     >/dev/null 2>&1 || echo "Optional: sudo apt install xcape   (lets a lone modifier such as Super be the TVWCS hotkey)"
 [ -z "$missing" ] || echo "Missing packages:  sudo apt install$missing"
 

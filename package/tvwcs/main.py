@@ -118,7 +118,7 @@ class TVWCSApp(Gtk.Application):
         guide=(mode=="guide") and not (visible and w.guide_open)
         if visible: self.show_panels(guide,False,focus="guide" if guide else "quick"); return False
         self.wm.focus_output_under_mouse(); self.wm.move_tvwcs_to_current_workspace(); self.refresh_data(rebuild=False)
-        w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False
+        w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False; w.apps_view="applications"   # always opens on the guide
         self._update_layout(guide,False,focus_output=True)
         w.set_default_size(self.layout.width,self.layout.height); w._build(); w.present(); self.apply_geometry()
         w.focus_pane_soon("guide" if guide else "quick")
@@ -131,10 +131,10 @@ class TVWCSApp(Gtk.Application):
         w.set_panels(guide,options); w.set_default_size(self.layout.width,self.layout.height); self.apply_geometry()
         if focus: w.focus_pane_soon(focus)
     def apply_scale(self):
-        """The interface size changed: rebuild everything at the new size and reopen Settings where it was."""
+        """The interface size changed: rebuild everything at the new size; the Applications pane stays on Settings."""
         set_scale(self.scale_factor); w=self.window
         self._update_layout(w.guide_open,w.options_open,focus_output=False)
-        w.set_default_size(self.layout.width,self.layout.height); w._build(); self.apply_geometry(); w.focus_pane_soon("options")
+        w.set_default_size(self.layout.width,self.layout.height); w._build(); self.apply_geometry(); w.focus_pane_soon("guide")
 
     # ---------------------------------------------------------- open windows and workspaces
     def workspace_entries(self): return build_entries(self.wm.windows(),self.wm.workspaces(),self.match_application_window)
@@ -272,6 +272,12 @@ class TVWCSApp(Gtk.Application):
             except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}")
         # An action starts the application, so the main profile's PIN applies to it too.
         self._with_pins([profile] if profile and profile.pin_hash else [],go)
+    def restart(self):
+        """Start a fresh TVWCS once this process has exited (after an update replaced the program files), then quit."""
+        wait='while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2"'
+        try: subprocess.Popen(["sh","-c",wait,"sh",str(os.getpid()),str(LAUNCHER)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or i3) to use the new version."); return
+        self.hide_window(); self.quit()
     def run_system_action(self,action_id):
         command=command_for(action_id,self.store.settings)
         if not command: return

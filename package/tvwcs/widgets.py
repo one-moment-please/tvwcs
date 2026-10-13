@@ -27,8 +27,8 @@ def glyph(icon_name, fallback, size=None):
     if has_icon(icon_name):
         img=Gtk.Image.new_from_icon_name(icon_name)
         if size: img.set_pixel_size(S(size))
-        return img
-    return Gtk.Label(label=fallback)
+    else: img=Gtk.Label(label=fallback)
+    img.add_css_class("glyph"); return img   # marks the button holding it as icon-only (see icon_only)
 
 def icon_button(icon_name, fallback, tooltip):
     b=Gtk.Button(); b.set_child(glyph(icon_name,fallback)); b.set_tooltip_text(tooltip); return b
@@ -69,6 +69,11 @@ def muted_label(text):
 
 def section_title(text):
     l=Gtk.Label(label=text); l.add_css_class("section-title"); l.set_xalign(0); return l
+
+def icon_only(w):
+    """A button whose only content is a glyph: it has no words, so its tooltip is its label."""
+    get_child=getattr(w,"get_child",None); child=get_child() if get_child else None
+    return bool(child is not None and child.has_css_class("glyph") and w.get_tooltip_text())
 
 def usable(w): return w.get_visible() and w.get_mapped() and w.get_sensitive()
 

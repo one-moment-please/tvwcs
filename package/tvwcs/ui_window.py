@@ -1,4 +1,4 @@
-"""The TVWCS window: Quick Menu | Applications (tabbed: Applications, Networking, Updates, Settings),
+"""The TVWCS window: Quick Menu | Applications (the applications guide, switchable to Settings),
 remote-friendly navigation and modal dialogs."""
 from __future__ import annotations
 import gi
@@ -9,25 +9,24 @@ from gi.repository import Gdk, GLib, Gtk
 from tvwcs.hotkeys import HotkeyCapture
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.theme import render_css
-from tvwcs.ui_network import NetworkingTab
 from tvwcs.ui_settings import build_settings_panel
-from tvwcs.ui_updates import UpdatesTab
-from tvwcs.widgets import (NavGroup, S, app_icon, child_marker, clear_box, glyph, icon_button, muted_label, section_title, usable)
+from tvwcs.widgets import (NavGroup, S, app_icon, child_marker, clear_box, glyph, icon_button, icon_only, muted_label, section_title, usable)
 
-APPS_TABS=("applications","network","updates","settings")   # order of the tabs in the Applications window
+APPS_VIEWS=("applications","settings")   # what the right-hand pane can show; it opens on the applications guide
+FOCUS_TIP_DELAY=1000                     # ms a selected icon-only button waits before showing its tooltip
 
 _TYPING_BLOCKED=Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.ALT_MASK|Gdk.ModifierType.SUPER_MASK|Gdk.ModifierType.META_MASK
 _I3_MODS=((Gdk.ModifierType.SUPER_MASK,"Mod4"),(Gdk.ModifierType.ALT_MASK,"Mod1"),(Gdk.ModifierType.CONTROL_MASK,"Control"),(Gdk.ModifierType.SHIFT_MASK,"Shift"))
 
 class TVWCSWindow(Gtk.ApplicationWindow):
     """One borderless window holding two panels side by side. The Quick Menu is always there; the
-    Applications pane (a tabbed window: Applications, Networking, Updates, Settings) opens to its right."""
+    Applications pane opens to its right on the applications guide, and a button at its top right switches it to Settings."""
     def __init__(self, app):
         super().__init__(application=app,title=MAIN_TITLE)
         self.app=app; self.guide_open=False; self.options_open=False
         self.guide_pane=None; self.options_pane=None; self.guide_scroll=None; self.guide_button=None; self.quick_content=None
-        self.apps_stack=None; self.apps_tab_buttons={}; self.apps_tab=APPS_TABS[0]
-        self.network_tab=None; self.updates_tab=None; self.settings_tab=None
+        self.apps_stack=None; self.apps_view=APPS_VIEWS[0]; self.view_button=None; self.apps_title=None; self.apps_subtitle=None; self.settings_tab=None
+        self._focus_tip=None; self._focus_tip_source=0
         self._provider=None; self._expanded={"Media","Internet","Games"}; self._guide_scroll=0.0
         self._popovers=0; self._was_active=False; self._capture=None; self._capture_cb=None; self._pin=None
         self._reset_nav()
@@ -41,6 +40,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._groups={"quick":[],"guide":[],"options":[]}; self._header_group=[]
         self._search_results=[]; self._selected_result=0; self._result_groups=[]; self._result_mains=[]; self._stars={}
         self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None
+        self._all_guide_groups=None
 
     # ================================================================== construction
     def _build(self):
@@ -68,12 +68,14 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._provider.load_from_data(render_css(self.app.store.settings["accent"],self.app.scale_factor).encode("utf-8"))
 
     def set_panels(self,guide,options=None):
-        """Show or hide the Applications pane. It is one tabbed window (Applications, Networking, Updates,
-        Settings), built once and kept, so switching tabs never disturbs scroll positions, open categories or
-        focus. `options` is accepted for older callers but no longer opens a separate panel."""
-        guide=bool(guide)
+        """Show or hide the Applications pane. It holds the applications guide and Settings, built once and kept,
+        so switching between them never disturbs scroll positions, open categories or focus. Opening it always
+        starts on the applications guide. `options` is accepted for older callers but opens nothing separate."""
+        guide=bool(guide); opening=guide and not self.guide_open
         self.guide_open=guide; self.options_open=False
+        if opening: self.apps_view="applications"
         if guide and self.guide_pane is None: self.guide_pane=self._build_guide_pane(); self.panes.append(self.guide_pane)
+        elif opening: self.show_applications_view("applications")
         layout=self.app.layout
         self.quick_pane.set_size_request(layout.quick_width,-1)
         if self.guide_pane is not None: self.guide_pane.set_visible(guide)
@@ -161,7 +163,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         def flip(*_):
             show=not children.get_visible(); children.set_visible(show); style(show)
         style(False); expand.connect("clicked",flip)
-        close=icon_button("window-close-symbolic","✕","Close this workspace and every app on it")
+        close=icon_button("window-close-symbolic","✕","Close this workspace and every app on it"); close.add_css_class("close-button")
         close.connect("clicked",lambda _b,e=entry:self.confirm("Close workspace?",f"Close {e.label} and its {len(e.windows)} applications? Unsaved work in them may be lost.","Close workspace",lambda:self.app.close_workspace(e)))
         row,group=self._options_row(main,[move,expand,close])
         self._groups["quick"].append(group)          # registered before its children so navigation order is top to bottom
@@ -224,7 +226,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not app or not app.desktop_actions: return None
         b=icon_button("view-list-symbolic","☰","Desktop actions"); b.connect("clicked",lambda _b,a=app,anchor=b:self._show_actions(a,anchor)); return b
     def _close_button(self,con_id):
-        b=icon_button("window-close-symbolic","✕","Close this application"); b.connect("clicked",lambda _b,con=con_id:self._close_open_window(con)); return b
+        b=icon_button("window-close-symbolic","✕","Close this application"); b.add_css_class("close-button"); b.connect("clicked",lambda _b,con=con_id:self._close_open_window(con)); return b
 
     def _popup(self,anchor,child):
         pop=Gtk.Popover(); pop.set_parent(anchor); pop.set_child(child); self._popovers+=1
@@ -247,69 +249,66 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not self.app.wm.close_window(con_id): self.app.notify_message("Could not close that application window.")
         GLib.timeout_add(250,lambda:(self.app.refresh_data(rebuild=True),GLib.SOURCE_REMOVE)[1])
 
-    # ---------------------------------------------------------- Applications (tabbed window)
+    # ---------------------------------------------------------- Applications pane (guide | Settings)
     def _build_guide_pane(self):
-        """The Applications window: a tab bar (Applications · Networking · Updates · Settings) over a stack of
-        four panes. All its focusable widgets register into navigation pane "guide"."""
+        """The Applications pane: a header (title, and at the top right a button that switches between the
+        applications guide and Settings) over a stack of the two. Its focusable widgets register into pane "guide"."""
         margin=self.app.layout.margin
         pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_hexpand(True); pane.set_margin_start(margin)
-        tabs=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); tabs.set_margin_top(S(12)); tabs.set_margin_start(S(24)); tabs.set_margin_end(S(24))
-        self.apps_tab_buttons={}
-        for key,label in (("applications","Applications"),("network","Networking"),("updates","Updates"),("settings","Settings")):
-            b=Gtk.Button(label=label); b.add_css_class("app-tab")
-            b.connect("clicked",lambda _b,k=key:self.show_applications_tab(k)); tabs.append(b); self.apps_tab_buttons[key]=b; self._register("guide",b)
-        pane.append(tabs)
+        head=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14)); head.set_margin_top(S(12)); head.set_margin_start(S(24)); head.set_margin_end(S(24)); head.set_margin_bottom(S(2))
+        self.apps_title=Gtk.Label(); self.apps_title.add_css_class("pane-title"); self.apps_title.set_xalign(0); head.append(self.apps_title)
+        self.apps_subtitle=Gtk.Label(); self.apps_subtitle.add_css_class("muted"); self.apps_subtitle.set_valign(Gtk.Align.END); self.apps_subtitle.set_margin_bottom(S(4)); self.apps_subtitle.set_xalign(0); head.append(self.apps_subtitle)
+        spacer=Gtk.Box(); spacer.set_hexpand(True); head.append(spacer)   # keeps the switch button at the top right in both views
+        self.view_button=Gtk.Button(); self.view_button.set_valign(Gtk.Align.START)
+        self.view_button.connect("clicked",lambda *_:self.show_applications_view("settings" if self.apps_view=="applications" else "applications"))
+        head.append(self.view_button); self._register("guide",self.view_button)
+        pane.append(head)
         self.apps_stack=Gtk.Stack(); self.apps_stack.set_vexpand(True); self.apps_stack.set_hexpand(True); self.apps_stack.set_transition_type(Gtk.StackTransitionType.NONE)
         pane.append(self.apps_stack)
         self.apps_list_scroll=Gtk.ScrolledWindow(); self.apps_list_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
         self.apps_content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); self.apps_content.set_margin_start(S(24)); self.apps_content.set_margin_end(S(24)); self.apps_content.set_margin_bottom(S(16))
-        self.apps_list_scroll.set_child(self.apps_content); self.apps_stack.add_titled(self.apps_list_scroll,"applications","Applications")
-        self.network_tab=NetworkingTab(self); self.apps_stack.add_titled(self.network_tab,"network","Networking")
-        self.updates_tab=UpdatesTab(self); self.apps_stack.add_titled(self.updates_tab,"updates","Updates")
-        self.settings_tab=build_settings_panel(self,embedded=True); self.apps_stack.add_titled(self.settings_tab,"settings","Settings")
+        self.apps_list_scroll.set_child(self.apps_content); self.apps_stack.add_named(self.apps_list_scroll,"applications")
+        self.settings_tab=build_settings_panel(self,embedded=True); self.apps_stack.add_named(self.settings_tab,"settings")
         self._rebuild_apps_content()
-        self.show_applications_tab(self.apps_tab or "applications")
+        self._all_guide_groups=list(self._groups["guide"])   # both views; _sync_view_groups picks the visible one's
+        self.show_applications_view(self.apps_view)
         return pane
 
-    def show_applications_tab(self,key):
-        """Switch the Applications window to one of its tabs and keep the visible content's nav groups live."""
-        if key not in APPS_TABS: key="applications"
-        self.apps_tab=key
+    def show_applications_view(self,key):
+        """Show the applications guide or Settings in the Applications pane, and keep only the visible one's nav groups live."""
+        if key not in APPS_VIEWS: key="applications"
+        self.apps_view=key
         if self.apps_stack is not None: self.apps_stack.set_visible_child_name(key)
-        for name,b in self.apps_tab_buttons.items(): (b.add_css_class if name==key else b.remove_css_class)("active")
-        self._sync_tab_groups()
+        settings=key=="settings"
+        if self.apps_title is not None: self.apps_title.set_text("Settings" if settings else "Applications")
+        if self.apps_subtitle is not None: self.apps_subtitle.set_visible(not settings)
+        if self.view_button is not None:
+            self.view_button.set_child(glyph("view-grid-symbolic","▦") if settings else glyph("emblem-system-symbolic","⚙"))
+            self.view_button.set_tooltip_text("Back to the applications guide" if settings else "Settings")
+            (self.view_button.add_css_class if settings else self.view_button.remove_css_class)("active")
+            if self.get_focus() is self.view_button: self._schedule_focus_tip(self.view_button)   # its tooltip just changed
+        self._sync_view_groups()
         return True
 
-    def refresh_applications_tab(self,key):
-        """Re-read the outside world for one tab (used by its Refresh buttons)."""
-        self.show_applications_tab(key)
-        if key=="network" and self.network_tab is not None: self.network_tab.reload()
-        if key=="updates" and self.updates_tab is not None: self.updates_tab.rebuild()
-
-    def _sync_tab_groups(self):
-        """Keep only the tab bar and the currently visible tab's widgets in pane "guide". Hidden tabs stay in the
-        Gtk.Stack, so their rows must not take part in ←/→/↑/↓ navigation."""
-        roots=(self.apps_list_scroll,self.network_tab,self.updates_tab,self.settings_tab)
+    def _sync_view_groups(self):
+        """Keep only the header button and the visible view's widgets in pane "guide". The hidden view stays in the
+        Gtk.Stack, so its rows must not take part in ←/→/↑/↓ navigation."""
+        groups=getattr(self,"_all_guide_groups",None)
+        if groups is None: return
         visible=self.apps_stack.get_visible_child() if self.apps_stack is not None else None
-        kept=[g for g in self._groups["guide"] if any(getattr(g,"entry",None) is b for b in self.apps_tab_buttons.values())]
-        for g in self._groups["guide"]:
+        kept=[]
+        for g in groups:
             root=getattr(g,"entry",None) or next(iter(g),None)
-            if root is None or root in kept: continue
-            for r in roots:
-                if r is not None and (root is r or root.is_ancestor(r)):
-                    if visible is r: kept.append(g)
-                    break
+            if root is None: continue
+            owner=next((r for r in (self.apps_list_scroll,self.settings_tab) if r is not None and (root is r or root.is_ancestor(r))),None)
+            if owner is None or owner is visible: kept.append(g)
         self._groups["guide"]=kept
 
     def _rebuild_apps_content(self):
-        """The Applications tab's list: your channels, then every installed application by category."""
-        self._guide_content_groups=[]
+        """The applications guide: your channels, then every installed application by category."""
         clear_box(self.apps_content)
         assigned=self.app.store.assigned()
-        head=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14)); head.set_margin_top(S(6)); head.set_margin_bottom(S(2))
-        title=Gtk.Label(label="Applications"); title.add_css_class("pane-title"); title.set_xalign(0); head.append(title)
-        sub=Gtk.Label(label=f"{len(assigned)} channels assigned"); sub.add_css_class("muted"); sub.set_valign(Gtk.Align.END); sub.set_margin_bottom(S(4)); sub.set_hexpand(True); sub.set_xalign(0); head.append(sub)
-        self.apps_content.append(head)
+        if self.apps_subtitle is not None: self.apps_subtitle.set_text(f"{len(assigned)} channels assigned")
         self.guide_scroll=self.apps_list_scroll
         self.apps_content.append(section_title("YOUR CHANNELS"))
         if not assigned: self.apps_content.append(muted_label("Assign channel numbers to launch profiles to build your own lineup."))
@@ -448,6 +447,27 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _focus_changed(self,*_):
         w=self.get_focus()
         if w is not None: self._last_focus[self._pane_of(w)]=w
+        self._schedule_focus_tip(w)
+
+    # ---------------------------------------------------------- tooltips for selected icon-only buttons
+    # A remote has no pointer to hover with, so a button with no text shows its tooltip once it has been selected for a moment.
+    def _schedule_focus_tip(self,w):
+        self._hide_focus_tip()
+        if w is not None and icon_only(w): self._focus_tip_source=GLib.timeout_add(FOCUS_TIP_DELAY,self._show_focus_tip,w)
+    def _show_focus_tip(self,button):
+        self._focus_tip_source=0
+        hovered=button.get_state_flags() & Gtk.StateFlags.PRELIGHT   # the pointer is on it: GTK's own tooltip is showing
+        if self.get_focus() is not button or not usable(button) or hovered or self._focus_tip is not None: return GLib.SOURCE_REMOVE
+        tip=Gtk.Label(label=button.get_tooltip_text()); tip.set_wrap(True); tip.set_max_width_chars(48)
+        pop=Gtk.Popover(); pop.add_css_class("focus-tip"); pop.set_autohide(False); pop.set_can_focus(False); pop.set_has_arrow(False)
+        pop.set_position(Gtk.PositionType.BOTTOM); pop.set_child(tip); pop.set_parent(button); pop.popup()
+        self._focus_tip=pop; return GLib.SOURCE_REMOVE
+    def _hide_focus_tip(self):
+        if self._focus_tip_source: GLib.source_remove(self._focus_tip_source); self._focus_tip_source=0
+        pop=self._focus_tip; self._focus_tip=None
+        if pop is not None:
+            pop.popdown()
+            if pop.get_parent() is not None: pop.unparent()
     def _pane_of(self,widget):
         for name,pane in (("options",self.options_pane),("guide",self.guide_pane)):
             if widget is not None and pane is not None and (widget is pane or widget.is_ancestor(pane)): return name
@@ -522,9 +542,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if pane=="quick":
             if self.guide_open: return self.focus_pane("guide")
             self.app.show_panels(True,False,focus="guide"); return True
-        if pane=="guide":
-            if self.options_open: return self.focus_pane("options")
-            self.app.show_panels(True,True,focus="options"); return True
+        if pane=="guide" and self.options_open: return self.focus_pane("options")
         return True
     def _result_index(self,focused):
         for i,g in enumerate(self._result_groups):
@@ -533,6 +551,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def _key_pressed(self,_controller,keyval,_keycode,state):
         if self._capture is not None: return self._capture_key(keyval,state)
+        self._hide_focus_tip()   # any key press dismisses it; the next selection schedules a fresh one
         focused=self.get_focus(); editable=isinstance(focused,Gtk.Editable); typing=self._in_search(focused)
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self._escape(); return True   # the remote's Back key (XF86Back) is Esc
         if self._pin is not None and self._pin_key(keyval): return True
@@ -572,6 +591,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _escape(self):
         if self._modal_groups: (self._modal_back or self.close_modal)(); return
         if self.options_open: self.app.show_panels(True,False,focus="guide"); return   # Back: close Settings, keep the Guide
+        if self.guide_open and self.apps_view=="settings":                               # Settings goes back to the guide
+            self.show_applications_view("applications"); self.view_button.grab_focus(); return
         if self.guide_open: self.app.show_panels(False,False,focus="quick"); return    # then the Guide, keep the Quick Menu
         self.app.hide_window()
 
@@ -584,7 +605,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         # Child windows (profile editor) and open popovers legitimately take focus; only a click elsewhere closes TVWCS.
         if self.is_visible() and not self.is_active() and self._popovers==0 and not self.app.has_dialogs(): self.app.hide_window()
         return GLib.SOURCE_REMOVE
-    def note_shown(self): self._was_active=False
+    def note_shown(self): self._was_active=False; self._hide_focus_tip()
 
     # ---------------------------------------------------------- dialogs (drawn over the panels, remote-navigable)
     def _begin_modal(self):

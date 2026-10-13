@@ -12,6 +12,7 @@ if [ "${1:-}" = "--beta" ]; then
 fi
 NAME="TVWCS-${VERSION}${SUFFIX}"
 STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
+rm -f "$ROOT/resources/$NAME.zip"   # zip -r would otherwise add to an old archive of the same name
 mkdir -p "$STAGE/tvwcs/tvwcs"
 cp "$ROOT"/package/tvwcs/*.py "$STAGE/tvwcs/tvwcs/"
 mkdir -p "$STAGE/tvwcs/bin"; cp "$ROOT/package/bin/tvwcs" "$STAGE/tvwcs/bin/"

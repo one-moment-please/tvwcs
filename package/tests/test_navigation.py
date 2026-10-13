@@ -51,7 +51,7 @@ def make_window(**state):
     win=ui_window.TVWCSWindow.__new__(ui_window.TVWCSWindow)
     win.app=MagicMock(); win._groups={"quick":[],"guide":[],"options":[]}; win._header_group=[]; win._result_groups=[]; win._modal_groups=[]
     win.guide_open=False; win.options_open=False; win.guide_pane=None; win.options_pane=None; win._last_focus={}
-    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None
+    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None; win._focus_tip=None; win._focus_tip_source=0
     win.search_entry=Entry("search"); win.get_focus=lambda:W.focus
     win._type_to_search=MagicMock(); win._escape=MagicMock()
     for k,v in state.items(): setattr(win,k,v)
@@ -92,10 +92,10 @@ class NavigationTests(unittest.TestCase):
         guide=W("guide_pane"); win=make_window(guide_open=True,guide_pane=guide); g,toggle,opt,main=options_row(win,expanded=True)
         inner=W("g1",parent=guide); win._groups["guide"].append(NavGroup([inner])); W.focus=main
         win._move_within_group(1); win.app.show_panels.assert_not_called(); self.assertIs(W.focus,inner)
-    def test_right_past_the_end_of_the_guide_opens_settings(self):
+    def test_right_past_the_end_of_the_guide_stays_put(self):
         guide=W("guide_pane"); win=make_window(guide_open=True,guide_pane=guide)
         last=W("star",parent=guide); win._groups["guide"].append(NavGroup([W("main",parent=guide),last])); W.focus=last
-        win._move_within_group(1); win.app.show_panels.assert_called_once_with(True,True,focus="options")
+        self.assertTrue(win._move_within_group(1)); win.app.show_panels.assert_not_called(); self.assertIs(W.focus,last)
     def test_left_from_settings_closes_it_and_returns_to_the_guide(self):
         guide,options=W("guide"),W("options"); win=make_window(guide_open=True,options_open=True,guide_pane=guide,options_pane=options)
         row=W("row",parent=options); win._groups["options"].append(NavGroup([row])); W.focus=row

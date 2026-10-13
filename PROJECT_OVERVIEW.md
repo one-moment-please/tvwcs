@@ -25,17 +25,16 @@ The interface follows the Windows Metro (Modern UI) language: flat, typographic 
 
 ## The central user experience
 
-### 1. The screen layout: three panels
+### 1. The screen layout: two panels
 
-TVWCS is one borderless panel placed in the usable area of the active workspace, that is, the workspace on the monitor under the pointer, excluding the bar. It is made of up to three panels, left to right:
+TVWCS is one borderless panel placed in the usable area of the active workspace, that is, the workspace on the monitor under the pointer, excluding the bar. It is made of up to two panels, left to right:
 
 - **The Quick Menu** is a full-height column at the **left**, with a small margin above, below and to its left. It is always present.
-- **The Channel Guide** opens **alongside** it and fills the middle.
-- **Settings** opens at the far **right**, exactly as wide as the Quick Menu, and only ever together with the Guide.
+- **The Applications pane** opens **alongside** it and fills the rest. It always opens on the applications guide; a button at its **top right** switches it between the guide and **Settings**.
 
-Every panel keeps the **same margin** from the screen edges and from its neighbours. The Quick Menu can be open on its own; the Guide always has the Quick Menu with it; Settings always has both.
+Every panel keeps the **same margin** from the screen edges and from its neighbours. The Quick Menu can be open on its own; the Applications pane always has the Quick Menu with it.
 
-The first hotkey shows or hides the Quick Menu; the second opens the Guide beside it (and closes it again). Navigation is spatial: **Right** past the last control of the Quick Menu opens the Guide; Right past the last control of the Guide opens Settings; **Left** goes back (closing Settings), and **Esc** (or the remote's **Back** key) steps back one level: dialog, Settings, Guide, Quick Menu. A button at the top right of the Guide also opens Settings. Typing any text, anywhere, goes straight into the search field.
+The first hotkey shows or hides the Quick Menu; the second opens the Applications pane beside it (and closes it again). Navigation is spatial: **Right** past the last control of the Quick Menu opens the Applications pane; **Left** goes back, and **Esc** (or the remote's **Back** key) steps back one level: dialog, Settings, Applications, Quick Menu. A button with only an icon shows its tooltip once it has been selected for a second, so a remote gets the same hints as a mouse. Typing any text, anywhere, goes straight into the search field.
 
 ### 2. The Quick Menu
 
@@ -54,7 +53,7 @@ Each row mirrors the Guide: in the Guide the application is on the left and its 
 
 ### 3. Settings
 
-Settings is the third panel and holds everything that is about TVWCS itself rather than about launching something. Every row is one button, so it works with a D-pad alone. See "Settings" below.
+Settings shares the Applications pane with the guide (switched with the button at its top right) and holds everything that is about TVWCS itself rather than about launching something. Every row is one button, so it works with a D-pad alone. See "Settings" below.
 
 ### 4. The Channel Guide
 
@@ -103,6 +102,7 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 - **Open running apps in a new workspace** (the toggle described under launch modes).
 - **Hotkeys:** which keys show the Quick Menu and the Guide. A modifier tapped on its own (such as Super) can be used; it is delivered only when pressed and released alone, so Super+Enter and every other Super shortcut keep working.
 - **At login:** open a chosen app (favorites listed first, then apps with channel numbers), or reopen the last app used, once per login.
+- **Check for updates:** asks GitHub for the latest published release; if it is newer, offers to download it, install it over the current copy (keeping the user's data), remove the download and restart TVWCS.
 - **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.
 
 ## What TVWCS is, and is not
@@ -151,7 +151,7 @@ The i3 config gains a single line, `include ~/.config/i3/tvwcs/tvwcs.conf`. That
 
 ## What success looks like
 
-A person on a couch presses a remote button and a clean, square, high-contrast menu slides in at the left of the screen, sized for the room. They see their open workspaces ("Brave + Text Editor", "Messages") above their favorites, see that the messaging app has three unread items, and jump to it. They press Right and the full catalogue opens beside it, still framed by the same margins; they find a game, which opens alone on its own workspace, while the video call and notes they had open stay together on another workspace, one selection away. Another Right opens Settings, where they change the hotkey to the Super key without losing Super+Enter. They never touch a mouse, no application needed a plugin, and a stray press on Shut down asks "Are you sure?" first.
+A person on a couch presses a remote button and a clean, square, high-contrast menu slides in at the left of the screen, sized for the room. They see their open workspaces ("Brave + Text Editor", "Messages") above their favorites, see that the messaging app has three unread items, and jump to it. They press Right and the full catalogue opens beside it, still framed by the same margins; they find a game, which opens alone on its own workspace, while the video call and notes they had open stay together on another workspace, one selection away. The button at the top right of that pane opens Settings, where they change the hotkey to the Super key without losing Super+Enter. They never touch a mouse, no application needed a plugin, and a stray press on Shut down asks "Are you sure?" first.
 
 ## A concise explanation to say aloud
 
