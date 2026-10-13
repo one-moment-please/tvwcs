@@ -12,12 +12,16 @@ from tvwcs.widgets import S, muted_label, section_title
 
 def _on_off(flag): return "On" if flag else "Off"
 
-def build_settings_panel(win):
+def build_settings_panel(win, embedded=False):
+    """The Settings tab. Every row is one button, so it works with a D-pad: Enter flips an On/Off toggle;
+    a row with several choices opens a small pop-up listing them; other rows open a dialog.
+    `embedded` keeps the pane inside the Applications window's tab bar instead of its own panel."""
     app=win.app; store=app.store; settings=store.settings; layout=app.layout
     pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane")
-    pane.set_size_request(layout.options_width,-1); pane.set_hexpand(False); pane.set_margin_start(layout.margin)
-    title=Gtk.Label(label="Settings"); title.add_css_class("pane-title"); title.set_xalign(0)
-    title.set_margin_top(S(14)); title.set_margin_start(S(20)); title.set_margin_bottom(S(10)); pane.append(title)
+    if not embedded:
+        pane.set_size_request(layout.quick_width,-1); pane.set_hexpand(False); pane.set_margin_start(layout.margin)
+        title=Gtk.Label(label="Settings"); title.add_css_class("pane-title"); title.set_xalign(0)
+        title.set_margin_top(S(14)); title.set_margin_start(S(20)); title.set_margin_bottom(S(10)); pane.append(title)
     scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); pane.append(scroll)
     content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); content.set_margin_start(S(20)); content.set_margin_end(S(20)); content.set_margin_bottom(S(16)); scroll.set_child(content)
 
@@ -50,10 +54,12 @@ def build_settings_panel(win):
     row("Close when clicking outside",_on_off(settings["close_on_click_outside"]),toggle("close_on_click_outside"))
     row("Open running apps in a new workspace",_on_off(settings["open_in_new_workspace"]),toggle("open_in_new_workspace"),
         "On: selecting an open app gives it a workspace of its own. Off: it is tiled into the current workspace. Each app's options can open it the other way, and apps set to always launch in a new workspace are not affected.")
+    row("Hide the options buttons in the Quick Menu",_on_off(settings["hide_options_buttons"]),toggle("hide_options_buttons"),
+        "Reminder: even hidden, each row's options menu can still be opened by right-clicking the application or workspace, or by pressing ← while it is selected.")
 
     # ---- Hotkeys
     content.append(section_title("HOTKEYS"))
-    labels={"menu":"Show / hide the Quick Menu","guide":"Open / close the Guide"}; values={}
+    labels={"menu":"Show / hide the Quick Menu","guide":"Open / close Applications"}; values={}
     def change(name):
         def got(spec):
             other="guide" if name=="menu" else "menu"

@@ -6,23 +6,40 @@ Quick menu: <img src="assets/quick-menu.png" height="300">  Full Menu: <img src=
 
 ## Requirements
 
-Linux Mint/Debian/Ubuntu with i3, Python 3, GTK 4 and PyGObject. `i3-msg` is used for windows and workspaces; `xdotool` finds the monitor under the pointer.  Optional: `xcape` (lone-modifier hotkeys such as Super).
+Linux Mint/Debian/Ubuntu with i3, Python 3, GTK 4 and PyGObject. `i3-msg` is used for windows and workspaces; `xdotool` finds the monitor under the pointer. The Networking tab talks to NetworkManager via `nmcli`; the Updates tab uses `apt` (and `sudo` to install). Optional: `xcape` (lone-modifier hotkeys such as Super).
 
 ```bash
-sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool xcape
+sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool network-manager xcape
 ```
 
 ## Install
 
-TVWCS is written in python and can be extracted to any folder, and just needs the dependencies installed and for an include to be added to ~/.config/i3/config that points to the tvwcs.conf file in the folder. a install.sh file is included that will move the files to ~/.config/i3/tvwcs and check if the include has been added to the i3 config file.
-TVWCS is meant to live in **`~/.config/i3/tvwcs`**, next to your i3 config.
+### From the repository
 
 ```bash
-unzip TVWCS-2.5.0.zip -d ~/.config/i3/     # creates ~/.config/i3/tvwcs
-~/.config/i3/tvwcs/install.sh                          # checks packages, creates default hotkeys, prints the next step
+git clone <this repo> && cd tvwcs
+./scripts/install.sh        # copies TVWCS into ~/.config/i3/tvwcs, checks dependencies,
+                            # creates default hotkeys, and prints the i3 include line if missing
 ```
 
-Then add **one line** to `~/.config/i3/config` and reload i3 (`Mod+Shift+R`):
+Run it again at any time to **upgrade**: program files are replaced in place, your data in
+`~/.config/tvwcs/` (channels, favorites, settings, hotkeys) is never touched, and a hand-edited
+`tvwcs.conf` is kept as `tvwcs.conf.bak`. If you cloned with an older version installed, just pull
+and re-run `./scripts/install.sh`.
+
+### From a release zip
+
+```bash
+unzip TVWCS-2.6.0.zip -d ~/.config/i3/     # creates ~/.config/i3/tvwcs
+cd ~/.config/i3/tvwcs && ./install.sh      # same script; detects the release layout automatically
+```
+
+To upgrade from an older zip, extract the new one over the old folder (or anywhere else) and run its
+`install.sh`; it installs/copies into `~/.config/i3/tvwcs` and keeps your settings. You can also point
+it somewhere else with `TVWCS_DEST=/some/path ./install.sh`.
+
+Then add **one line** to `~/.config/i3/config` and reload i3 (`Mod+Shift+R`) — `install.sh` prints the
+exact line if it is still missing:
 
 ```i3
 include ~/.config/i3/tvwcs/tvwcs.conf
@@ -40,45 +57,59 @@ Your own data stays separate from the program in `~/.config/tvwcs/` (`config.jso
 | Key | Action |
 |---|---|
 | **F2** (default; changeable in Settings) | Show or hide the Quick Menu |
-| **Shift+F2** (default) | Open the Guide beside the Quick Menu; press again to close it |
+| **Shift+F2** (default) | Open the Applications window beside the Quick Menu; press again to close it |
 | **↑ / ↓** | Move between rows |
-| **← / →** | Move along a row. Past the right-hand end of the Quick Menu, **→** opens the Guide; past the end of the Guide, **→** opens Settings. **←** goes back (and closes Settings) |
-| **←** on a row's options button | Expands that row's options |
+| **← / →** | Move along a row. Past the right-hand end of the Quick Menu, **→** opens Applications. Inside Applications, **→** moves into the tab bar and content; **←** goes back toward the Quick Menu |
+| **←** on a row's options button | Expands that row's options (this also works when the options buttons are hidden in Settings) |
+| **Right-click** an app or workspace in the Quick Menu | Opens that row's options menu (same as the options button) |
 | **Enter** | Launch, switch to, or activate the highlighted item |
-| **Esc** or the remote's **Back** key | Back: closes a dialog, then Settings, then the Guide, then the Quick Menu |
+| **Esc** or the remote's **Back** key | Back: closes a dialog, then the Applications window, then the Quick Menu |
 | *any letter or digit* | Starts a search, wherever the focus is |
 
-`tvwcs toggle`, `tvwcs guide` and `tvwcs stop` do the same from a terminal.
+`tvwcs toggle`, `tvwcs guide` and `tvwcs stop` do the same from a terminal (`guide` opens the Applications window).
 
-### Layout: three panels
+### Layout: two panels
 
 ```
-┌ Quick Menu ┐ ┌──── Channel Guide ────┐ ┌ Settings ┐
-│            │ │                       │ │          │
+┌ Quick Menu ┐ ┌──────────── Applications (tabbed) ────────────┐
+│            │ │  Applications · Networking · Updates · Settings │
 ```
 
-The Quick Menu is a full-height column at the left of the active workspace. The Guide opens beside it and fills the middle. Settings opens at the far right, exactly as wide as the Quick Menu, and only ever with the Guide. All panels keep the same margin from every edge and from each other. The workspace used is the one on the monitor under the mouse, so the bar is never covered.
+The Quick Menu is a full-height column at the left of the active workspace. The Applications window opens beside it and fills the rest. It is one window with four tabs — Applications, Networking, Updates and Settings — so opening Settings no longer grows anything. All panels keep the same margin from every edge and from each other. The workspace used is the one on the monitor under the mouse, so the bar is never covered.
 
 ### Quick Menu
 
 - **Search** is at the top. Just type; results appear under the field. A channel number then Enter launches that channel.
 - **Open applications** is organised by workspace. An app alone on its workspace appears as that app. Apps sharing a workspace appear as one entry named after its contents (for example *Brave + Text Editor*); selecting it shows the whole workspace on the monitor under the pointer.
 - **Favorites** are listed below.
-- **Row options** are on the left, behind one button (or press ← on it). For an app: open it the other way (tiled here, or in a workspace of its own), its `.desktop` actions, close. For a workspace: move it to another monitor (only shown with more than one monitor; pick which), expand it into its individual apps, close it (asks first). A favorite's options hold its launch-mode icon and `.desktop` actions.
+- **Row options** are on the left, behind one button (or press ← on it, or right-click the row). For an app: open it the other way (tiled here, or in a workspace of its own), its `.desktop` actions, close. For a workspace: move it to another monitor (only shown with more than one monitor; pick which), expand it into its individual apps, close it (asks first). A favorite's options hold its launch-mode icon and `.desktop` actions. The Settings tab can hide the options buttons; right-click (or ←) still reaches them.
 - In search, press → at the end of the text to reach the highlighted result's options.
 
-### Guide
+### Applications window
 
-Categories are header buttons: Enter folds or unfolds one. Each row shows the logo, channel, name and, smaller and dimmer, the application's description, then the favorite star and Edit. A **secondary profile** shows a ↳ in the logo's place, hanging from its application, and describes itself by its `.desktop` action and custom command (or a description you write). A 🔒 marks a PIN-protected profile. Favoriting never moves the list. The **⚙** at the top right (or → past the last row) opens Settings.
+The tab bar sits at the top: **Applications · Networking · Updates · Settings**.
 
-### Settings
+#### Applications tab
+
+Categories are header buttons: Enter folds or unfolds one. Each row shows the logo, channel, name and, smaller and dimmer, the application's description, then the favorite star and Edit. A **secondary profile** shows a ↳ in the logo's place, hanging from its application, and describes itself by its `.desktop` action and custom command (or a description you write). A 🔒 marks a PIN-protected profile. Favoriting never moves the list.
+
+#### Networking tab
+
+Lists wired (ethernet) connections and Wi-Fi with their IP addresses, default gateway, DNS servers and the connected network. You can scan for Wi-Fi networks and connect (with password prompt), turn Wi-Fi off or on, and edit IPv4 settings per interface — DHCP or manual address / netmask / gateway / DNS. Changes go through NetworkManager (`nmcli`) and apply immediately.
+
+#### Updates tab
+
+A GUI over apt. The top bar has **Check for updates** (it becomes **Refresh** once you have checked), **Install updates**, **Clear** (unchecks everything) and **Select all**. Below, the left list (about two-thirds the width of the right panel) shows one row per pending upgrade — its kind (*Security update*, *Software update*, *3rd party repository update*), a checkbox deciding whether it is installed, the package name, new version and size. The right panel shows details of the selected package: description, information, packages affected and changelog. Installing runs apt in the background and asks for your sudo password.
+
+#### Settings tab
 
 Every row is one button: Enter flips an On/Off toggle, or opens a small pop-up listing the choices.
 
 - **Interface size:** Desktop, 10-foot (1080p TV), 10-foot (4K TV). Scales text, icons, spacing and the panels.
 - **Close when clicking outside:** hides TVWCS when another window takes focus.
 - **Open running apps in a new workspace:** off (default), selecting an open app tiles it into the current workspace; on, it gets a workspace of its own. Each app's options open it the other way. Apps set to *always launch in a new workspace* in their profile always get one.
-- **Hotkeys:** choose a key or combination for the Quick Menu and for the Guide, or tap a modifier by itself (Super, Alt, Ctrl, Shift). Super+Enter and every other Super shortcut keep working, because a lone-modifier hotkey is delivered by `xcape` only when the modifier is pressed and released alone. TVWCS writes `~/.config/tvwcs/hotkeys.conf` and reloads i3.
+- **Hide the options buttons in the Quick Menu:** folds the ⋯ buttons away for a cleaner list. Reminder: the options menu can still be reached by **right-clicking** a row or pressing **←** while it is selected.
+- **Hotkeys:** choose a key or combination for the Quick Menu and for the Applications window, or tap a modifier by itself (Super, Alt, Ctrl, Shift). Super+Enter and every other Super shortcut keep working, because a lone-modifier hotkey is delivered by `xcape` only when the modifier is pressed and released alone. TVWCS writes `~/.config/tvwcs/hotkeys.conf` and reloads i3.
 - **At login:** do nothing, reopen the last app you used, or open a chosen app (the list shows favorites first, then apps with channel numbers, then the rest). Runs once per login, a moment after TVWCS starts, and never asks for a PIN.
 - **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. Log out, Reboot and Shut down ask for confirmation; Cancel is selected by default. Lock auto-detects swaylock, i3lock, cinnamon-screensaver, xdg-screensaver or loginctl; set `settings.lock_command` to use something else.
 
