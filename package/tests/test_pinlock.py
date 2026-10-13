@@ -1,6 +1,6 @@
 import unittest
-from pinlock import PinGate, check_pin, make_hash, valid_hash, valid_pin
-from ownership import WindowOwners
+from tvwcs.pinlock import PinGate, check_pin, make_hash, valid_hash, valid_pin
+from tvwcs.ownership import WindowOwners
 
 class PinTests(unittest.TestCase):
     def test_pin_shape(self):

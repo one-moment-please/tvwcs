@@ -4,8 +4,8 @@ import copy, json, os, re, shlex, uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from hotkeys import DEFAULT_HOTKEYS, valid_spec
-from pinlock import valid_hash
+from tvwcs.hotkeys import DEFAULT_HOTKEYS, valid_spec
+from tvwcs.pinlock import valid_hash
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
 DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"

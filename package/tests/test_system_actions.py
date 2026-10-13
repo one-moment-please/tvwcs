@@ -1,5 +1,5 @@
 import unittest
-from system_actions import SYSTEM_ACTIONS, command_for, lock_command, logout_command
+from tvwcs.system_actions import SYSTEM_ACTIONS, command_for, lock_command, logout_command
 
 class SystemActionTests(unittest.TestCase):
     def test_dialog_contents(self):

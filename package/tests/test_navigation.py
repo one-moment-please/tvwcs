@@ -23,13 +23,13 @@ def _install_stub():
     sys.modules["gi"]=gi; sys.modules["gi.repository"]=repo; gi.repository=repo
 _install_stub()
 import importlib
-for m in ("widgets","theme","ui_settings","ui_window"): sys.modules.pop(m,None)
-ui_window=importlib.import_module("ui_window")
+for m in ("tvwcs.widgets","tvwcs.theme","tvwcs.ui_settings","tvwcs.ui_window"): sys.modules.pop(m,None)
+ui_window=importlib.import_module("tvwcs.ui_window")
 for k,v in _SAVED.items():
     if v is None: sys.modules.pop(k,None)
     else: sys.modules[k]=v
 
-from widgets import NavGroup
+from tvwcs.widgets import NavGroup
 Editable=ui_window.Gtk.Editable
 
 class W:
@@ -131,8 +131,8 @@ class TypingTests(unittest.TestCase):
 
 class PinPadTests(unittest.TestCase):
     def pad(self,pin="1234"):
-        from pinlock import PinGate, make_hash
-        from model import LaunchProfile
+        from tvwcs.pinlock import PinGate, make_hash
+        from tvwcs.model import LaunchProfile
         win=make_window(); profile=LaunchProfile("p","a.desktop","Kids",pin_hash=make_hash(pin))
         win.app.pin_gate=PinGate(); win._pin={"profile":profile,"on_ok":MagicMock(),"digits":"","shown":MagicMock()}
         win.close_modal=MagicMock(); win.ask_pin=MagicMock(); return win

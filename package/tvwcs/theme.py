@@ -1,7 +1,7 @@
 """The Metro / Modern UI theme. Flat, square, high-contrast; every corner radius is 0."""
 from __future__ import annotations
 import re
-from widgets import METRO_COLORS
+from tvwcs.widgets import METRO_COLORS
 
 CSS="""
 window.tvwcs-window, .tvwcs-root { background: #000000; color: #ffffff; font-family: "Segoe UI", "Selawik", "Open Sans", "Noto Sans", "Cantarell", sans-serif; border-radius: 0; box-shadow: none; }

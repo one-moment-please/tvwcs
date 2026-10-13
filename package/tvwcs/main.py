@@ -8,24 +8,32 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
-from applications import ApplicationCatalogue, match_window
-from hotkeys import render_i3, xcape_mapping
-from model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout
-from ownership import WindowOwners
-from pinlock import PinGate
-from system_actions import command_for
-from ui_editors import ApplicationProfilesWindow, ProfileEditor
-from ui_window import TVWCSWindow
-from widgets import app_icon, has_icon, set_scale
-from window_manager import I3WindowManager
-from workspaces import build_entries
+from tvwcs.applications import ApplicationCatalogue, match_window
+from tvwcs.hotkeys import render_i3, xcape_mapping
+from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout
+from tvwcs.ownership import WindowOwners
+from tvwcs.pinlock import PinGate
+from tvwcs.system_actions import command_for
+from tvwcs.ui_editors import ApplicationProfilesWindow, ProfileEditor
+from tvwcs.ui_window import TVWCSWindow
+from tvwcs.widgets import app_icon, has_icon, set_scale
+from tvwcs.window_manager import I3WindowManager
+from tvwcs.workspaces import build_entries
 
 APP_ID="com.tvwcs.TVWCS"
 RUNTIME=Path(os.environ.get("XDG_RUNTIME_DIR","/tmp"))
 PID_FILE=RUNTIME/"tvwcs.pid"
 STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # lives in the runtime dir, so it disappears at logout
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
-LAUNCHER=Path(__file__).resolve().parent/"tvwcs"
+def _find_launcher():
+    """Locate the tvwcs launcher script next to the package (works in the repo layout, the
+    install.sh layout ~/.config/i3/tvwcs, and a zip extracted anywhere)."""
+    here=Path(__file__).resolve().parent          # .../tvwcs (the package)
+    for cand in (here.parent/"bin"/"tvwcs", here/"tvwcs", here.parent.parent/"bin"/"tvwcs"):
+        if cand.exists(): return cand
+    return here.parent/"bin"/"tvwcs"              # sensible default even if missing
+
+LAUNCHER=_find_launcher()
 
 class TVWCSApp(Gtk.Application):
     def __init__(self):
