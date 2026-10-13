@@ -35,6 +35,7 @@ DEFAULT_SETTINGS={
     "scale":"desktop",              # key of SCALE_PRESETS
     "close_on_click_outside":False, # hide TVWCS when another window takes focus
     "open_in_new_workspace":False,  # selecting an open app gives it its own workspace instead of tiling it here
+    "hide_options_buttons":False,   # fold the ⋯ options buttons away; right-click (or ←) still opens each row's options
     "hotkeys":dict(DEFAULT_HOTKEYS),
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},
 }
@@ -73,7 +74,7 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    for key in ("close_on_click_outside","open_in_new_workspace"):
+    for key in ("close_on_click_outside","open_in_new_workspace","hide_options_buttons"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     hk=raw.get("hotkeys")
     if isinstance(hk,dict):
@@ -187,27 +188,20 @@ class Layout:
     quick_width: int
     margin: int
     guide_open: bool
-    options_open: bool = False
-    @property
-    def options_width(self) -> int:
-        return self.quick_width     # the Settings panel is exactly as wide as the Quick Menu
     @property
     def guide_width(self) -> int:
-        if not self.guide_open: return 0
-        used=self.quick_width+self.margin+(self.margin+self.options_width if self.options_open else 0)
-        return max(0,self.width-used)
+        return 0 if not self.guide_open else max(0,self.width-self.quick_width-self.margin)
 
-def compute_layout(area, margin, quick_width, guide_open, options_open=False) -> Layout:
-    """Panels left to right: Quick Menu | Channel Guide | Settings, each pair separated by one `margin`.
+def compute_layout(area, margin, quick_width, guide_open) -> Layout:
+    """Panels left to right: Quick Menu | Applications (tabbed), each pair separated by one `margin`.
     The Quick Menu sits at the left of `area` (the usable workspace rectangle) with `margin` px above,
-    below and to its left. The Guide fills the middle; Settings (only ever shown with the Guide) takes the
-    right-hand strip, as wide as the Quick Menu. The window spans only what is open."""
+    below and to its left. The tabbed Applications pane fills the rest; Settings is a tab inside it, so
+    the window no longer grows when it opens. The window spans only what is open."""
     ax,ay,aw,ah=(int(area[k]) for k in ("x","y","width","height"))
-    options_open=bool(options_open and guide_open)
     margin=max(0,min(int(margin),aw//4,ah//4))
     full=max(1,aw-2*margin); height=max(1,ah-2*margin)
-    qw=max(1,min(int(quick_width),int(full*(0.28 if options_open else 0.45))))
-    return Layout(ax+margin,ay+margin,full if guide_open else qw,height,qw,margin,bool(guide_open),options_open)
+    qw=max(1,min(int(quick_width),int(full*0.45)))
+    return Layout(ax+margin,ay+margin,full if guide_open else qw,height,qw,margin,bool(guide_open))
 
 # ---------------------------------------------------------------- badges
 
