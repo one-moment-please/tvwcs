@@ -2,24 +2,45 @@
 # Copies TVWCS into ~/.config/i3/tvwcs (the recommended location) and shows the one line
 # to add to your i3 config. Safe to re-run to upgrade; your settings in ~/.config/tvwcs/config.json are untouched.
 set -eu
-SRC=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)     # folder holding this script (repo root or an extracted release)
+RUN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)  # folder holding this script (repo scripts/, or a release root)
+
+# Work out the source layout: repository (script lives in scripts/) vs. release/installed (script at the root).
+if [ -d "$RUN_DIR/../package/tvwcs" ]; then
+    SRC=$(CDPATH= cd -- "$RUN_DIR/.." && pwd)          # repository root
+    PKG=$SRC/package/tvwcs; BIN=$SRC/package/bin/tvwcs; CONF=$SRC/data/tvwcs.conf; DOCS=$SRC
+elif [ -d "$RUN_DIR/tvwcs" ]; then
+    SRC=$RUN_DIR                                        # release zip or already-installed folder
+    PKG=$SRC/tvwcs; BIN=$SRC/bin/tvwcs; CONF=$SRC/tvwcs.conf; DOCS=$SRC
+else
+    echo "install.sh: cannot find the TVWCS files next to this script (expected package/tvwcs/ or tvwcs/)." >&2
+    exit 1
+fi
+[ -f "$PKG/main.py" ] || { echo "install.sh: $PKG does not look like the tvwcs package." >&2; exit 1; }
+[ -f "$CONF" ] || { echo "install.sh: missing i3 config fragment $CONF." >&2; exit 1; }
+
 DEST=${TVWCS_DEST:-${XDG_CONFIG_HOME:-$HOME/.config}/i3/tvwcs}
 
-# Work out where the pieces are: repository layout vs. release/installed layout.
-if [ -d "$SRC/package/tvwcs" ]; then PKG=$SRC/package/tvwcs; BIN=$SRC/package/bin/tvwcs; CONF=$SRC/data/tvwcs.conf; else PKG=$SRC/tvwcs; BIN=$SRC/bin/tvwcs; CONF=$SRC/tvwcs.conf; fi
-DOCS=$SRC; [ -d "$SRC/package" ] || DOCS=$SRC
-
-if [ "$SRC" != "$DEST" ]; then
+if [ "$SRC" = "$DEST" ]; then
+    echo "TVWCS is already installed in $DEST — nothing to copy. Re-running install.sh from that folder just re-checks your setup."
+else
+    # Upgrade in place: replace the program files, but never touch user data (~/.config/tvwcs) and
+    # keep any hand-edited tvwcs.conf as a .bak. Old modules removed between versions are cleaned up.
+    OLD_LIST=""
+    [ -d "$DEST/tvwcs" ] && OLD_LIST=$(cd "$DEST/tvwcs" && ls *.py 2>/dev/null || true)
     mkdir -p "$DEST/tvwcs" "$DEST/bin"
     if [ -f "$DEST/tvwcs.conf" ] && ! cmp -s "$CONF" "$DEST/tvwcs.conf"; then
         cp "$DEST/tvwcs.conf" "$DEST/tvwcs.conf.bak"; echo "Existing tvwcs.conf saved as tvwcs.conf.bak"
     fi
     cp "$PKG"/*.py "$DEST/tvwcs/"
+    for F in $OLD_LIST; do
+        [ -f "$DEST/tvwcs/$F" ] || rm -f "$DEST/tvwcs/$F"      # stale module from an older version
+    done
+    find "$DEST/tvwcs" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
     cp "$BIN" "$DEST/bin/tvwcs"
     cp "$CONF" "$SRC/VERSION" "$DEST/"
-    for MD in README.md CHANGELOG.md PROJECT_OVERVIEW.md; do [ -f "$DOCS/$MD" ] && cp "$DOCS/$MD" "$DEST/"; done
+    for MD in README.md CHANGELOG.md PROJECT_OVERVIEW.md LICENSE; do [ -f "$DOCS/$MD" ] && cp "$DOCS/$MD" "$DEST/"; done
+    chmod +x "$DEST/bin/tvwcs"
 fi
-chmod +x "$DEST/bin/tvwcs"
 
 # Hotkeys live with your data, not with the program, so upgrades never reset them. TVWCS rewrites this file when
 # you change a hotkey in Settings; here we only make sure it exists with the defaults so i3's include has a target.
@@ -33,20 +54,30 @@ if [ ! -f "$HK" ]; then
     } > "$HK"
     echo "Created default hotkeys in $HK"
 fi
-echo "TVWCS $(cat "$DEST/VERSION") installed in $DEST"
+VERSION=$(cat "$SRC/VERSION" 2>/dev/null || echo "?")
+if [ -d "$DEST/tvwcs" ]; then
+    echo "TVWCS $VERSION installed in $DEST"
+else
+    echo "Warning: files were not copied into $DEST (you ran the script from the install location itself)." >&2
+    echo "TVWCS checking your setup for $DEST"
+fi
 
 missing=""
 python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="$missing python3-gi gir1.2-gtk-4.0"
-command -v i3-msg  >/dev/null 2>&1 || missing="$missing i3"
-command -v xdotool >/dev/null 2>&1 || missing="$missing xdotool"
-command -v xcape   >/dev/null 2>&1 || echo "Optional: sudo apt install xcape   (lets a lone modifier such as Super be the TVWCS hotkey)"
+command -v i3-msg    >/dev/null 2>&1 || missing="$missing i3"
+command -v xdotool   >/dev/null 2>&1 || missing="$missing xdotool"
+command -v nmcli     >/dev/null 2>&1 || echo "Optional: sudo apt install network-manager   (needed by the Networking tab)"
+command -v apt-get   >/dev/null 2>&1 || echo "Note: this distro has no apt — the Updates tab needs a Debian/Ubuntu/Mint base."
+command -v xcape     >/dev/null 2>&1 || echo "Optional: sudo apt install xcape   (lets a lone modifier such as Super be the TVWCS hotkey)"
 [ -z "$missing" ] || echo "Missing packages:  sudo apt install$missing"
 
-CONF="${XDG_CONFIG_HOME:-$HOME/.config}/i3/config"
-if [ -f "$CONF" ] && grep -q 'tvwcs/tvwcs.conf' "$CONF"; then
+I3CFG="${XDG_CONFIG_HOME:-$HOME/.config}/i3/config"
+if [ -f "$I3CFG" ] && grep -q 'tvwcs/tvwcs.conf' "$I3CFG"; then
     echo "Your i3 config already includes tvwcs.conf."
+elif [ ! -f "$I3CFG" ]; then
+    echo "No i3 config found at $I3CFG — add the include line once i3 has created one."
 else
     echo
-    echo "Add this line to $CONF and reload i3 (Mod+Shift+R):"
-    echo "    include ~/.config/i3/tvwcs/tvwcs.conf"
+    echo "Add this line to $I3CFG and reload i3 (Mod+Shift+R):"
+    echo "    include $DEST/tvwcs.conf"
 fi

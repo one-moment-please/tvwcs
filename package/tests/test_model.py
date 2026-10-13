@@ -137,14 +137,14 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(self.AREA["x"]+self.AREA["width"]-(l.x+l.width),20)               # right
         self.assertEqual(l.quick_width+l.margin+l.guide_width,l.width)                     # same gap between the two
     def test_three_panels(self):
+        # Settings is a tab of the Applications window now: the extra argument is accepted and ignored.
         l=compute_layout(self.AREA,20,460,True,True)
-        self.assertTrue(l.options_open); self.assertEqual(l.options_width,l.quick_width)
-        self.assertEqual(l.quick_width+l.margin+l.guide_width+l.margin+l.options_width,l.width)   # equal gaps, nothing left over
-        self.assertEqual(self.AREA["x"]+self.AREA["width"]-(l.x+l.width),20)                     # same margin at the right edge
-        self.assertGreater(l.guide_width,l.quick_width)                                          # the guide still gets the middle
+        self.assertEqual(l.guide_width,l.width-l.quick_width-l.margin)                       # full middle, no third panel
+        self.assertEqual(self.AREA["x"]+self.AREA["width"]-(l.x+l.width),20)                 # same margin at the right edge
+        self.assertGreater(l.guide_width,l.quick_width)                                      # the guide still gets the middle
     def test_settings_panel_needs_the_guide(self):
         l=compute_layout(self.AREA,20,460,False,True)
-        self.assertFalse(l.options_open); self.assertEqual(l.width,460)
+        self.assertFalse(l.guide_open); self.assertEqual(l.width,460)
     def test_three_panels_on_a_small_screen(self):
         l=compute_layout({"x":0,"y":0,"width":1280,"height":720},20,460,True,True)
         self.assertGreaterEqual(l.guide_width,300)
