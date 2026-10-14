@@ -1,4 +1,4 @@
-"""System information for the Control Panel, read from /proc, /sys and a few commands. No GTK dependency.
+"""System information for Settings, read from /proc, /sys and a few commands. No GTK dependency.
 Each reader takes its text as an argument, so it can be tested with saved files."""
 from __future__ import annotations
 import glob, os, platform, re, shutil, socket

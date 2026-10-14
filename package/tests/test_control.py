@@ -1,4 +1,4 @@
-"""The Control Panel's readers: the output of pactl, bluetoothctl, nmcli, ip, the package managers and /proc, parsed
+"""The Settings app's readers: the output of pactl, bluetoothctl, nmcli, ip, the package managers and /proc, parsed
 from saved samples. No display, sound server, adapter or network needed."""
 import os, tempfile, unittest
 from pathlib import Path

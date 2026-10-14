@@ -46,6 +46,9 @@ DEFAULT_SETTINGS={
     "always_new_workspace":False,   # every app, launched or already open, opens in a workspace of its own
     "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
     "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
+    "quick_settings_button":True,   # the Quick Menu's ⚙ button, which opens the Settings app
+    "quick_close_button":True,      # the Quick Menu's ✕ button (Esc and Back close it too)
+    "quick_lock_button":False,      # a Lock button in the Quick Menu's power menu
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":"","show_menu":False},   # show_menu: open the Quick Menu at login
 }
@@ -85,7 +88,8 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints"):
+    for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
+                "quick_settings_button","quick_close_button","quick_lock_button"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     st=raw.get("startup")

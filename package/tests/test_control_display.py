@@ -1,4 +1,4 @@
-"""The Control Panel's Displays page without a display: xrandr and swaymsg output parsed from saved samples, the
+"""The Settings app's Displays page without a display: xrandr and swaymsg output parsed from saved samples, the
 arrangement kept when a resolution changes, the commands it would run, and the settings saved for the next login."""
 import json, tempfile, unittest
 from pathlib import Path

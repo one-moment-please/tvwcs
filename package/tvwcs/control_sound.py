@@ -1,4 +1,4 @@
-"""Sound for the Control Panel: outputs, inputs and their volume, through `pactl`. No GTK dependency.
+"""Sound for Settings: outputs, inputs and their volume, through `pactl`. No GTK dependency.
 
 `pactl` talks to PulseAudio and to PipeWire (through pipewire-pulse), so this covers every mainstream distribution.
 Inputs leave out the "Monitor of …" sources PulseAudio makes for every output: they are not microphones.

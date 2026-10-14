@@ -1,4 +1,4 @@
-"""Ethernet and Wi-Fi for the Control Panel. No GTK dependency.
+"""Ethernet and Wi-Fi for Settings. No GTK dependency.
 
 Changes go through NetworkManager's `nmcli`, which polkit lets the user at the screen use without a password.
 Without NetworkManager the panel still shows every interface, its addresses and the gateway (from `ip`), read-only."""

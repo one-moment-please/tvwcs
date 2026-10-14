@@ -1,4 +1,4 @@
-"""Running the command-line tools the Control Panel talks to. No GTK dependency.
+"""Running the command-line tools Settings talks to. No GTK dependency.
 
 Every tool runs with the C locale, so its output can be parsed whatever language the user reads, and every call
 returns a Result instead of raising: a missing tool, a timeout or a refusal is something to show, not a crash."""

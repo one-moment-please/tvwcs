@@ -1,4 +1,4 @@
-"""System actions offered by the System dialog; no GTK dependency.
+"""System actions offered by the Quick Menu's power menu; no GTK dependency.
 
 Power actions use systemd when it runs the system, else elogind's loginctl (Artix, Gentoo, Void, Devuan and others
 without systemd), else the plain commands (zzz, reboot, poweroff), which usually need root without either."""
@@ -22,6 +22,26 @@ SYSTEM_ACTIONS=(
     SystemAction("reboot","Reboot","system-reboot-symbolic","↻","Restart the computer now? Unsaved work in open applications may be lost."),
     SystemAction("shutdown","Shut down","system-shutdown-symbolic","⏻","Power off the computer now? Unsaved work in open applications may be lost."),
 )
+
+POWER_MENU=("lock","sleep","reboot","shutdown","logout")   # the power menu's order; lock and logout only when they apply
+DISPLAY_MANAGERS=("gdm","gdm3","lightdm","sddm","lxdm","xdm","slim","greetd","ly","entrance","emptty")
+
+def login_manager_installed(exists=os.path.exists, which=shutil.which):
+    """True when a login screen (display manager) is installed. Without one, logging out of i3 or sway only leaves a text
+    console, so the power menu offers Log out only with one."""
+    if exists("/etc/systemd/system/display-manager.service"): return True
+    try:
+        with open("/etc/X11/default-display-manager",encoding="utf-8") as f:
+            if f.read().strip(): return True
+    except OSError: pass
+    return any(which(name) for name in DISPLAY_MANAGERS)
+
+def power_menu(settings=None, display_manager=None):
+    """The actions the Quick Menu's power menu offers, in order."""
+    settings=settings or {}
+    dm=login_manager_installed() if display_manager is None else display_manager
+    by_id={a.id:a for a in SYSTEM_ACTIONS}
+    return [by_id[i] for i in POWER_MENU if (i!="lock" or settings.get("quick_lock_button")) and (i!="logout" or dm)]
 
 def _sway(env,which): return bool(env.get("SWAYSOCK")) and bool(which("swaymsg"))
 

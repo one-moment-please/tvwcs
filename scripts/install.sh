@@ -78,12 +78,12 @@ install_files() {
     [ -f "$LAUNCHER" ] && cp "$LAUNCHER" "$DEST/"
 }
 
-# The Control Panel's launcher, so it is listed with the other applications (in the guide's System category). Its
+# The Settings app's launcher, so it is listed with the other applications (in the guide's System category). Its
 # Exec lines (the panel, and an action for each of its pages) run this install's tvwcs by full path, quoted; a path
 # the .desktop format would need escaped is skipped.
 install_launcher() {
     [ -f "$LAUNCHER" ] || return 0
-    case "$DEST" in *'$'*|*'`'*|*'\'*) echo "Skipped the Control Panel's menu entry: $DEST has a character a .desktop file cannot hold. Run: '$DEST/bin/tvwcs' control" >&2; return 0 ;; esac
+    case "$DEST" in *'$'*|*'`'*|*'\'*) echo "Skipped the Settings app's menu entry: $DEST has a character a .desktop file cannot hold. Run: '$DEST/bin/tvwcs' settings" >&2; return 0 ;; esac
     APPS=${XDG_DATA_HOME:-$HOME/.local/share}/applications
     mkdir -p "$APPS"
     P="$DEST/bin/tvwcs" awk '/^Exec=tvwcs / { sub(/^Exec=tvwcs/, "Exec=\"" ENVIRON["P"] "\""); } { print }' "$LAUNCHER" > "$APPS/com.tvwcs.ControlPanel.desktop"
@@ -158,7 +158,7 @@ pkg() {
         gentoo:i3) echo x11-wm/i3 ;;                         gentoo:xdotool) echo x11-misc/xdotool ;;
         arch:xinit) echo xorg-xinit ;;                       fedora:xinit) echo xorg-x11-xinit ;;   gentoo:xinit) echo x11-apps/xinit ;;
         *:gtk) echo "PyGObject GTK4" ;;
-        # the Control Panel's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
+        # the Settings app's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
         debian:pactl|fedora:pactl|suse:pactl|void:pactl|alpine:pactl) echo pulseaudio-utils ;;
         arch:pactl) echo libpulse ;;                         gentoo:pactl) echo media-libs/libpulse ;;
         arch:bluetoothctl) echo bluez-utils ;;               gentoo:bluetoothctl) echo net-wireless/bluez ;;  *:bluetoothctl) echo bluez ;;
@@ -247,12 +247,12 @@ python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || need "$(p
 command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg i3)" "i3: the window manager TVWCS runs in (required)"
 command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
 command -v pipewire >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1 || need "$(pkg pipewire)" "PipeWire: sound, with its PulseAudio layer (no sound server is installed)"
-command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Control Panel: sound"
+command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Settings: sound"
 if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then need "$(pkg unclutter)" "hides the mouse pointer after 3 seconds without moving (i3)"; fi
-if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Control Panel: displays (sway has its own)"; fi
-command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Control Panel: Bluetooth"
-command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Control Panel: network (Ethernet and Wi-Fi)"
-python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Control Panel: the terminal page"
+if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Settings: displays (sway has its own)"; fi
+command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth"
+command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)"
+python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page"
 start_pipewire() {   # PipeWire just installed: start it in a session that runs now (systemd starts it by itself from the next log-in)
     command -v pipewire >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1 || return 0
     if systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1; then

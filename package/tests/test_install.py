@@ -41,8 +41,8 @@ class InstallTests(unittest.TestCase):
     def test_lists_the_control_panel_with_the_applications(self):
         self.run_install()
         entry=(self.home/".local"/"share"/"applications"/"com.tvwcs.ControlPanel.desktop").read_text()
-        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" control\n',entry)   # quoted: this home folder has a space
-        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" control network\n',entry); self.assertNotIn("Exec=tvwcs",entry)
+        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" settings\n',entry)   # quoted: this home folder has a space
+        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" settings network\n',entry); self.assertNotIn("Exec=tvwcs",entry)
         self.assertIn("Categories=Settings;System;",entry); self.assertTrue((self.dest/"com.tvwcs.ControlPanel.desktop").is_file())
     def test_adds_the_include_line_when_allowed_and_only_once(self):
         self.write_i3("set $mod Mod4\n")
@@ -241,8 +241,8 @@ class InstallTests(unittest.TestCase):
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
         out=self.converse(["y","n","n"],**env)   # install; no i3 config; no power rule
         self.assertRegex(out,r"python3-gi gir1\.2-gtk-4\.0 +GTK 4 for Python: TVWCS's windows \(required\)")
-        self.assertRegex(out,r"gir1\.2-vte-3\.91 +Control Panel: the terminal page")
-        self.assertNotIn("Control Panel: sound",out); self.assertNotIn("xdotool",out)   # installed here, so not listed
+        self.assertRegex(out,r"gir1\.2-vte-3\.91 +Settings: the terminal page")
+        self.assertNotIn("Settings: sound",out); self.assertNotIn("xdotool",out)   # installed here, so not listed
         self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91\n",(bin_/"apt").read_text())
         (bin_/"unclutter").unlink()
         self.assertRegex(self.converse(["n","n","n"],**env),r"unclutter-xfixes +hides the mouse pointer after 3 seconds")

@@ -75,13 +75,13 @@ You can now leave the TV computer. The rest happens from the other computer.
 
 4. Answer the installer's questions. For a TV, these are the usual answers:
    - **Install one now? 1) i3 with Xorg (recommended)  2) sway  3) neither:** press Enter for **i3**. It installs i3 with Xorg and what TVWCS needs alongside it. sudo asks for your password.
-   - **Missing packages … Install them now?** Enter (yes). The list says what each one is for: GTK for TVWCS's windows, PipeWire for sound, and the Control Panel's tools for sound, displays, Bluetooth, the network and its terminal.
+   - **Missing packages … Install them now?** Enter (yes). The list says what each one is for: GTK for TVWCS's windows, PipeWire for sound, and the Settings app's tools for sound, displays, Bluetooth, the network and its terminal.
    - **There is no i3 config yet. Create one from the standard template?** Enter (yes), then choose the key for `$mod` and your keyboard layout.
    - **Add TVWCS to your i3 config?** Enter (yes).
    - **Let TVWCS sleep, reboot and shut down without asking for your password?** your choice. Yes is handy with a remote.
    - **There is no login screen on this computer. Log in as tv automatically when it starts, and start i3?** `y`. Anyone who switches the computer on gets your session without a password, which suits a TV. When the installer finishes, i3 and TVWCS start on the TV's screen straight away, and from then on whenever the computer starts.
 
-That is all. The TV now shows TVWCS, and the **Control Panel** is in its applications guide under **System**.
+That is all. The TV now shows TVWCS. The Quick Menu's ⚙ button opens **Settings**, which is also in the applications guide under **System**.
 
 ## 5. Optional: sign in with a key instead of a password
 
@@ -92,7 +92,7 @@ A key is safer than a password, and you are not asked for a password each time.
    - **macOS and Linux:** `ssh-copy-id tv@livingroom.local`
    - **Windows (PowerShell):** `type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh tv@livingroom.local "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"`
 3. Check that `ssh tv@livingroom.local` no longer asks for your password.
-4. On the TV, open **Control Panel › System information**. Under **Remote access (SSH)**, set **Sign in with** to **Keys only**. The Control Panel refuses this while no key has been added for your user, so you cannot lock yourself out.
+4. On the TV, open **Settings › System information**. Under **Remote access (SSH)**, set **Sign in with** to **Keys only**. Settings refuses this while no key has been added for your user, so you cannot lock yourself out.
 
 The same section turns the SSH server on and off, and shows the command to connect with, the user, the computer's local name and its IP addresses.
 
@@ -102,4 +102,4 @@ The same section turns the SSH server on and off, and shows the command to conne
 - **`Connection refused`:** the SSH server is not running. On the TV computer, run `sudo systemctl enable --now ssh`.
 - **The installer asks no questions:** you signed in without `-t`. Sign in again with `ssh -t`.
 - **The TV still shows a text log-in after the install:** someone was logged in on that screen during the install. Log out there (`exit`), or restart the computer (`sudo reboot`).
-- **No sound:** PipeWire needs no setup: Debian starts it at every log-in. If there is still no sound, restart the computer once (`sudo reboot`). Then choose the output (such as HDMI) on the Control Panel's **Sound** page.
+- **No sound:** PipeWire needs no setup: Debian starts it at every log-in. If there is still no sound, restart the computer once (`sudo reboot`). Then choose the output on the **Sound** page of Settings. An HDMI output the sound card is not using yet is listed there too; choosing it switches the card over.

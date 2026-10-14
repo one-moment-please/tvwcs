@@ -2,23 +2,28 @@
 
 ## Unreleased
 
-**Control Panel**
-- New application, `tvwcs control` (listed under System in the applications guide): Sound, Displays, Bluetooth, Software updates, System information, Terminal and Network as vertical tabs on the left, in the TVWCS Metro style and at its interface size, and usable with a D-pad alone.
+**Settings app**
+- New application, `tvwcs settings` (opened by the Quick Menu's ⚙ and listed under System in the applications guide; `tvwcs control` still works): Options, Sound, Displays, Bluetooth, Software updates, System information, Terminal and Network as vertical tabs on the left, in the TVWCS Metro style and at its interface size, and usable with a D-pad alone.
 - Displays: resolution and refresh rate of each display; with several, which are on, how they are arranged and (X11) which is primary, through `xrandr` or `swaymsg`. Changes that can blank a screen go back after 15 seconds unless kept, and kept settings are applied again when TVWCS starts with the same displays.
-- Sound: volume and mute of the output and the input, and which output and microphone to use (sound already playing follows), through `pactl` (PipeWire or PulseAudio).
+- Options: TVWCS's own settings, moved here from the applications guide's ⚙ view: the Quick Menu's buttons, interface size, behavior, what opens at login, hotkeys, application hotkeys and TVWCS's own updates. Each change is saved and the running TVWCS reads it again at once. The power buttons are no longer here; they are in the Quick Menu's power menu.
+- Sound: volume and mute of the output and the input, and which output and microphone to use (sound already playing follows), through `pactl` (PipeWire or PulseAudio). Outputs of a sound card's other profiles are listed too (often HDMI, which PipeWire only shows once the card is switched to it), and choosing one switches the card over. With no sound card at all, it names the firmware packages to install.
 - Bluetooth: on and off, search, pair, connect, disconnect and forget devices, with battery levels, through `bluetoothctl`.
 - Software updates: waiting updates from apt, dnf, pacman, zypper, xbps or apk and from Flatpak; installs them with the output on screen, asking for the sudo password in an on-screen dialog when needed; offers a restart when one is needed.
 - System information: computer, processor, memory, graphics (named from the kernel driver without `lspci`), displays, every drive in use, battery and versions; and remote access: the SSH server on or off (or installed), passwords or keys only (refused while the user has no key), and the command, user, local name and IP addresses to connect with.
 - Terminal: your shell in a full terminal (VTE for GTK 4), or a one-command-at-a-time console without VTE.
 - Network: Ethernet and Wi-Fi status, connect and disconnect, Wi-Fi on and off, join (with a password) and forget networks, and IP settings, through NetworkManager's `nmcli`; shown read-only from `ip` without it.
 - Text is typed on a keyboard or on an on-screen keyboard driven by the D-pad.
-- `install.sh` installs the Control Panel's launcher (with an action for each page) and lists the optional tools its pages use.
-
-**Installer**
-- New guide, `docs/INSTALL-DEBIAN.md`: Debian's network installer with no desktop, SSH and Avahi, then TVWCS installed over SSH from another computer.
 - Terminal: coming in from the tabs lands on the buttons above the terminal, and Esc or Back inside the terminal goes back up to them, so they can always be reached with a remote. New **Tab** and **Esc** buttons type those keys into the shell.
 - Network: Wi-Fi networks are searched for only when you choose **Search for networks**; the page no longer makes the adapter scan in the background. Each connection has an **IP settings** row that shows whether it uses DHCP and opens its settings: a fixed IP address, default gateway and DNS servers (filled in from the ones in use), or back to automatic (DHCP).
 - Software updates: when downloading the package lists or installing updates finishes, the page says so, with the time and what the check found ("Everything is up to date." or how many updates are available). `apt-get update` prints no "Done" when it is not run in a terminal, so the log used to end at "Reading package lists...".
+- `install.sh` installs the Settings app's launcher (with an action for each page) and lists the optional tools its pages use.
+
+**Quick Menu**
+- At the top: ⚙ opens Settings and ⏻ opens a power menu with Sleep, Reboot and Shut down, plus Log out when a login screen is installed and Lock when it is switched on in Options. ⚙ and ✕ can be hidden in Options.
+- The applications guide no longer has the ⚙ button that switched it to TVWCS's settings.
+
+**Installer**
+- New guide, `docs/INSTALL-DEBIAN.md`: Debian's network installer with no desktop, SSH and Avahi, then TVWCS installed over SSH from another computer.
 - The mouse pointer hides after 3 seconds without moving and comes back when it moves: sway does it itself, and in i3 the TVWCS config runs `unclutter`, which `install.sh` offers to install.
 - `install.sh` lists every missing package with what it is for (including PipeWire, with `pipewire-pulse` and WirePlumber, when no sound server is installed) and offers to install them all with the package manager (on a terminal, on a known distribution). On Debian this adds `dbus-user-session`, which WirePlumber needs on a minimal install, and PipeWire is started for the current user right away; systemd starts it at every log-in after that. Without systemd, the TVWCS i3/sway config starts PipeWire, WirePlumber and `pipewire-pulse` when they are not running.
 - With neither i3 nor sway installed, `install.sh` offers to install one with the package manager (i3 with Xorg, `startx`, `xdotool` and `xrandr`, recommended; or sway), then sets it up and offers the automatic login.

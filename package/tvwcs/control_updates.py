@@ -1,4 +1,4 @@
-"""Software updates for the Control Panel: the distribution's package manager, plus Flatpak. No GTK dependency.
+"""Software updates for Settings: the distribution's package manager, plus Flatpak. No GTK dependency.
 
 Listing the waiting updates never needs root. Installing them does: the panel runs the `install` command through
 sudo or doas (see privilege.py and ui_control.py), and Flatpak's own update as the user."""

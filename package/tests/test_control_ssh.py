@@ -1,4 +1,4 @@
-"""The Control Panel's SSH section without an SSH server: reading sshd_config as sshd does, counting keys, and the
+"""The Settings app's SSH section without an SSH server: reading sshd_config as sshd does, counting keys, and the
 commands it would run, including that keys only is refused when it would lock everyone out."""
 import subprocess, tempfile, unittest
 from pathlib import Path

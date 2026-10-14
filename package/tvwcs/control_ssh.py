@@ -1,4 +1,4 @@
-"""SSH for the Control Panel: whether the SSH server runs, whether it takes passwords or only keys, and how to reach
+"""SSH for Settings: whether the SSH server runs, whether it takes passwords or only keys, and how to reach
 this computer from another one (its local name, addresses and user). No GTK dependency.
 
 Changing anything needs root, so this module only builds the commands; the panel runs them through sudo or doas.
@@ -131,7 +131,7 @@ def service_argv(s, on):
 def key_only_problem(s):
     """Why keys only must not be switched on now, or ""."""
     if not s.dropins:
-        return (f"This computer's {SSH_DIR}/sshd_config does not read {SSH_DIR}/sshd_config.d, so the Control Panel cannot change "
+        return (f"This computer's {SSH_DIR}/sshd_config does not read {SSH_DIR}/sshd_config.d, so Settings cannot change "
                 "how SSH signs in. Set PasswordAuthentication no in sshd_config yourself.")
     if s.keys==0:
         return (f"No SSH key has been added for {s.user} yet, so with passwords off nobody could sign in. On the other computer, "
@@ -142,7 +142,7 @@ def passwords_argv(s, allow, ssh_dir=SSH_DIR):
     """Write the drop-in, check the whole configuration with sshd -t (taking the drop-in out again if sshd rejects it)
     and reload the server when it runs."""
     value="yes" if allow else "no"
-    text=(f"# Written by the TVWCS Control Panel (System information > SSH). Delete this file to undo it.\n"
+    text=(f"# Written by TVWCS Settings (System information > SSH). Delete this file to undo it.\n"
           f"PasswordAuthentication {value}\nKbdInteractiveAuthentication {value}\n")
     reload=f"systemctl reload-or-restart {s.unit}.service 2>/dev/null || true" if s.unit and s.active else "true"
     script=('set -e; d="$1"; f="$d/$2"; mkdir -p "$d"; printf "%s" "$3" > "$f.new"; mv "$f.new" "$f"; chmod 644 "$f"; '

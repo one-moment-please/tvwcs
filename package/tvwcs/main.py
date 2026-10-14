@@ -68,7 +68,7 @@ class TVWCSApp(Gtk.Application):
         threading.Thread(target=self._restore_displays,daemon=True).start()
     @staticmethod
     def _restore_displays():
-        """The display settings kept in the Control Panel: xrandr and sway forget them at log-out."""
+        """The display settings kept in Settings: xrandr and sway forget them at log-out."""
         from tvwcs import control_display
         problem=control_display.restore()
         if problem: print(f"Could not apply the saved display settings: {problem}",file=sys.stderr)
@@ -156,7 +156,7 @@ class TVWCSApp(Gtk.Application):
         if visible: self.show_panels(guide,False,focus="guide" if guide else "quick"); return False
         self._fullscreen=self.wm.fullscreen_windows()   # restored when TVWCS hides (see hide_window)
         self.wm.focus_output_under_mouse(); self.wm.leave_fullscreen(); self.wm.move_tvwcs_to_current_workspace(); self.refresh_data(rebuild=False)
-        w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False; w.apps_view="applications"   # always opens on the guide
+        w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False
         self._update_layout(guide,False,focus_output=True)
         w.set_default_size(self.layout.width,self.layout.height); w._build(); w.present(); self.apply_geometry()
         w.focus_pane_soon("guide" if guide else "quick")
@@ -169,10 +169,10 @@ class TVWCSApp(Gtk.Application):
         w.set_panels(guide,options); w.set_default_size(self.layout.width,self.layout.height); self.apply_geometry()
         if focus: w.focus_pane_soon(focus)
     def apply_scale(self):
-        """The interface size changed: rebuild everything at the new size; the Applications pane stays on Settings."""
+        """The interface size changed (in Settings > Options): rebuild everything at the new size."""
         set_scale(self.scale_factor); w=self.window
         self._update_layout(w.guide_open,w.options_open,focus_output=False)
-        w.set_default_size(self.layout.width,self.layout.height); w._build(); self.apply_geometry(); w.focus_pane_soon("guide")
+        w.set_default_size(self.layout.width,self.layout.height); w._build(); self.apply_geometry(); w.focus_pane_soon("guide" if w.guide_open else "quick")
 
     # ---------------------------------------------------------- open windows and workspaces
     def workspace_entries(self): return build_entries(self.wm.windows(),self.wm.workspaces(),self.match_application_window)
@@ -419,6 +419,21 @@ class TVWCSApp(Gtk.Application):
         for line in lines:
             parts=line.split()
             if len(parts)==2 and parts[0]=="launch": self.launch_by_hotkey(parts[1])
+            elif parts==["reload"]: self.reload_options()
+            elif parts[:1]==["restart"]: self.restart(Path(line.split(" ",1)[1].strip()) if len(parts)>1 else None)
+    def reload_options(self):
+        """The Settings app changed TVWCS's options (the Options page): read them again, and apply the interface size
+        and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
+        old=self.store.settings["scale"]; self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
+        self.apply_hotkeys()
+        if self.window is None: return
+        if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
+        if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
+    def open_settings(self):
+        """The Quick Menu's ⚙: the Settings app (a separate application, so it opens as a window of its own)."""
+        self.hide_window()
+        try: subprocess.Popen([str(LAUNCHER),"settings"],start_new_session=True,stdin=subprocess.DEVNULL)
+        except OSError as exc: self.notify_message(f"Could not open Settings: {exc}")
     def launch_by_hotkey(self,profile_id):
         profile=self.store.get(profile_id)
         if profile is None: self.apply_hotkeys(); return   # deleted since the hotkeys were written
@@ -460,9 +475,9 @@ def main():
     if args==["guide"]: return send_signal(signal.SIGUSR2)
     if args==["stop"]: return send_signal(signal.SIGTERM)
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
-    if args[:1]==["control"] and len(args)<=2:   # the Control Panel, a separate application (optionally opened on one page)
-        from tvwcs.ui_control import main as control_panel
-        return control_panel(args[1:])
-    if args: print("Usage: tvwcs [toggle|guide|stop|launch PROFILE_ID|control [PAGE]]",file=sys.stderr); return 2
+    if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
+        from tvwcs.ui_control import main as settings_app
+        return settings_app(args[1:])
+    if args: print("Usage: tvwcs [toggle|guide|stop|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())
