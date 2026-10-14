@@ -4,20 +4,27 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
 
 <table>
   <tr>
-    <th width="30%">Quick Menu</th>
-    <th width="70%">Quick Menu + Applications</th>
+    <th width="25%">Quick Menu</th>
+    <th width="75%">Quick Menu + Applications</th>
   </tr>
   <tr>
     <td valign="top"><img src="assets/quick-menu.png" alt="The TVWCS Quick Menu" width="100%"></td>
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications guide open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">The Quick Menu: a full-height column at the left of the screen. A search field sits at the top. Under <b>Open applications</b>, Brave has its own workspace, and a workspace shared by three apps is shown as one entry (<i>Gnome terminal + Files + …</i>, 3 apps). Under <b>Favorites</b> are pinned apps, some with channel numbers (003, 011). The ⋮ button on each row opens that row's options. The key hints are at the bottom.</td>
-    <td valign="top">The Applications guide open to the right of the Quick Menu. <b>Your channels</b> lists every profile that has a channel number. <b>Application guide</b> lists every installed app by category (Media, Internet, …). Each row shows the app's logo, channel, name and description, then a favorite star and Edit. <i>Jellyfin Media Player profile 2</i> is a second launch profile of Jellyfin, indented under it with a ↳. The button at the top right opens Settings.</td>
+    <td valign="top">The Quick Menu, a full-height column at the left of the screen. The red ✕ closes it and ☰ opens Applications. Below the search field, <b>Open applications</b> lists what is running by workspace: Screenshot has a workspace of its own, while <i>Gnome terminal + Files</i> is one workspace holding 3 apps. <b>Favorites</b> are pinned apps, two of them with channel numbers (003, 011). Pressing ← on a row opens its options. The key hints are at the bottom.</td>
+    <td valign="top">The Applications guide open beside the Quick Menu. <b>Channel Guide</b> lists the 4 profiles that have a channel number. <b>All applications</b> lists every installed app by category (Media, Internet, …); Enter folds a category. Each row shows the app's logo, channel, name and description, then a favorite star (★ when it is a favorite) and an edit button. <i>Jellyfin Media Player profile 2</i> is a second launch profile of Jellyfin, indented under it with a ↳. The ⚙ button at the top right switches to Settings.</td>
+  </tr>
+  <tr>
+    <th colspan="2">Settings</th>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="assets/settings.png" alt="The Settings view of the Applications pane" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">Settings, in the same pane (the button at the top right goes back to the guide). The left column holds Display, Behavior, At login and Updates; each row shows its current value on the right, and Enter changes it. The right column holds the three hotkey sets: keyboard (tap Super for the Quick Menu), remote (F2 and Shift+F2) and gamepad (not set). The System actions sit in a grid underneath. This Quick Menu has its options buttons hidden, one of the Behavior settings.</td>
   </tr>
 </table>
-
-<sub>The screenshots are from an earlier version, so some header buttons look different now.</sub>
 
 ## Requirements
 
