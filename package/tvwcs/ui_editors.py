@@ -3,20 +3,22 @@ from __future__ import annotations
 import uuid
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gdk, Gtk
 
 from tvwcs.model import (DIALOG_PREFIX, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAX_DESCRIPTION, PIN_SCOPE_LABELS, PIN_SCOPES,
                    LaunchProfile, profile_detail)
+from tvwcs.hotkeys import HotkeyCapture, describe
 from tvwcs.pinlock import make_hash, valid_pin
-from tvwcs.widgets import S, clear_box, section_title
+from tvwcs.widgets import S, clear_box, held_modifiers, section_title
 
 def _page(window):
     box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); box.add_css_class("tvwcs-root")
     box.set_margin_top(S(18)); box.set_margin_bottom(S(18)); box.set_margin_start(S(20)); box.set_margin_end(S(20)); window.set_child(box); return box
 
 class ProfileEditor(Gtk.Window):
-    def __init__(self, app, existing, application):
-        super().__init__(application=app,title=f"{DIALOG_PREFIX}Launch Profile",modal=True,transient_for=app.window)
+    def __init__(self, app, existing, application, parent=None):
+        super().__init__(application=app,title=f"{DIALOG_PREFIX}Launch Profile",modal=True,transient_for=parent or app.window)
         self.app=app; self.existing=existing; self.application=application
         default=app.default_profile(application) if application else None
         self.primary=existing is not None and default is not None and default.id==existing.id   # the app's main profile
@@ -43,6 +45,16 @@ class ProfileEditor(Gtk.Window):
         self.workspace_check.set_active(bool(existing) and existing.launch_mode==LAUNCH_NEW_WORKSPACE); form.append(self.workspace_check)
         self._hint(form,"Unchecked, the app opens tiled in the current workspace. You can also flip this from the icon beside the app's name in the Quick Menu.")
         self._hint(form,"Leave the command empty to use the app's normal Linux launcher. Custom commands are split into arguments and run without a shell.")
+        # ---- Hotkey
+        form.append(section_title("HOTKEY"))
+        self.hotkey=existing.hotkey if existing else ""; self._capture=None
+        hk_row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6))
+        self.hotkey_button=Gtk.Button(); self.hotkey_button.set_hexpand(True); self.hotkey_button.connect("clicked",lambda *_:self._start_capture()); hk_row.append(self.hotkey_button)
+        clear=Gtk.Button(label="Clear"); clear.connect("clicked",lambda *_:self._set_hotkey("")); hk_row.append(clear); form.append(hk_row)
+        self._show_hotkey()
+        self._hint(form,"A key or key combination that launches this profile from anywhere. A key can only do one thing: taking one that is already in use asks first. All application hotkeys are listed in Settings.")
+        key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        key.connect("key-pressed",self._capture_press); key.connect("key-released",self._capture_release); self.add_controller(key)
         # ---- PIN protection
         form.append(section_title("PIN PROTECTION")); has_pin=bool(existing and existing.pin_hash)
         self.current_pin=self.remove_check=None
@@ -61,6 +73,39 @@ class ProfileEditor(Gtk.Window):
             delete=Gtk.Button(label="Delete profile"); delete.connect("clicked",self._delete); buttons.append(delete)
         cancel=Gtk.Button(label="Cancel"); cancel.connect("clicked",lambda *_:self.close()); buttons.append(cancel)
         save=Gtk.Button(label="Save"); save.add_css_class("active"); save.connect("clicked",self._save); buttons.append(save)
+    def discard(self): self.close()   # nothing is stored until Save
+
+    # ---- choosing the hotkey: the next key (or combination) pressed while the button says so
+    def _show_hotkey(self):
+        self.hotkey_button.set_label("Press a key or combination… (Esc cancels)" if self._capture else f"Hotkey: {describe(self.hotkey)}  (click to change)")
+    def _start_capture(self): self._capture=HotkeyCapture(); self._show_hotkey()
+    def _capture_press(self,_c,keyval,_code,state):
+        if self._capture is None: return False
+        held=held_modifiers(state)
+        if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back) and not held: self._capture=None; self._show_hotkey(); return True
+        spec=self._capture.press(Gdk.keyval_name(keyval) or "",held)
+        if spec: self._captured(spec)
+        return True
+    def _capture_release(self,_c,keyval,_code,_state):
+        if self._capture is None: return
+        spec=self._capture.release(Gdk.keyval_name(keyval) or "")
+        if spec: self._captured(spec)
+    def _captured(self,spec):
+        self._capture=None; self._show_hotkey()
+        skip=("profile",self.existing.id) if self.existing else None
+        other=self.app.store.hotkey_owner(spec,skip)
+        if other is None: self._set_hotkey(spec); return
+        taken=self.app.store.owner_label(other)
+        d=Gtk.MessageDialog(application=self.app,transient_for=self,destroy_with_parent=True,modal=True,message_type=Gtk.MessageType.WARNING,buttons=Gtk.ButtonsType.NONE,
+                            text="Hotkey already in use",secondary_text=f"{describe(spec)} is already the hotkey for “{taken}”. Use it for this profile instead? "
+                                                                          f"When you save, “{taken}” will no longer have a hotkey.")
+        d.add_button("Cancel",Gtk.ResponseType.CANCEL); d.add_button("Use it here",Gtk.ResponseType.ACCEPT); d.set_default_response(Gtk.ResponseType.CANCEL)
+        def answered(dialog,response):
+            dialog.destroy()
+            if response==Gtk.ResponseType.ACCEPT: self._set_hotkey(spec)
+        d.connect("response",answered); d.present()
+    def _set_hotkey(self,spec): self.hotkey=spec; self._capture=None; self._show_hotkey()
+
     def _field(self,parent,label,value):
         wrap=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); lab=Gtk.Label(label=label); lab.set_xalign(0); wrap.append(lab); entry=Gtk.Entry(); entry.set_text(value); wrap.append(entry); parent.append(wrap); return entry
     def _secret(self,parent,label):
@@ -94,20 +139,20 @@ class ProfileEditor(Gtk.Window):
             profile=LaunchProfile(id=self.existing.id if self.existing else str(uuid.uuid4()),desktop_id=self.existing.desktop_id if self.existing else self.application.desktop_id,
                                   name=self.name_entry.get_text().strip(),command=self.command_entry.get_text().strip(),channel=channel,
                                   favorite=self.existing.favorite if self.existing else False,launch_mode=mode,
-                                  desktop_action=self.action_ids[self.action_dropdown.get_selected()][0],pin_hash=pin_hash,pin_scope=scope,description=description)
-            self.app.store.set_profile(profile)
+                                  desktop_action=self.action_ids[self.action_dropdown.get_selected()][0],pin_hash=pin_hash,pin_scope=scope,description=description,hotkey=self.hotkey)
+            self.app.store.set_profile(profile); self.app.apply_hotkeys()
             self.app.refresh_data(rebuild=True); self.close()
         except (ValueError,TypeError) as exc: self.error.set_text(str(exc))
     def _delete(self,*_):
         try: self._authorise()
         except ValueError as exc: self.error.set_text(str(exc)); return
-        self.app.store.delete(self.existing.id); self.app.refresh_data(rebuild=True); self.close()
+        self.app.store.delete(self.existing.id); self.app.apply_hotkeys(); self.app.refresh_data(rebuild=True); self.close()
 
 class ApplicationProfilesWindow(Gtk.Window):
     def __init__(self, app, desktop_id):
         application=app.catalogue.by_id().get(desktop_id)
         super().__init__(application=app,title=f"{DIALOG_PREFIX}{application.name if application else desktop_id}",modal=True,transient_for=app.window)
-        self.app=app; self.desktop_id=desktop_id; self.application=application
+        self.app=app; self.desktop_id=desktop_id; self.application=application; self._discarded=False
         self.add_css_class("tvwcs-window"); self.set_default_size(S(540),S(460)); self.set_resizable(False)
         box=_page(self)
         title=Gtk.Label(label=f"Application profiles · {application.name if application else desktop_id}"); title.set_xalign(0); title.add_css_class("brand"); box.append(title)
@@ -117,7 +162,7 @@ class ApplicationProfilesWindow(Gtk.Window):
         self.description_entry.set_placeholder_text(default_text or "No description in the application's .desktop file")
         self.description_entry.connect("activate",lambda *_:self._save_description()); box.append(self.description_entry)
         hint=Gtk.Label(label="Shown beside the application's name in the Guide. Leave empty to use the description from its .desktop file (above). Press Enter or close this window to keep a change."); hint.set_xalign(0); hint.set_wrap(True); hint.add_css_class("muted"); box.append(hint)
-        self.connect("close-request",lambda *_:(self._save_description(),False)[1])
+        self.connect("close-request",lambda *_:(self._discarded or self._save_description(),False)[1])
         scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); box.append(scroll)
         self.rows=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); scroll.set_child(self.rows); self._refresh_rows()
         buttons=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); buttons.set_halign(Gtk.Align.END); box.append(buttons)
@@ -131,10 +176,13 @@ class ApplicationProfilesWindow(Gtk.Window):
             edit=Gtk.Button(label="Edit"); edit.connect("clicked",lambda _b,p=profile:self._edit(p)); row.append(edit); self.rows.append(row)
     def _add(self,*_):
         if not self.application: return
-        editor=ProfileEditor(self.app,None,self.application); editor.name_entry.set_text(f"{self.application.name} profile {len(self.app.store.for_app(self.desktop_id))+1}")
+        editor=ProfileEditor(self.app,None,self.application,parent=self); editor.name_entry.set_text(f"{self.application.name} profile {len(self.app.store.for_app(self.desktop_id))+1}")
         editor.present(); editor.connect("close-request",lambda *_: (self._refresh_after_editor(),False)[1])
     def _edit(self,profile):
-        editor=ProfileEditor(self.app,profile,self.application); editor.present(); editor.connect("close-request",lambda *_: (self._refresh_after_editor(),False)[1])
+        editor=ProfileEditor(self.app,profile,self.application,parent=self); editor.present(); editor.connect("close-request",lambda *_: (self._refresh_after_editor(),False)[1])
+    def discard(self):
+        """Close without keeping an edited description (TVWCS was clicked while this was open)."""
+        self._discarded=True; self.close()
     def _save_description(self):
         text=" ".join(self.description_entry.get_text().split())
         if text!=self.app.store.app_descriptions.get(self.desktop_id,""):

@@ -8,8 +8,8 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
 from tvwcs import __version__, selfupdate
-from tvwcs.hotkeys import ACTIONS, DEFAULT_HOTKEYS, DEVICE_LABELS, DEVICES, describe, used_by
-from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES
+from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
+from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, scale_choices
 from tvwcs.system_actions import SYSTEM_ACTIONS
 from tvwcs.widgets import S, muted_label, section_title
 
@@ -65,9 +65,10 @@ def build_settings_panel(win, embedded=False):
     put(section_title("DISPLAY"))
     def pick_scale(key):
         settings["scale"]=key; store.save_settings(); app.apply_scale()   # rebuilds this panel
+    has_4k=app.has_4k_display()
     row("Interface size",SCALE_LABELS[settings["scale"]],
-        lambda:win.choose_option("Interface size",list(SCALE_LABELS.items()),settings["scale"],pick_scale),
-        "Desktop for a monitor at arm's length; 10-foot for a TV across the room; 10-foot 4K for a 4K TV.")
+        lambda:win.choose_option("Interface size",scale_choices(settings["scale"],has_4k),settings["scale"],pick_scale),
+        "Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
 
     # ---- Behaviour
     put(section_title("BEHAVIOR"))
@@ -76,6 +77,8 @@ def build_settings_panel(win, embedded=False):
             settings[key]=not settings[key]; store.save_settings(); return _on_off(settings[key])
         return go
     row("Close when clicking outside",_on_off(settings["close_on_click_outside"]),toggle("close_on_click_outside"))
+    row("Always open apps in a new workspace",_on_off(settings["always_new_workspace"]),toggle("always_new_workspace"),
+        "On: every app, whether you launch it or select it while it is open, gets a workspace of its own, whatever its profile says. An open app's options can still tile it into the current workspace.")
     row("Open running apps in a new workspace",_on_off(settings["open_in_new_workspace"]),toggle("open_in_new_workspace"),
         "On: selecting an open app gives it a workspace of its own. Off: it is tiled into the current workspace. Each app's options can open it the other way, and apps set to always launch in a new workspace are not affected.")
     row("Hide the options buttons in the Quick Menu",_on_off(settings["hide_options_buttons"]),toggle("hide_options_buttons"),
@@ -126,26 +129,34 @@ def build_settings_panel(win, embedded=False):
 
     # ---- Hotkeys (second column)
     lane[0]=1
-    # One set of hotkeys per input device; each can show the Quick Menu and open Applications.
-    labels={"menu":"Quick Menu","guide":"Applications"}; values={}
-    def slot_name(device,name): return f"{DEVICE_LABELS[device]}: {labels[name]}"
+    # One set of hotkeys per input device; each can show the Quick Menu and open Applications, and the remote can toggle
+    # fullscreen. A key does one thing: taking one that is already in use (here or by an application) asks first.
+    values={}
+    def slot_name(device,name): return f"{DEVICE_LABELS[device]}: {ACTION_LABELS[name]}"
+    def show_keys():   # taking a key can clear another slot or an application's hotkey, so every value is refreshed
+        for (device,name),value in values.items(): value.set_text(describe(settings["hotkeys"][device][name]))
+        app_keys_value.set_text(app_keys_label())
     def change(device,name):
-        def got(spec):
-            other=used_by(settings["hotkeys"],spec,(device,name)) if spec else None
-            if other: app.notify_message(f"{describe(spec)} is already the hotkey for “{slot_name(*other)}”."); return
-            app.set_hotkey(device,name,spec); values[device,name].set_text(describe(spec))
-        return lambda:win.capture_hotkey(slot_name(device,name),got,can_clear=True)
+        return lambda:win.assign_hotkey(("slot",device,name),slot_name(device,name),lambda spec:(app.set_hotkey(device,name,spec),show_keys()))
     hints={"keyboard":"A modifier tapped on its own (such as Super) triggers when it is released, so Super combinations such as Super+Enter keep working.",
-           "remote":"Most remotes send ordinary keys; F2 and Shift+F2 suit many of them.",
+           "remote":"Most remotes send ordinary keys; F2 suits many of them. Fullscreen switches the app you are using in and out of fullscreen.",
            "gamepad":"A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys; then choose those keys here."}
     for device in DEVICES:
         put(section_title(f"{DEVICE_LABELS[device].upper()} HOTKEYS"))
-        for name in ACTIONS: values[device,name]=row(labels[name],describe(settings["hotkeys"][device][name]),change(device,name))
+        for name in DEVICE_ACTIONS[device]: values[device,name]=row(ACTION_LABELS[name],describe(settings["hotkeys"][device][name]),change(device,name))
         put(muted_label(hints[device]))
     def reset_keys():
         for device in DEVICES:
-            for name in ACTIONS: app.set_hotkey(device,name,DEFAULT_HOTKEYS[device][name]); values[device,name].set_text(describe(DEFAULT_HOTKEYS[device][name]))
-    row("Reset all hotkeys","Defaults",reset_keys,"Keyboard: tap Super. Remote: F2 and Shift+F2. Gamepad: none.")
+            for name in DEVICE_ACTIONS[device]: app.set_hotkey(device,name,DEFAULT_HOTKEYS[device][name])
+        show_keys()
+    row("Reset all hotkeys","Defaults",reset_keys,"Keyboard: tap Super. Remote: F2. Gamepad: none. Application hotkeys are kept, unless one uses a default key.")
+
+    # ---- Application hotkeys: a count, and a list to change or remove them
+    put(section_title("APPLICATION HOTKEYS"))
+    def app_keys_label():
+        n=len(store.hotkey_profiles()); return "None" if n==0 else f"{n} mapped"
+    app_keys_value=row("Applications with a hotkey",app_keys_label(),lambda:win.show_app_hotkeys(show_keys),
+                       "Any launch profile can have a hotkey that launches it: set it in the profile's editor (✎ in the applications guide). Open this to change or remove them.")
 
     # ---- System: a grid across both columns; ↑/↓ keeps the column, ←/→ moves along a row
     body.append(section_title("SYSTEM"))

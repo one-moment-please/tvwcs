@@ -53,8 +53,6 @@ if [ ! -f "$HK" ]; then
         echo "bindcode --release 133 exec --no-startup-id '$DEST/bin/tvwcs' toggle"
         echo "# Remote: Quick Menu"
         echo "bindsym F2 exec --no-startup-id '$DEST/bin/tvwcs' toggle"
-        echo "# Remote: Applications"
-        echo "bindsym Shift+F2 exec --no-startup-id '$DEST/bin/tvwcs' guide"
     } > "$HK"
     echo "Created default hotkeys in $HK"
 fi

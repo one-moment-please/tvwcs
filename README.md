@@ -22,7 +22,7 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
     <td colspan="2"><img src="assets/settings.png" alt="The Settings view of the Applications pane" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2" valign="top">Settings, in the same pane (the button at the top right goes back to the guide). The left column holds Display, Behavior, At login and Updates; each row shows its current value on the right, and Enter changes it. The right column holds the three hotkey sets: keyboard (tap Super for the Quick Menu), remote (F2 and Shift+F2) and gamepad (not set). The System actions sit in a grid underneath. This Quick Menu has its options buttons hidden, one of the Behavior settings.</td>
+    <td colspan="2" valign="top">Settings, in the same pane (the button at the top right goes back to the guide). The left column holds Display, Behavior, At login and Updates; each row shows its current value on the right, and Enter changes it. The right column holds the three hotkey sets: keyboard (tap Super for the Quick Menu), remote (F2) and gamepad (not set). The System actions sit in a grid underneath. This Quick Menu has its options buttons hidden, one of the Behavior settings.</td>
   </tr>
 </table>
 
@@ -68,24 +68,27 @@ include ~/.config/i3/tvwcs/tvwcs.conf
 | Key | Action |
 |---|---|
 | **Super** tapped on its own (keyboard), **F2** (remote) | Show or hide the Quick Menu |
-| **Shift+F2** (remote) | Open or close the Applications pane beside the Quick Menu |
+| *not set by default* | Open or close the Applications pane beside the Quick Menu |
+| *not set by default* (remote) | Toggle fullscreen on the app you are using |
 | **↑ ↓ ← →** | Move around. Pressing **→** past the end of the Quick Menu opens Applications |
 | **Enter** | Launch, switch to, or activate the selected item |
 | **Esc** / remote **Back** | Go back one step: close a dialog, then Settings, then Applications, then the Quick Menu |
-| *any letter or digit* | Start a search. A channel number followed by Enter launches that channel |
+| *any letter or digit* | Start a search. A channel number followed by Enter launches that channel; so do three digits (`007`) left alone for a second |
 | **←** or right-click on a Quick Menu row | Open the row's options; they close again when you move away from them |
 
 With **Settings › Button hints** on (it is off by default), an icon-only button that stays selected for 3 seconds shows its tooltip for 6 seconds, so a remote gets the same hints a mouse would.
 
-Hotkeys come in three sets, one each for the keyboard, the remote and a gamepad, each with a key for the Quick Menu and one for Applications. Change them under **Settings › Hotkeys**; the keyboard's Applications key and both gamepad keys start unset. A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys first.
+Hotkeys come in three sets, one each for the keyboard, the remote and a gamepad, each with a key for the Quick Menu and one for Applications; the remote also has a key that toggles fullscreen on the focused app. Change them under **Settings › Hotkeys**; only the keyboard's Quick Menu key (tap Super) and the remote's (F2) are set to start with. A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys first.
 
-From a terminal you can run `tvwcs toggle`, `tvwcs guide` and `tvwcs stop`.
+Any launch profile can also have a hotkey that launches it, set in its editor. **Settings › Application hotkeys** counts them and lists them to change or remove. A key does one thing: choosing one that is already in use warns you and asks before moving it.
+
+From a terminal you can run `tvwcs toggle`, `tvwcs guide`, `tvwcs stop` and `tvwcs launch <profile id>`.
 
 **Quick Menu:** search, then your open applications grouped by workspace, then your favorites. A row's options can open an app the other way (tiled here, or in its own workspace), run its `.desktop` actions, move a workspace to another monitor, expand a workspace into its apps, or close it.
 
-**Applications:** the pane always opens on the applications guide. Categories fold with Enter. **Channel Guide** at the top lists every profile with a channel number. ☆ adds an app to your favorites, and ✎ (edit) manages its launch profiles. A profile can have a channel number, a launch mode (tiled or in its own workspace), a custom command or `.desktop` action, a description, and an optional PIN. The PIN is a convenience lock for a shared TV, not real security. The button at the top right switches between the guide and **Settings**.
+**Applications:** the pane always opens on the applications guide. Categories fold with Enter. **Channel Guide** at the top lists every profile with a channel number. ☆ adds an app to your favorites, and ✎ (edit) manages its launch profiles. A profile can have a channel number, a launch mode (tiled or in its own workspace), a custom command or `.desktop` action, a description, a hotkey, and an optional PIN. Clicking the TVWCS window while an editor is open closes the editor without saving. The PIN is a convenience lock for a shared TV, not real security. The button at the top right switches between the guide and **Settings**.
 
-**Settings** (two columns, with the system actions in a grid below): interface size (desktop, 10-foot, 10-foot 4K), closing when you click outside, how running apps open, hiding the options buttons, button hints, keyboard / remote / gamepad hotkeys, an app to open at login, **Check for updates**, and system actions (Lock, Sleep, Log out, Reboot, Shut down). Log out, Reboot and Shut down ask you to confirm first.
+**Settings** (two columns, with the system actions in a grid below): interface size (Desktop, TV Mode, and 4K TV Mode when a 4K display is connected), closing when you click outside, always opening apps in a new workspace, how running apps open, hiding the options buttons, button hints, keyboard / remote / gamepad hotkeys, an app to open at login, **Check for updates**, and system actions (Lock, Sleep, Log out, Reboot, Shut down). Log out, Reboot and Shut down ask you to confirm first.
 
 ## Troubleshooting
 

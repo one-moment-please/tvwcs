@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+**Hotkeys**
+- The remote set has a new *Fullscreen* key (unset by default) that toggles fullscreen on the focused app. It never acts on TVWCS's own windows.
+- The remote's Applications key now starts unset (it was Shift+F2). A key you already chose is kept.
+- Any launch profile can have a hotkey that launches it, set in its editor (`tvwcs launch <profile id>` from a terminal). A profile with a PIN shows the Quick Menu to ask for it.
+- New *Application hotkeys* section in Settings: it counts the mapped application hotkeys and opens a list where each can be changed or removed.
+- Choosing a key that is already used (by another device slot or an application) now warns and asks for confirmation, then moves the key, instead of refusing it.
+
+**Behavior**
+- New setting *Always open apps in a new workspace*: every app, launched or selected while open, gets a workspace of its own.
+- An app that was fullscreen when TVWCS opened is made fullscreen again when TVWCS closes or switches to it.
+- Clicking the TVWCS window while a profile editor or the application profiles window is open closes those windows (unsaved changes are dropped), instead of leaving TVWCS in front and frozen.
+
+**Quick Menu**
+- Typing a three-digit channel number and then nothing for a second launches that channel, without Enter.
+
+**Display**
+- The interface sizes are now *Desktop*, *TV Mode* and *4K TV Mode*. 4K TV Mode is only offered when a 4K or larger display is connected (or when it is already the chosen size).
+
 ## 2.6.0 — 2026-10-14
 
 **Applications pane**

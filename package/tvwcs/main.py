@@ -10,7 +10,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
-from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout
+from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs.system_actions import command_for
@@ -24,6 +24,7 @@ APP_ID="com.tvwcs.TVWCS"
 RUNTIME=Path(os.environ.get("XDG_RUNTIME_DIR","/tmp"))
 PID_FILE=RUNTIME/"tvwcs.pid"
 STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # lives in the runtime dir, so it disappears at logout
+REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a line here, then signals the running TVWCS
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
 def _find_launcher():
     """Locate the tvwcs launcher script next to the package (works in the repo layout, the
@@ -41,6 +42,7 @@ class TVWCSApp(Gtk.Application):
         self.window=None; self.catalogue=ApplicationCatalogue(); self.store=ConfigStore(); self.wm=I3WindowManager()
         self.layout=None; self._owns_pid=False
         self.pin_gate=PinGate(); self.owners=WindowOwners()
+        self._fullscreen=set()   # windows that were fullscreen when TVWCS was shown; they are made fullscreen again when it hides
 
     @property
     def scale_factor(self): return SCALE_PRESETS[self.store.settings["scale"]]
@@ -54,6 +56,9 @@ class TVWCSApp(Gtk.Application):
         self.hold()
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGUSR1,lambda:(self.show_mode("toggle"),GLib.SOURCE_CONTINUE)[1])
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGUSR2,lambda:(self.show_mode("guide"),GLib.SOURCE_CONTINUE)[1])
+        # Requests that carry an argument (an application hotkey) are queued in REQUESTS_FILE. SIGWINCH is harmless to
+        # ignore and GLib can watch it; a stray one finds no queue and does nothing.
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGWINCH,lambda:(self._take_requests(),GLib.SOURCE_CONTINUE)[1])
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGTERM,self._on_stop_signal)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGINT,self._on_stop_signal)
     def _on_stop_signal(self): self.quit(); return GLib.SOURCE_REMOVE
@@ -103,10 +108,31 @@ class TVWCSApp(Gtk.Application):
         l=self.layout
         def place(): self.wm.place_tvwcs(l.x,l.y,l.width,l.height); return GLib.SOURCE_REMOVE
         for delay in (40,160,420): GLib.timeout_add(delay,place)
-    def hide_window(self):
-        if self.window is not None: self.window.set_visible(False); self.window.note_shown()
+    def hide_window(self,launched=False):
+        """Hide TVWCS, then make fullscreen again whatever was fullscreen when it was shown. `launched`: an app was just
+        started, so nothing on the current workspace is made fullscreen over it."""
+        if self.window is None: return
+        shown=self.window.is_visible(); self.window.set_visible(False); self.window.note_shown()
+        if shown and self._fullscreen:
+            ids=self._fullscreen; self._fullscreen=set()
+            GLib.timeout_add(150,lambda:(self.wm.restore_fullscreen(ids,skip_current=launched),GLib.SOURCE_REMOVE)[1])   # once i3 has refocused
     def has_dialogs(self):
         return any(w is not self.window and w.is_visible() for w in self.get_windows())
+    def dismiss_dialogs(self):
+        """Close every dialog (profile editor, application profiles, messages) without saving what is in it. Used when
+        the TVWCS window is clicked while one is open: it then comes to the front, and a dialog left behind it would block it."""
+        for w in list(self.get_windows()):
+            if w is self.window or not w.is_visible(): continue
+            discard=getattr(w,"discard",None)
+            if discard is not None: discard()
+            else: w.close()
+    def has_4k_display(self):
+        """True when a connected monitor is 4K (3840×2160) or larger."""
+        display=Gdk.Display.get_default(); monitors=display.get_monitors() if display else None
+        for i in range(monitors.get_n_items() if monitors is not None else 0):
+            m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
+            if is_4k(g.width*f,g.height*f): return True
+        return any(is_4k((o.get("rect") or {}).get("width",0),(o.get("rect") or {}).get("height",0)) for o in self.wm.outputs())
 
     def show_mode(self,mode):
         """'toggle' (the menu hotkey): show or hide the Quick Menu. 'guide' (the guide hotkey): open the Guide beside
@@ -117,6 +143,7 @@ class TVWCSApp(Gtk.Application):
         if mode=="toggle" and visible: self.hide_window(); return False
         guide=(mode=="guide") and not (visible and w.guide_open)
         if visible: self.show_panels(guide,False,focus="guide" if guide else "quick"); return False
+        self._fullscreen=self.wm.fullscreen_windows()   # TVWCS taking the focus ends a fullscreen app's fullscreen
         self.wm.focus_output_under_mouse(); self.wm.move_tvwcs_to_current_workspace(); self.refresh_data(rebuild=False)
         w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False; w.apps_view="applications"   # always opens on the guide
         self._update_layout(guide,False,focus_output=True)
@@ -153,8 +180,12 @@ class TVWCSApp(Gtk.Application):
         """How selecting a running app places it: its own workspace, or tiled here. An app set to always launch in a new
         workspace always gets one; otherwise the 'open running apps in a new workspace' setting decides."""
         app=self.match_application_window(window); profile=self.default_profile(app) if app else None
-        if profile and profile.launch_mode==LAUNCH_NEW_WORKSPACE: return LAUNCH_NEW_WORKSPACE
+        if self.store.settings["always_new_workspace"] or (profile and profile.launch_mode==LAUNCH_NEW_WORKSPACE): return LAUNCH_NEW_WORKSPACE
         return LAUNCH_NEW_WORKSPACE if self.store.settings["open_in_new_workspace"] else LAUNCH_SAME
+    def launch_mode(self,profile):
+        """Where a profile opens: its own setting, unless Settings says every app opens in a new workspace."""
+        if self.store.settings["always_new_workspace"]: return LAUNCH_NEW_WORKSPACE
+        return profile.launch_mode if profile else LAUNCH_SAME
     # PIN protection. A profile's PIN is asked when it is launched; if its scope is "launch and show" it is also asked
     # when an open window of it would be brought up from a workspace that is not on screen.
     def _with_pins(self,profiles,action):
@@ -218,8 +249,8 @@ class TVWCSApp(Gtk.Application):
     def activate_result(self,result):
         if result["kind"]=="profile": self.launch_profile(result["profile"])
         elif result["kind"]=="window": self.focus_window(result["window"]["con_id"])
-    def _launched(self,profile):
-        self.store.record_last_profile(profile.id); self.hide_window()
+    def _launched(self,profile,started=False):
+        self.store.record_last_profile(profile.id); self.hide_window(launched=started)
     def launch_profile(self,profile,bypass_pin=False):
         if profile is None: return
         app=self.catalogue.by_id().get(profile.desktop_id)
@@ -233,27 +264,28 @@ class TVWCSApp(Gtk.Application):
         if profile.pin_hash and needs_pin and not bypass_pin: self.window.ask_pin(profile,go)
         else: go()
     def _show_existing(self,profile,app,window):
-        if self.wm.focus(window["con_id"],profile.launch_mode): self._launched(profile)
+        if self.wm.focus(window["con_id"],self.launch_mode(profile)): self._launched(profile)
         else: self._start(profile,app)
     def _start(self,profile,app):
         known={int(w["con_id"]) for w in self.wm.windows()} if any(p.pin_hash for p in self.store.profiles) else None
+        mode=self.launch_mode(profile)
         try:
             if profile.desktop_action and app:
                 info=Gio.DesktopAppInfo.new(profile.desktop_id)
                 if info is None: raise RuntimeError(f"No desktop launcher is available for {profile.desktop_id}.")
-                self.wm.prepare_for_launch(profile.launch_mode); info.launch_action(profile.desktop_action,None)
+                self.wm.prepare_for_launch(mode); info.launch_action(profile.desktop_action,None)
             elif profile.command.strip():
                 args=shlex.split(profile.command)
                 if not args: raise ValueError("The custom launch command is empty.")
-                self.wm.prepare_for_launch(profile.launch_mode)
+                self.wm.prepare_for_launch(mode)
                 subprocess.Popen(args,start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             else:
                 info=Gio.DesktopAppInfo.new(profile.desktop_id)
                 if info is None: raise RuntimeError(f"No desktop launcher is available for {profile.desktop_id}.")
-                self.wm.prepare_for_launch(profile.launch_mode)
+                self.wm.prepare_for_launch(mode)
                 if not info.launch([],None): raise RuntimeError(f"Linux refused to launch {profile.name}.")
             if known is not None: self._remember_windows(profile,app,known)
-            self._launched(profile)
+            self._launched(profile,started=True)
         except (OSError,ValueError,RuntimeError) as exc: self.notify_message(f"Could not launch {profile.name}: {exc}")
     def _remember_windows(self,profile,app,known):
         """Note which windows this launch opened, so a later 'show' knows whose PIN applies. The app needs a moment to map them."""
@@ -268,7 +300,7 @@ class TVWCSApp(Gtk.Application):
             try:
                 info=Gio.DesktopAppInfo.new(application.desktop_id)
                 if info is None: raise RuntimeError("Desktop launcher is no longer available.")
-                self.wm.prepare_for_launch(profile.launch_mode if profile else LAUNCH_SAME); info.launch_action(action_id,None); self.hide_window()
+                self.wm.prepare_for_launch(self.launch_mode(profile)); info.launch_action(action_id,None); self.hide_window(launched=True)
             except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}")
         # An action starts the application, so the main profile's PIN applies to it too.
         self._with_pins([profile] if profile and profile.pin_hash else [],go)
@@ -287,11 +319,15 @@ class TVWCSApp(Gtk.Application):
 
     # ---------------------------------------------------------- hotkeys and start-up
     def set_hotkey(self,device,name,spec):
-        """Set (or, with "", clear) one device's hotkey for the Quick Menu ("menu") or Applications ("guide")."""
-        self.store.settings["hotkeys"][device][name]=spec; self.store.save_settings(); self.apply_hotkeys()
+        """Set (or, with "", clear) one device's hotkey ("menu", "guide" or the remote's "fullscreen"). A key that
+        something else had is taken from it (Settings asks first)."""
+        self.store.set_slot_hotkey(device,name,spec); self.apply_hotkeys()
+    def set_profile_hotkey(self,profile_id,spec):
+        """Set (or, with "", clear) the hotkey that launches a profile, taking the key from whatever had it."""
+        self.store.set_profile_hotkey(profile_id,spec); self.apply_hotkeys()
     def apply_hotkeys(self):
-        """Write hotkeys.conf from the settings and ask i3 to reload if it changed."""
-        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes())
+        """Write hotkeys.conf from the settings and the profiles' hotkeys, and ask i3 to reload if it changed."""
+        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes(),self.store.app_hotkeys())
         try: old=HOTKEYS_FILE.read_text(encoding="utf-8")
         except OSError: old=None
         if old!=text:
@@ -308,6 +344,19 @@ class TVWCSApp(Gtk.Application):
             except (AttributeError,TypeError): continue
             if ok and keys: codes[mod]=min(k.keycode for k in keys)
         return codes
+    def _take_requests(self):
+        """Run the requests queued by `tvwcs launch <id>` (an application's hotkey)."""
+        work=REQUESTS_FILE.with_name(REQUESTS_FILE.name+".work")
+        try: REQUESTS_FILE.replace(work); lines=work.read_text(encoding="utf-8").splitlines(); work.unlink(missing_ok=True)
+        except OSError: return
+        for line in lines:
+            parts=line.split()
+            if len(parts)==2 and parts[0]=="launch": self.launch_by_hotkey(parts[1])
+    def launch_by_hotkey(self,profile_id):
+        profile=self.store.get(profile_id)
+        if profile is None: self.apply_hotkeys(); return   # deleted since the hotkeys were written
+        if profile.pin_hash and self.window is not None and not self.window.is_visible(): self.show_mode("toggle")   # the PIN keypad is drawn in the window
+        self.launch_profile(profile)
     def _run_startup_action(self):
         """Once per login: open the chosen app, or whichever app was used last."""
         if STARTUP_MARKER.exists(): return GLib.SOURCE_REMOVE
@@ -320,7 +369,7 @@ class TVWCSApp(Gtk.Application):
 
     def notify_message(self,message):
         # Gtk.MessageDialog exists on every GTK 4 release shipped by supported Mint/Debian/Ubuntu versions.
-        d=Gtk.MessageDialog(transient_for=self.window,modal=True,message_type=Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text=message)
+        d=Gtk.MessageDialog(application=self,transient_for=self.window,modal=True,message_type=Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text=message)
         d.connect("response",lambda w,*_:w.destroy()); d.present()
 
 def send_signal(sig):
@@ -329,11 +378,18 @@ def send_signal(sig):
     except (OSError,ValueError) as exc:
         print(f"TVWCS is not running (or its PID file is stale): {exc}. Start `./tvwcs` first.",file=sys.stderr); return 1
 
+def send_request(line):
+    try:
+        with open(REQUESTS_FILE,"a",encoding="utf-8") as f: f.write(line+"\n")
+    except OSError as exc: print(f"Cannot queue the request in {REQUESTS_FILE}: {exc}",file=sys.stderr); return 1
+    return send_signal(signal.SIGWINCH)
+
 def main():
     args=sys.argv[1:]
     if args==["toggle"]: return send_signal(signal.SIGUSR1)
     if args==["guide"]: return send_signal(signal.SIGUSR2)
     if args==["stop"]: return send_signal(signal.SIGTERM)
-    if args: print("Usage: tvwcs [toggle|guide|stop]",file=sys.stderr); return 2
+    if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
+    if args: print("Usage: tvwcs [toggle|guide|stop|launch PROFILE_ID]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())

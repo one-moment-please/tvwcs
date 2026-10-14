@@ -15,8 +15,8 @@ class HotkeyTests(unittest.TestCase):
         self.assertTrue(is_modifier_only("Mod4")); self.assertEqual(binding("Mod4"),"bindcode --release 133")
         conf=render_i3(hk,"/opt/t v/tvwcs")
         self.assertIn("bindcode --release 133 exec --no-startup-id '/opt/t v/tvwcs' toggle",conf)
-        self.assertIn("bindsym F2 exec --no-startup-id '/opt/t v/tvwcs' toggle",conf); self.assertIn("bindsym Shift+F2 exec",conf)
-        self.assertEqual(conf.count("exec"),3)   # unset keyboard/gamepad keys bind nothing
+        self.assertIn("bindsym F2 exec --no-startup-id '/opt/t v/tvwcs' toggle",conf)
+        self.assertEqual(conf.count("exec"),2)   # unset keys (remote Applications and Fullscreen, keyboard Applications, gamepad) bind nothing
         self.assertNotIn("bindsym Mod4 ",conf)   # binding Super itself would steal Super+Enter etc.
         for line in conf.splitlines():   # i3 has no end-of-line comments; one would become arguments to tvwcs
             if line.startswith("bind"): self.assertNotIn("#",line)
@@ -26,6 +26,16 @@ class HotkeyTests(unittest.TestCase):
         self.assertIn("bindcode --release 134 exec --no-startup-id t toggle",conf)
         self.assertIn("bindcode --release 64 exec --no-startup-id t guide",conf); self.assertIn("bindcode --release 37 exec --no-startup-id t toggle",conf)
         self.assertEqual(binding("Mod4+space"),"bindsym Mod4+space")
+    def test_remote_fullscreen_key_toggles_the_focused_app_but_never_tvwcs(self):
+        hk=clean_hotkeys({"remote":{"fullscreen":"F11"},"keyboard":{"fullscreen":"F12"}})   # only the remote has one
+        self.assertEqual((hk["remote"]["fullscreen"],"fullscreen" in hk["keyboard"]),("F11",False))
+        conf=render_i3(hk,"t")
+        self.assertIn('bindsym F11 [con_id="__focused__" title="^(?!TVWCS$|TVWCS · )"] fullscreen toggle',conf); self.assertNotIn("F12",conf)
+    def test_application_hotkeys_launch_their_profile(self):
+        conf=render_i3(clean_hotkeys(None),"/opt/tvwcs",app_keys=[("Mod4+f","3f2a-b1","Fire\nfox"),("F2","x","Taken"),("F9","bad id","Odd"),("F7","ok","")])
+        self.assertIn("bindsym Mod4+f exec --no-startup-id /opt/tvwcs launch 3f2a-b1",conf); self.assertIn("# Application: Fire fox (Super + F)",conf)
+        self.assertEqual(conf.count("bindsym F2 "),1)   # the remote's Quick Menu keeps it
+        self.assertNotIn("bad id",conf); self.assertIn("launch ok",conf)
     def test_used_by_finds_the_slot_holding_a_key(self):
         self.assertEqual(used_by(DEFAULT_HOTKEYS,"F2"),("remote","menu")); self.assertIsNone(used_by(DEFAULT_HOTKEYS,"F2",("remote","menu")))
         self.assertIsNone(used_by(DEFAULT_HOTKEYS,"F9"))

@@ -97,10 +97,14 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 
 ## Settings
 
-- **Interface size:** Desktop, 10-foot (1080p TV) or 10-foot (4K TV), chosen from a small pop-up list.
+- **Interface size:** Desktop, TV Mode (a 1080p TV) or 4K TV Mode, chosen from a small pop-up list. 4K TV Mode is only offered when a 4K (3840×2160) or larger display is connected.
 - **Close when clicking outside** TVWCS.
 - **Open running apps in a new workspace** (the toggle described under launch modes).
-- **Hotkeys:** three sets, for the keyboard (default: tap Super for the Quick Menu), the remote (default: F2 and Shift+F2) and a gamepad (unset by default; its buttons need mapping to keys with a tool such as AntiMicroX). Each set has a key for the Quick Menu and one for the Applications pane, any of which can be cleared, and a key can only do one thing. A modifier tapped on its own (such as Super) can be used; it is bound by its keycode and triggers when the key is released, so Super+Enter and every other Super shortcut keep working.
+- **Always open apps in a new workspace:** every app, launched or already open, gets a workspace of its own whatever its profile says.
+- **Fullscreen is kept:** an app that was fullscreen when TVWCS opened is made fullscreen again when TVWCS closes or switches to it (i3 drops fullscreen when another window takes the focus).
+- **Dialogs never trap TVWCS:** clicking the TVWCS window while a profile editor is open closes the editor, without saving.
+- **Hotkeys:** three sets, for the keyboard (default: tap Super for the Quick Menu), the remote (default: F2 for the Quick Menu) and a gamepad (unset by default; its buttons need mapping to keys with a tool such as AntiMicroX). Each set has a key for the Quick Menu and one for the Applications pane, and the remote has one more that toggles fullscreen on the focused app; any of them can be cleared. A key can only do one thing: choosing one that is already in use (by another slot or an application) warns and asks before moving it.
+- **Application hotkeys:** any launch profile can have a hotkey that launches it, set in its editor. Settings counts them, and lists them to change or remove each one. A modifier tapped on its own (such as Super) can be used; it is bound by its keycode and triggers when the key is released, so Super+Enter and every other Super shortcut keep working.
 - **At login:** open a chosen app (favorites listed first, then apps with channel numbers), or reopen the last app used, once per login.
 - **Check for updates:** asks GitHub for the latest published release; if it is newer, offers to download it, install it over the current copy (keeping the user's data), remove the download and restart TVWCS.
 - **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.

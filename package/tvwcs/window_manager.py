@@ -59,7 +59,8 @@ class I3WindowManager:
                 if not is_bar and not is_tvwcs_title(title):
                     found.append({"con_id":node["id"],"window":wid,"title":title,"class":cls,"instance":inst,
                                   "workspace":workspace,"output":output,"workspace_visible":workspace_visible,
-                                  "focused":bool(node.get("focused",False)),"urgent":bool(node.get("urgent",False))})
+                                  "focused":bool(node.get("focused",False)),"urgent":bool(node.get("urgent",False)),
+                                  "fullscreen":bool(node.get("fullscreen_mode",0))})
             for child in node.get("nodes",[]): walk(child,output,workspace,workspace_visible)
             for child in node.get("floating_nodes",[]): walk(child,output,workspace,workspace_visible)
         walk(tree)
@@ -191,6 +192,22 @@ class I3WindowManager:
         """Close every window on a workspace."""
         ids=[w["con_id"] for w in self._all_windows() if w["workspace"]==name]
         return bool(ids) and all(_all_ok(self._call(f"[con_id={int(i)}] kill")) for i in ids)
+
+    def fullscreen_windows(self):
+        """con_ids of the windows that are fullscreen now."""
+        return {int(w["con_id"]) for w in self._all_windows() if w.get("fullscreen")}
+
+    def restore_fullscreen(self, con_ids, skip_current=False):
+        """Put windows that were fullscreen back into fullscreen. i3 drops a window's fullscreen when another window on
+        its workspace (TVWCS, or an app tiled in beside it) takes focus. On the current workspace only the focused window
+        is restored, so a fullscreen window never covers the app just chosen; with `skip_current` (an app was just
+        launched and may not have mapped yet) none is."""
+        if not self.binary or not con_ids: return
+        current=(self.current_workspace() or {}).get("name")
+        for w in self._all_windows():
+            if int(w["con_id"]) not in con_ids or w.get("fullscreen"): continue
+            if w["workspace"]==current and (skip_current or not w.get("focused")): continue
+            self._call(f"[con_id={int(w['con_id'])}] fullscreen enable")   # i3 keeps the focus where it is for another workspace's window
 
     def reload(self): return bool(self._call("reload"))
 
