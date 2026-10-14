@@ -1,6 +1,6 @@
 """install.sh in a throwaway home folder: where it installs, the include line it adds or moves, the old location
 it migrates from, and the window manager config it can create. Skipped outside the repository (no scripts/)."""
-import json, os, pty, select, subprocess, tempfile, time, unittest
+import json, os, pty, select, shutil, subprocess, tempfile, time, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -198,10 +198,14 @@ class InstallTests(unittest.TestCase):
         self.assertIn(f"-s {sock_dir}/ipc-socket.42 -q reload",(bin_/"i3-msg.log").read_text())
     def test_says_how_to_be_asked_over_ssh_without_a_terminal(self):
         self.assertIn("ssh -t",self.run_install(SSH_CONNECTION="10.0.0.2 50000 10.0.0.3 22"))
+    def without_gtk(self,bin_):
+        """These tests need neither window manager here, and GTK missing (so the package list is always asked about)."""
+        if shutil.which("i3") or shutil.which("sway"): self.skipTest("i3 or sway is installed here")
+        (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)
     def test_offers_to_install_i3_then_to_start_it_at_boot(self):
         """Neither i3 nor sway: Enter installs the recommended i3 (with Xorg and startx), then the automatic login is offered."""
         env,override=self.autologin_tools()
-        bin_=Path(env["PATH"].split(":")[0]); etc=Path(self.env["TVWCS_ETC"])
+        bin_=Path(env["PATH"].split(":")[0]); etc=Path(self.env["TVWCS_ETC"]); self.without_gtk(bin_)
         (etc/"os-release").write_text("ID=debian\n")
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'
             f'case "$*" in *install*) for p in i3 startx; do printf "#!/bin/sh\\n" > "{bin_}/$p"; chmod +x "{bin_}/$p"; done ;; esac\n')
@@ -213,7 +217,7 @@ class InstallTests(unittest.TestCase):
         self.assertTrue(override.exists(),out); self.assertIn("exec startx",(self.home/".profile").read_text())
     def test_install_offer_can_be_declined_and_sway_chosen(self):
         env,_override=self.autologin_tools()
-        bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=arch\n")
+        bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=arch\n"); self.without_gtk(bin_)
         (bin_/"pacman").write_text(f'#!/bin/sh\necho "pacman $*" >> "{bin_}/pacman.log"\n'); (bin_/"pacman").chmod(0o755)
         self.assertIn("Nothing was installed.",self.converse(["3","n","n","n"],TVWCS_WMS="",**env))
         self.assertFalse((bin_/"pacman.log").exists())
@@ -221,14 +225,14 @@ class InstallTests(unittest.TestCase):
         self.assertEqual((bin_/"pacman.log").read_text().split("\n")[0].split()[:5],["pacman","-S","--needed","--noconfirm","sway"])
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xdotool"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
         (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
         out=self.converse(["y","n","n"],**env)   # install; no i3 config; no power rule
         self.assertRegex(out,r"python3-gi gir1\.2-gtk-4\.0 +GTK 4 for Python: TVWCS's windows \(required\)")
-        self.assertRegex(out,r"xdotool +places TVWCS's window"); self.assertRegex(out,r"gir1\.2-vte-3\.91 +Control Panel: the terminal page")
-        self.assertNotIn("Control Panel: sound",out)
-        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 xdotool gir1.2-vte-3.91\n",(bin_/"apt").read_text())
+        self.assertRegex(out,r"gir1\.2-vte-3\.91 +Control Panel: the terminal page")
+        self.assertNotIn("Control Panel: sound",out); self.assertNotIn("xdotool",out)   # installed here, so not listed
+        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91\n",(bin_/"apt").read_text())
         out=self.converse(["n","n","n"],**env)
-        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 xdotool gir1.2-vte-3.91",out)
+        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91",out)
 if __name__=="__main__": unittest.main()
