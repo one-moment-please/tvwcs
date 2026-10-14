@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.6.0 — 2026-10-14
 
 **Applications pane**
 - Removed the Networking and Updates tabs (and their `network`, `updates`, `ui_network`, `ui_updates` modules); TVWCS no longer needs NetworkManager or apt.
