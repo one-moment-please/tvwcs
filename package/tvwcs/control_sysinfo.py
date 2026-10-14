@@ -60,6 +60,28 @@ def parse_lspci_gpus(text):
         if m: gpus.append(re.sub(r"\s*\(rev \w+\)$","",m.group(1)).strip())
     return gpus
 
+DRM_VENDORS={"i915":"Intel","xe":"Intel","amdgpu":"AMD","radeon":"AMD","nouveau":"NVIDIA","nvidia":"NVIDIA","vc4":"Broadcom VideoCore",
+             "v3d":"Broadcom VideoCore","virtio_gpu":"virtual (virtio)","vmwgfx":"virtual (VMware)","qxl":"virtual (QXL)","bochs-drm":"virtual (Bochs)"}
+def drm_gpus(root="/sys/class/drm"):
+    """Graphics named by their kernel driver, for computers without lspci (a minimal install lacks pciutils)."""
+    found=[]
+    for card in sorted(glob.glob(f"{root}/card[0-9]")):
+        driver=os.path.basename(os.path.realpath(f"{card}/device/driver")) if os.path.exists(f"{card}/device/driver") else ""
+        if driver and driver not in [d for _v,d in found]: found.append((DRM_VENDORS.get(driver,driver),driver))
+    return [f"{vendor} ({driver} driver)" if vendor!=driver else driver for vendor,driver in found]
+
+def parse_mounts(text):
+    """/proc/mounts -> [(device, mount point)] for the drives in use: real block devices, each once (its first mount)."""
+    seen=set(); drives=[]
+    for line in text.splitlines():
+        parts=line.split()
+        if len(parts)<3 or not parts[0].startswith("/dev/") or parts[0].startswith(("/dev/loop","/dev/zram")): continue
+        if parts[2] in ("squashfs","iso9660","swap"): continue
+        device,mount=parts[0],parts[1].replace("\\040"," ")
+        if device in seen: continue
+        seen.add(device); drives.append((device,mount))
+    return drives
+
 def window_manager(env=None):
     """'i3 4.23', 'sway 1.9', or what XDG_CURRENT_DESKTOP says."""
     env=os.environ if env is None else env
@@ -104,13 +126,14 @@ def read_sections():
     cpus=os.cpu_count() or 0
     session=os.environ.get("XDG_SESSION_TYPE",""); session={"x11":"X11","wayland":"Wayland"}.get(session.lower(),session)
     cpu=parse_cpu(_read("/proc/cpuinfo"))
-    gpus=parse_lspci_gpus(run(["lspci"],timeout=5).out) if have("lspci") else []
+    gpus=(parse_lspci_gpus(run(["lspci"],timeout=5).out) if have("lspci") else []) or drm_gpus()
     disks=[]
-    for label,path in (("System disk","/"),("Home",str(Path.home()))):
-        try: u=shutil.disk_usage(path)
+    for device,mount in parse_mounts(_read("/proc/mounts")):
+        try: u=shutil.disk_usage(mount)
         except OSError: continue
-        if label=="Home" and os.stat(path).st_dev==os.stat("/").st_dev: continue   # the same disk as /
-        disks.append((label,f"{size_text(u.free)} free of {size_text(u.total)}"))
+        if u.total==0: continue
+        name="System drive" if mount=="/" else "Home" if mount==str(Path.home()) or mount=="/home" else mount
+        disks.append((f"{name} ({os.path.basename(device)})",f"{size_text(u.used)} used, {size_text(u.free)} free of {size_text(u.total)}"))
     sections=[
         ("THIS COMPUTER",[("Name",socket.gethostname()),
                           ("Operating system",parse_os_release(_read("/etc/os-release") or _read("/usr/lib/os-release"))),
@@ -123,7 +146,7 @@ def read_sections():
                      ("Memory",f"{size_text(free)} free of {size_text(total)}" if total else ""),
                      *[("Graphics" if i==0 else "",g) for i,g in enumerate(gpus)],
                      ("Battery",battery())]),
-        ("STORAGE",disks),
+        ("DRIVES",disks),
         ("SOFTWARE",[("TVWCS",__version__),("Python",platform.python_version()),("GTK",gtk_version())]),
     ]
     return [(title,[(k,v) for k,v in rows if v]) for title,rows in sections if any(v for _k,v in rows)]
