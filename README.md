@@ -48,7 +48,7 @@ doas apk add python3 py3-gobject3 gtk4.0 i3wm xdotool          # Alpine
 
 Each method below installs TVWCS into `~/.local/share/tvwcs`. Your own data (channels, favorites, settings, hotkeys) is kept apart from the program, in `~/.config/tvwcs/`.
 
-**From a release zip.** Extract the zip in a temporary folder and run its installer. You can delete the extracted folder afterwards.
+**From a release zip** (from the repository's [Releases](https://github.com/one-moment-please/tvwcs/releases) page). Extract the zip in a temporary folder and run its installer. You can delete the extracted folder afterwards.
 
 ```bash
 cd "$(mktemp -d)"
@@ -56,7 +56,16 @@ unzip ~/Downloads/TVWCS-*.zip
 ./tvwcs/install.sh
 ```
 
-**From the repository:**
+**From the repository, without git:** download the latest code as a tarball with `curl` (or `wget`), extract it in a temporary folder and run its installer. `tar` is on every Linux system, and this works over SSH too (use `ssh -t` so the installer can ask its questions).
+
+```bash
+cd "$(mktemp -d)"
+curl -fsSL https://github.com/one-moment-please/tvwcs/archive/refs/heads/main.tar.gz | tar -xz
+# or: wget -qO- https://github.com/one-moment-please/tvwcs/archive/refs/heads/main.tar.gz | tar -xz
+./tvwcs-main/scripts/install.sh
+```
+
+**From the repository, with git:**
 
 ```bash
 git clone https://github.com/one-moment-please/tvwcs && cd tvwcs
