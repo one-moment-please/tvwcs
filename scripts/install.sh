@@ -169,6 +169,8 @@ pkg() {
         arch:pipewire|alpine:pipewire) echo "pipewire pipewire-pulse wireplumber" ;;
         fedora:pipewire|suse:pipewire) echo "pipewire pipewire-pulseaudio wireplumber" ;;
         void:pipewire) echo "pipewire wireplumber" ;;   gentoo:pipewire) echo "media-video/pipewire media-video/wireplumber" ;;
+        # hides the mouse pointer while it is still (i3; sway does it itself)
+        debian:unclutter|alpine:unclutter) echo unclutter-xfixes ;;   gentoo:unclutter) echo x11-misc/unclutter-xfixes ;;
         debian:xrandr) echo x11-xserver-utils ;;             arch:xrandr) echo xorg-xrandr ;;               gentoo:xrandr) echo x11-apps/xrandr ;;
         debian:vte) echo gir1.2-vte-3.91 ;;                  arch:vte) echo vte4 ;;                          fedora:vte) echo vte291-gtk4 ;;
         *:vte) echo "VTE-for-GTK-4" ;;
@@ -246,6 +248,7 @@ command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg 
 command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
 command -v pipewire >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1 || need "$(pkg pipewire)" "PipeWire: sound, with its PulseAudio layer (no sound server is installed)"
 command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Control Panel: sound"
+if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then need "$(pkg unclutter)" "hides the mouse pointer after 3 seconds without moving (i3)"; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Control Panel: displays (sway has its own)"; fi
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Control Panel: Bluetooth"
 command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Control Panel: network (Ethernet and Wi-Fi)"

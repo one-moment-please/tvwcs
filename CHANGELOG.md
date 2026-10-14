@@ -16,6 +16,7 @@
 
 **Installer**
 - New guide, `docs/INSTALL-DEBIAN.md`: Debian's network installer with no desktop, SSH and Avahi, then TVWCS installed over SSH from another computer.
+- The mouse pointer hides after 3 seconds without moving and comes back when it moves: sway does it itself, and in i3 the TVWCS config runs `unclutter`, which `install.sh` offers to install.
 - `install.sh` lists every missing package with what it is for (including PipeWire, with `pipewire-pulse` and WirePlumber, when no sound server is installed) and offers to install them all with the package manager (on a terminal, on a known distribution). On Debian this adds `dbus-user-session`, which WirePlumber needs on a minimal install, and PipeWire is started for the current user right away; systemd starts it at every log-in after that. Without systemd, the TVWCS i3/sway config starts PipeWire, WirePlumber and `pipewire-pulse` when they are not running.
 - With neither i3 nor sway installed, `install.sh` offers to install one with the package manager (i3 with Xorg, `startx`, `xdotool` and `xrandr`, recommended; or sway), then sets it up and offers the automatic login.
 - On a computer with no login screen, `install.sh` offers (default no) to log the user in automatically at boot and start i3 (through `startx`) or sway, through systemd's or runit's console login and the login shell's profile. When set up, TVWCS opens its Quick Menu at log-in, and the session starts on the screen as soon as the install is done.
