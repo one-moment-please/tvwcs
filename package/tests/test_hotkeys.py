@@ -1,5 +1,5 @@
 import unittest
-from tvwcs.hotkeys import DEFAULT_HOTKEYS, HotkeyCapture, clean_hotkeys, describe, effective_binding, is_modifier_only, normalize_spec, render_i3, used_by, valid_spec, xcape_mapping
+from tvwcs.hotkeys import DEFAULT_HOTKEYS, HotkeyCapture, binding, clean_hotkeys, describe, is_modifier_only, normalize_spec, render_i3, used_by, valid_spec
 
 class HotkeyTests(unittest.TestCase):
     def test_validation(self):
@@ -12,19 +12,20 @@ class HotkeyTests(unittest.TestCase):
         self.assertEqual(normalize_spec(["Shift","Mod4","a"]),"Mod4+Shift+a")
     def test_defaults_tap_super_on_the_keyboard_and_f2_on_the_remote(self):
         hk=clean_hotkeys(None); self.assertEqual(hk,DEFAULT_HOTKEYS)
-        self.assertTrue(is_modifier_only("Mod4")); self.assertEqual(effective_binding("menu","Mod4"),"F13")
-        self.assertEqual(xcape_mapping(hk),"Super_L=F13")
+        self.assertTrue(is_modifier_only("Mod4")); self.assertEqual(binding("Mod4"),"bindcode --release 133")
         conf=render_i3(hk,"/opt/t v/tvwcs")
-        self.assertIn("bindsym F13 exec --no-startup-id '/opt/t v/tvwcs' toggle",conf)
+        self.assertIn("bindcode --release 133 exec --no-startup-id '/opt/t v/tvwcs' toggle",conf)
         self.assertIn("bindsym F2 exec --no-startup-id '/opt/t v/tvwcs' toggle",conf); self.assertIn("bindsym Shift+F2 exec",conf)
-        self.assertEqual(conf.count("bindsym"),3)   # unset keyboard/gamepad keys bind nothing
+        self.assertEqual(conf.count("exec"),3)   # unset keyboard/gamepad keys bind nothing
         self.assertNotIn("bindsym Mod4 ",conf)   # binding Super itself would steal Super+Enter etc.
         for line in conf.splitlines():   # i3 has no end-of-line comments; one would become arguments to tvwcs
-            if line.startswith("bindsym"): self.assertNotIn("#",line)
-    def test_two_lone_modifiers_for_one_action_share_its_spare_key(self):
+            if line.startswith("bind"): self.assertNotIn("#",line)
+    def test_lone_modifiers_bind_their_own_keycode_on_release(self):
         hk=clean_hotkeys({"keyboard":{"menu":"Mod4","guide":"Mod1"},"gamepad":{"menu":"Control"}})
-        self.assertEqual(xcape_mapping(hk),"Super_L=F13;Alt_L=F14;Control_L=F13")
-        self.assertEqual(render_i3(hk,"t").count("bindsym F13 "),1)   # i3 rejects a key bound twice
+        conf=render_i3(hk,"t",{"Mod4":134})   # the keyboard's real keycode wins over the default
+        self.assertIn("bindcode --release 134 exec --no-startup-id t toggle",conf)
+        self.assertIn("bindcode --release 64 exec --no-startup-id t guide",conf); self.assertIn("bindcode --release 37 exec --no-startup-id t toggle",conf)
+        self.assertEqual(binding("Mod4+space"),"bindsym Mod4+space")
     def test_used_by_finds_the_slot_holding_a_key(self):
         self.assertEqual(used_by(DEFAULT_HOTKEYS,"F2"),("remote","menu")); self.assertIsNone(used_by(DEFAULT_HOTKEYS,"F2",("remote","menu")))
         self.assertIsNone(used_by(DEFAULT_HOTKEYS,"F9"))

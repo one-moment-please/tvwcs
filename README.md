@@ -21,10 +21,10 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
 
 ## Requirements
 
-Debian, Ubuntu or Linux Mint with i3 (4.20 or newer), Python 3, GTK 4 and PyGObject. TVWCS uses `xdotool` to find the monitor under the pointer. `xcape` lets a modifier key on its own be a hotkey; the default keyboard hotkey (tapping Super) needs it.
+Debian, Ubuntu or Linux Mint with i3 (4.20 or newer), Python 3, GTK 4 and PyGObject. TVWCS uses `xdotool` to find the monitor under the pointer.
 
 ```bash
-sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool xcape
+sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool
 ```
 
 ## Install
@@ -83,7 +83,7 @@ From a terminal you can run `tvwcs toggle`, `tvwcs guide` and `tvwcs stop`.
 ## Troubleshooting
 
 - **The hotkey does nothing:** start TVWCS once with `~/.config/i3/tvwcs/bin/tvwcs`, then check `i3-msg -t get_config | grep -i tvwcs`. If you see nothing, check your i3 version (4.20 or newer) and that `~/.config/tvwcs/hotkeys.conf` exists. Running `install.sh` creates it.
-- **Super as a hotkey is unreliable:** install `xcape`, or bind the key directly in your i3 config, for example `bindcode --release 133 exec --no-startup-id ~/.config/i3/tvwcs/bin/tvwcs toggle` (133 is the left Windows key).
+- **Tapping Super does nothing:** TVWCS binds it as `bindcode --release <keycode>` using your keyboard's keycode for the left Super key (usually 133). Check the line in `~/.config/tvwcs/hotkeys.conf`, and `xev` shows the keycode your key really sends. Some desktop tools (such as xcape, or a launcher bound to Super) can grab the key first.
 - **"TVWCS is already running":** a stale `${XDG_RUNTIME_DIR:-/tmp}/tvwcs.pid` is left over. Stop that process or delete the file.
 - **Wrong monitor or the menu covers your bar:** install `xdotool`, or raise `settings.margin` in `~/.config/tvwcs/config.json`. Stop TVWCS before editing that file.
 - **Missing icons:** install an icon theme such as `adwaita-icon-theme`. Until then TVWCS shows text glyphs instead.

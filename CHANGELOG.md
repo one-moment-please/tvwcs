@@ -21,6 +21,7 @@
 - New *Button hints* setting (off by default): an icon-only button selected for 3 seconds shows its tooltip for 6 seconds.
 
 **Hotkeys: one set per device**
+- A modifier tapped on its own (the default keyboard hotkey, Super) is now bound directly in i3 as `bindcode --release <keycode>`, using the keyboard's real keycode. xcape is no longer used or needed; it depended on spare F13/F14 keys that many keyboard layouts do not define.
 - Separate hotkeys for the keyboard, the remote and a gamepad, each with a Quick Menu key and an Applications key. Defaults: keyboard taps Super for the Quick Menu; remote keeps F2 / Shift+F2; gamepad is unset (map its buttons to keys with a tool such as AntiMicroX, then capture them).
 - Any hotkey can be cleared from its capture dialog, and a key can only be used once across all sets.
 - An existing single hotkey pair is kept as the remote set.

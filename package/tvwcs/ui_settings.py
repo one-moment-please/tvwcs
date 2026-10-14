@@ -135,7 +135,7 @@ def build_settings_panel(win, embedded=False):
             if other: app.notify_message(f"{describe(spec)} is already the hotkey for “{slot_name(*other)}”."); return
             app.set_hotkey(device,name,spec); values[device,name].set_text(describe(spec))
         return lambda:win.capture_hotkey(slot_name(device,name),got,can_clear=True)
-    hints={"keyboard":"Tapping Super (or another modifier) on its own works, and Super combinations such as Super+Enter keep working. That needs xcape.",
+    hints={"keyboard":"A modifier tapped on its own (such as Super) triggers when it is released, so Super combinations such as Super+Enter keep working.",
            "remote":"Most remotes send ordinary keys; F2 and Shift+F2 suit many of them.",
            "gamepad":"A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys; then choose those keys here."}
     for device in DEVICES:
