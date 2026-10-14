@@ -88,7 +88,7 @@ From a terminal you can run `tvwcs toggle`, `tvwcs guide`, `tvwcs stop` and `tvw
 
 **Applications:** the pane always opens on the applications guide. Categories fold with Enter. **Channel Guide** at the top lists every profile with a channel number. ☆ adds an app to your favorites, and ✎ (edit) manages its launch profiles. A profile can have a channel number, a launch mode (tiled or in its own workspace), a custom command or `.desktop` action, a description, a hotkey, and an optional PIN. Clicking the TVWCS window while an editor is open closes the editor without saving. The PIN is a convenience lock for a shared TV, not real security. The button at the top right switches between the guide and **Settings**.
 
-**Settings** (two columns, with the system actions in a grid below): interface size (Desktop, TV Mode, and 4K TV Mode when a 4K display is connected), closing when you click outside, always opening apps in a new workspace, how running apps open, hiding the options buttons, button hints, keyboard / remote / gamepad hotkeys, an app to open at login, **Check for updates**, and system actions (Lock, Sleep, Log out, Reboot, Shut down). Log out, Reboot and Shut down ask you to confirm first.
+**Settings** (two columns, with the system actions in a grid below): interface size (Desktop, TV Mode, and 4K TV Mode when a 4K display is connected), closing when you click outside, always opening apps in a new workspace, how running apps open, hiding the options buttons, button hints, keyboard / remote / gamepad hotkeys, an app to open at login, opening the Quick Menu at login, **Check for updates**, and system actions (Lock, Sleep, Log out, Reboot, Shut down). Log out, Reboot and Shut down ask you to confirm first.
 
 ## Troubleshooting
 

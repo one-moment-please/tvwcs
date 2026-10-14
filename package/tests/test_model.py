@@ -63,6 +63,13 @@ class SettingsAndProfileTests(unittest.TestCase):
             s=ConfigStore(path).settings
             self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"]),("desktop",True,False))
             self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1","guide":""},"remote":{"menu":"F2","guide":"","fullscreen":""},"gamepad":{"menu":"F7","guide":""}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
+    def test_open_quick_menu_at_login_setting(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"
+            self.assertFalse(ConfigStore(path).settings["startup"]["show_menu"])
+            path.write_text(json.dumps({"settings":{"startup":{"show_menu":"yes"}}})); self.assertFalse(ConfigStore(path).settings["startup"]["show_menu"])
+            store=ConfigStore(path); store.settings["startup"]["show_menu"]=True; store.save()
+            self.assertTrue(ConfigStore(path).settings["startup"]["show_menu"])
     def test_a_key_used_twice_keeps_only_its_first_use(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"remote":{"menu":"F5","guide":"F5"},"gamepad":{"menu":"Mod4"}}}}))

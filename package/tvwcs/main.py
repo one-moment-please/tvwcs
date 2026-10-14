@@ -24,6 +24,7 @@ APP_ID="com.tvwcs.TVWCS"
 RUNTIME=Path(os.environ.get("XDG_RUNTIME_DIR","/tmp"))
 PID_FILE=RUNTIME/"tvwcs.pid"
 STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # lives in the runtime dir, so it disappears at logout
+STARTUP_MENU_DELAY=2500                           # ms between opening the login app and showing the Quick Menu over it
 REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a line here, then signals the running TVWCS
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
 def _find_launcher():
@@ -358,13 +359,18 @@ class TVWCSApp(Gtk.Application):
         if profile.pin_hash and self.window is not None and not self.window.is_visible(): self.show_mode("toggle")   # the PIN keypad is drawn in the window
         self.launch_profile(profile)
     def _run_startup_action(self):
-        """Once per login: open the chosen app, or whichever app was used last."""
+        """Once per login: open the chosen app, or whichever app was used last, and/or the Quick Menu."""
         if STARTUP_MARKER.exists(): return GLib.SOURCE_REMOVE
         try: STARTUP_MARKER.write_text(str(os.getpid()))
         except OSError: pass
         st=self.store.settings["startup"]
         profile=self.store.get(st["profile_id"]) if st["mode"]=="app" else self.store.get(st["last_profile_id"]) if st["mode"]=="last" else None
         if profile: self.launch_profile(profile,bypass_pin=True)   # chosen by the owner in Settings, so no PIN at login
+        if st["show_menu"]:   # after the app has had a moment to map, so the menu opens over it rather than under it
+            GLib.timeout_add(STARTUP_MENU_DELAY if profile else 0,self._show_startup_menu)
+        return GLib.SOURCE_REMOVE
+    def _show_startup_menu(self):
+        if self.window is not None and not self.window.is_visible(): self.show_mode("toggle")
         return GLib.SOURCE_REMOVE
 
     def notify_message(self,message):

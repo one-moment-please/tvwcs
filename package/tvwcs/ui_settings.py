@@ -102,6 +102,10 @@ def build_settings_panel(win, embedded=False):
             settings["startup"].update(profile_id=profile.id,mode="app"); store.save_settings(); app_value.set_text(profile.name); mode_value.set_text(startup_label())
         win.choose_profile(picked)
     app_value=row("Chosen app",app_label(),choose,"“Reopen the last app” starts whichever app you used most recently. Either runs once per login, a moment after TVWCS starts.")
+    def toggle_menu():
+        settings["startup"]["show_menu"]=not settings["startup"]["show_menu"]; store.save_settings(); return _on_off(settings["startup"]["show_menu"])
+    row("Open the Quick Menu at login",_on_off(settings["startup"]["show_menu"]),toggle_menu,
+        "Shows the Quick Menu once per login, a moment after TVWCS starts (after the app above, if one is chosen).")
 
     # ---- Updates
     put(section_title("UPDATES"))

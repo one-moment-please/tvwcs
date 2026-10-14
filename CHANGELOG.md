@@ -14,6 +14,9 @@
 - An app that was fullscreen when TVWCS opened is made fullscreen again when TVWCS closes or switches to it.
 - Clicking the TVWCS window while a profile editor or the application profiles window is open closes those windows (unsaved changes are dropped), instead of leaving TVWCS in front and frozen.
 
+**At login**
+- New setting *Open the Quick Menu at login* (off by default): shows the Quick Menu once per login, after the login app if one is chosen.
+
 **Quick Menu**
 - Typing a three-digit channel number and then nothing for a second launches that channel, without Enter.
 

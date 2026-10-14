@@ -47,7 +47,7 @@ DEFAULT_SETTINGS={
     "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
     "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
-    "startup":{"mode":"none","profile_id":"","last_profile_id":""},
+    "startup":{"mode":"none","profile_id":"","last_profile_id":"","show_menu":False},   # show_menu: open the Quick Menu at login
 }
 PIN_LAUNCH="launch"                  # the PIN is asked when the profile is launched
 PIN_LAUNCH_AND_SHOW="launch_and_show"  # ... and when an open app of it is shown from a workspace that is not on screen
@@ -93,6 +93,7 @@ def _clean_settings(raw) -> dict:
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]
         for key in ("profile_id","last_profile_id"):
             if isinstance(st.get(key),str): s["startup"][key]=st[key]
+        if isinstance(st.get("show_menu"),bool): s["startup"]["show_menu"]=st["show_menu"]
     return s
 
 class ConfigStore:
