@@ -10,7 +10,8 @@
 # from the old location: updating the include line and removing the old copy (the in-app updater sets it once you
 # have agreed to the move there).
 # TVWCS_NO_RESTART=1 skips the offer to restart a running TVWCS. TVWCS_WMS="i3 sway" chooses which window managers
-# to set up (default: those installed). TVWCS_ETC overrides /etc (where the standard config templates are).
+# to set up (default: those installed). TVWCS_ETC overrides /etc (where the standard config templates are), and
+# TVWCS_RUN and TVWCS_VAR override /run and /var (where the init system is detected).
 set -eu
 RUN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)  # folder holding this script (repo scripts/, or a release root)
 
@@ -151,13 +152,15 @@ pkg() {
         alpine:gtk) echo "py3-gobject3 gtk4.0" ;;            alpine:i3) echo i3wm ;;
         gentoo:gtk) echo "dev-python/pygobject gui-libs/gtk" ;;
         gentoo:i3) echo x11-wm/i3 ;;                         gentoo:xdotool) echo x11-misc/xdotool ;;
+        arch:xinit) echo xorg-xinit ;;                       fedora:xinit) echo xorg-x11-xinit ;;   gentoo:xinit) echo x11-apps/xinit ;;
         *:gtk) echo "PyGObject GTK4" ;;
-        # the Control Panel's tools (optional): pactl, bluetoothctl, nmcli, and VTE for its terminal
+        # the Control Panel's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
         debian:pactl|fedora:pactl|suse:pactl|void:pactl|alpine:pactl) echo pulseaudio-utils ;;
         arch:pactl) echo libpulse ;;                         gentoo:pactl) echo media-libs/libpulse ;;
         arch:bluetoothctl) echo bluez-utils ;;               gentoo:bluetoothctl) echo net-wireless/bluez ;;  *:bluetoothctl) echo bluez ;;
         debian:nmcli) echo network-manager ;;                arch:nmcli) echo networkmanager ;;
         alpine:nmcli) echo networkmanager-cli ;;             gentoo:nmcli) echo net-misc/networkmanager ;;   *:nmcli) echo NetworkManager ;;
+        debian:xrandr) echo x11-xserver-utils ;;             arch:xrandr) echo xorg-xrandr ;;               gentoo:xrandr) echo x11-apps/xrandr ;;
         debian:vte) echo gir1.2-vte-3.91 ;;                  arch:vte) echo vte4 ;;                          fedora:vte) echo vte291-gtk4 ;;
         *:vte) echo "VTE-for-GTK-4" ;;
         *) echo "$1" ;;
@@ -177,8 +180,9 @@ command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || missing
 [ -z "$missing" ] || echo "Missing packages:  $(install_hint "${missing# }")"
 optional=""
 for TOOL in pactl bluetoothctl nmcli; do command -v "$TOOL" >/dev/null 2>&1 || optional="$optional $(pkg "$TOOL")"; done
+command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1 && optional="$optional $(pkg xrandr)"   # sway has its own
 python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || optional="$optional $(pkg vte)"
-[ -z "$optional" ] || echo "Optional, for the Control Panel's sound, Bluetooth, network and terminal pages:  $(install_hint "${optional# }")"
+[ -z "$optional" ] || echo "Optional, for the Control Panel's sound, displays, Bluetooth, network and terminal pages:  $(install_hint "${optional# }")"
 
 # ------------------------------------------------------------------ window manager configs
 # The include line, written with ~ when the install is in your home folder (i3 and sway both expand it).
@@ -426,6 +430,134 @@ setup_power_rule() {
     fi
 }
 setup_power_rule
+
+# ------------------------------------------------------------------ log in and start i3 / sway at boot (optional)
+# On a computer with no login screen (display manager) yet, offer to log this user in on the first console at boot
+# and start i3 (through startx) or sway there, so it boots straight into TVWCS like a TV. Only offered on a terminal,
+# and only on a clear yes. The console login is set up through systemd (getty@tty1) or runit (agetty-tty1); the
+# window manager is started from the login shell's profile, only on tty1 and only when no session is running there.
+DISPLAY_MANAGERS="gdm gdm3 sddm lightdm lxdm xdm slim ly greetd emptty nodm entrance lemurs tbsm cdm"
+login_manager() {   # the login screen installed here, or ""
+    [ -e "$ETC/systemd/system/display-manager.service" ] && { echo display-manager.service; return; }
+    for DM in $DISPLAY_MANAGERS; do
+        command -v "$DM" >/dev/null 2>&1 && { echo "$DM"; return; }
+        [ -e "$ETC/sv/$DM" ] && [ -e "${TVWCS_VAR:-/var}/service/$DM" ] && { echo "$DM"; return; }
+    done
+    echo ""
+}
+init_system() {   # systemd, runit or other
+    if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd
+    elif [ -d "$ETC/sv/agetty-tty1" ] && command -v sv >/dev/null 2>&1; then echo runit
+    else echo other; fi
+}
+as_root() {   # run a command as root, asking for the password on this terminal
+    if [ "$(id -u)" = 0 ]; then "$@"
+    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+    elif command -v doas >/dev/null 2>&1; then doas "$@"
+    else echo "Neither sudo nor doas is installed; cannot change the system's settings." >&2; return 1; fi
+}
+GETTY_OVERRIDE=$ETC/systemd/system/getty@tty1.service.d/autologin.conf
+console_login_set() {   # the first console already logs someone in by itself
+    case $(init_system) in
+        systemd) [ -f "$GETTY_OVERRIDE" ] && grep -q -- '--autologin' "$GETTY_OVERRIDE" ;;
+        runit) grep -q -- '--autologin' "$ETC/sv/agetty-tty1/conf" 2>/dev/null ;;
+        *) return 1 ;;
+    esac
+}
+set_console_login() {   # set_console_login <user>
+    case $(init_system) in
+        systemd)
+            AGETTY=$(command -v agetty 2>/dev/null || echo /sbin/agetty)
+            TMP=$(mktemp)
+            printf '%s\n' "# Written by TVWCS's install.sh: logs $1 in on the first console at boot. Delete this file to undo it." \
+                "[Service]" "ExecStart=" "ExecStart=-$AGETTY -o '-p -f -- \\\\u' --noclear --autologin $1 %I \$TERM" > "$TMP"
+            as_root sh -c 'mkdir -p "$(dirname "$1")" && cat > "$1" && chmod 0644 "$1"' sh "$GETTY_OVERRIDE" < "$TMP"; R=$?; rm -f "$TMP"
+            [ $R = 0 ] || return 1
+            echo "Added $GETTY_OVERRIDE (delete it to undo the automatic login)." ;;
+        runit)
+            CONF=$ETC/sv/agetty-tty1/conf
+            as_root sh -c 'cp "$1" "$1.tvwcs-backup" && sed "s/^\([[:space:]]*\)GETTY_ARGS=\"*\([^\"]*\)\"*/\1GETTY_ARGS=\"--autologin $2 \2\"/" "$1.tvwcs-backup" > "$1"' sh "$CONF" "$1" || return 1
+            grep -q -- '--autologin' "$CONF" || { echo "GETTY_ARGS=\"--autologin $1 --noclear\"" | as_root tee -a "$CONF" >/dev/null || return 1; }
+            echo "Changed $CONF to log $1 in automatically (the original is $CONF.tvwcs-backup)." ;;
+        *) return 1 ;;
+    esac
+}
+# The start lines for the login shell, between markers so that running install.sh again replaces them.
+START_BEGIN="# >>> TVWCS: start the window manager after the automatic login (added by install.sh; delete to undo) >>>"
+START_END="# <<< TVWCS <<<"
+start_block() {   # start_block <i3|sway> <sh|fish>
+    if [ "$1" = i3 ]; then RUN="startx"; NEED=startx; else RUN="sway"; NEED=sway; fi
+    echo "$START_BEGIN"
+    if [ "$2" = fish ]; then
+        echo "if status is-login; and test -z \"\$DISPLAY\$WAYLAND_DISPLAY\"; and test (tty) = /dev/tty1; and command -q $NEED"
+        echo "    exec $RUN"; echo "end"
+    else
+        echo "if [ -z \"\${DISPLAY:-}\${WAYLAND_DISPLAY:-}\" ] && [ \"\$(tty)\" = /dev/tty1 ] && command -v $NEED >/dev/null 2>&1; then"
+        echo "    exec $RUN"; echo "fi"
+    fi
+    echo "$START_END"
+}
+profile_file() {   # "kind file": the file this user's login shell reads at log-in, and its kind (sh or fish)
+    LOGIN_SHELL=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7); LOGIN_SHELL=${LOGIN_SHELL:-${SHELL:-/bin/sh}}
+    case ${LOGIN_SHELL##*/} in
+        fish) echo "fish $CONFIG_HOME/fish/conf.d/tvwcs-autostart.fish" ;;
+        zsh) echo "sh ${ZDOTDIR:-$HOME}/.zprofile" ;;
+        bash) for F in "$HOME/.bash_profile" "$HOME/.bash_login"; do [ -f "$F" ] && { echo "sh $F"; return; }; done
+              echo "sh $HOME/.profile" ;;
+        *) echo "sh $HOME/.profile" ;;
+    esac
+}
+write_start() {   # write_start <i3|sway>: add (or replace) the start lines in the login shell's profile
+    WM=$1; PF=$(profile_file); KIND=${PF%% *}; FILE=${PF#* }
+    mkdir -p "$(dirname "$FILE")"; TMP=$(mktemp)
+    if [ -f "$FILE" ]; then
+        backup "$FILE"
+        B="$START_BEGIN" E="$START_END" awk '$0 == ENVIRON["B"] { skip = 1 } !skip { print } $0 == ENVIRON["E"] { skip = 0 }' "$FILE" > "$TMP"
+    fi
+    { [ -s "$TMP" ] && echo; start_block "$WM" "$KIND"; } >> "$TMP"
+    cat "$TMP" > "$FILE"; rm -f "$TMP"
+    echo "Added the lines that start $WM on the first console to $FILE$( [ -f "$FILE.tvwcs-backup" ] && echo " (backup: $FILE.tvwcs-backup)")."
+    if [ "$WM" = i3 ]; then   # startx runs ~/.xinitrc
+        if [ ! -f "$HOME/.xinitrc" ]; then
+            printf '#!/bin/sh\n# Written by TVWCS'"'"'s install.sh: startx starts i3.\nexec i3\n' > "$HOME/.xinitrc"; echo "Created $HOME/.xinitrc, which starts i3."
+        elif ! grep -q 'i3' "$HOME/.xinitrc"; then
+            echo "Note: your ~/.xinitrc does not start i3; startx runs it as it is. Make its last line: exec i3"
+        fi
+    fi
+}
+setup_autologin() {
+    [ -t 0 ] || return 0
+    ME=$(id -un); [ "$(id -u)" = 0 ] && return 0   # never log root in by itself
+    case "$ME" in [a-z_]*) ;; *) return 0 ;; esac
+    case "$ME" in *[!a-zA-Z0-9_.-]*) return 0 ;; esac
+    [ -z "$(login_manager)" ] || return 0
+    [ "$(init_system)" != other ] || return 0
+    CHOICES=""
+    for WM in $WMS; do
+        command -v "$WM" >/dev/null 2>&1 || continue
+        if [ "$WM" = i3 ] && ! command -v startx >/dev/null 2>&1; then
+            echo; echo "To start i3 automatically at boot, TVWCS needs startx:  $(install_hint "$(pkg xinit)")  and then run install.sh again."; continue
+        fi
+        CHOICES="$CHOICES $WM"
+    done
+    CHOICES=${CHOICES# }; [ -n "$CHOICES" ] || return 0
+    echo
+    if console_login_set; then
+        echo "This computer already logs someone in by itself at start-up, so the automatic login was not offered."; return 0
+    fi
+    case "$CHOICES" in
+        *" "*) ask_no "There is no login screen on this computer. Log in as $ME automatically when it starts, and start i3 or sway?" || return 0
+               printf "Start which one? 1) i3  2) sway [1]: "; read -r ANSWER || ANSWER=1
+               case "$ANSWER" in 2*|s*|S*) WM=sway ;; *) WM=i3 ;; esac ;;
+        *) WM=$CHOICES
+           ask_no "There is no login screen on this computer. Log in as $ME automatically when it starts, and start $WM?" || return 0 ;;
+    esac
+    echo "Anyone who switches the computer on gets your session without a password. Changing the system's login asks for your password now."
+    set_console_login "$ME" || { echo "Could not set up the automatic login; nothing was changed." >&2; return 0; }
+    write_start "$WM"
+    echo "From the next start, the computer logs in as $ME and starts $WM."
+}
+setup_autologin
 
 # ------------------------------------------------------------------ restart a running TVWCS
 # A running TVWCS keeps using the old program until it is restarted. Offer to do that now. The in-app updater sets

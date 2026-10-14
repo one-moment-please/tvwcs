@@ -70,6 +70,7 @@ The installer then sets up i3 and/or sway (whichever is installed). It asks befo
   include ~/.local/share/tvwcs/tvwcs.conf
   ```
 - **You have no config yet:** it offers to create one from the standard template (i3's own, as `i3-config-wizard` makes it, or sway's). It asks which key to use as `$mod` (Super or Alt) and whether to keep your current keyboard layout or use another (such as `de` or `us dvorak`).
+- **The computer has no login screen yet** (no display manager such as GDM, LightDM or SDDM) **and i3 or sway is installed:** it offers to log you in automatically when the computer starts and start i3 (through `startx`, writing `~/.xinitrc` if there is none) or sway, so it boots straight to TVWCS like a TV. This is asked with a default of no, since anyone who switches the computer on then gets your session. It sets up the first console's login through systemd (`/etc/systemd/system/getty@tty1.service.d/autologin.conf`) or runit (`/etc/sv/agetty-tty1/conf`, backed up first), using sudo or doas, and adds a few marked lines to your shell's login file (`~/.profile`, `~/.bash_profile`, `~/.zprofile`, or a fish `conf.d` file) that start the window manager on that console only. To undo it, delete that file (or restore the backup) and the marked lines.
 - **TVWCS was installed in `~/.config/i3/tvwcs` before (2.6 and older):** it moves it to `~/.local/share/tvwcs`, offers to change your config's include line to the new place, points your hotkeys there, and offers to delete the old copy once nothing uses it.
 
 Without a terminal to ask in, it changes no config and prints the line to add. `tvwcs.conf` starts TVWCS, loads your hotkeys and sets up its window rules. To install somewhere else, run `TVWCS_DEST=/some/path install.sh`; the installer points `tvwcs.conf` at that folder. `TVWCS_WMS=sway install.sh` sets up only sway (or only i3).
@@ -105,20 +106,21 @@ From a terminal you can run `~/.local/share/tvwcs/bin/tvwcs` with `toggle`, `gui
 
 ## Control Panel
 
-The Control Panel is a separate application in the same Metro style, sized by TVWCS's **Interface size**. `install.sh` adds it to your applications, so it is in the guide under **System**, where it can have a channel number or be a favorite like any other app; its `.desktop` actions open a single page (a "Wi-Fi" channel, for instance, is a profile using the *Network* action). From a terminal: `tvwcs control`, or `tvwcs control sound|bluetooth|updates|system|terminal|network`.
+The Control Panel is a separate application in the same Metro style, sized by TVWCS's **Interface size**. `install.sh` adds it to your applications, so it is in the guide under **System**, where it can have a channel number or be a favorite like any other app; its `.desktop` actions open a single page (a "Wi-Fi" channel, for instance, is a profile using the *Network* action). From a terminal: `tvwcs control`, or `tvwcs control sound|displays|bluetooth|updates|system|terminal|network`.
 
 Its pages are tabs down the left: **↑ ↓** on the tabs changes page, **→** goes into the page, **←** from a page's left edge or **Esc** / **Back** comes back to the tabs, and **Esc** on the tabs closes it. Text (a Wi-Fi password, an IP address) is typed on a keyboard or picked on the on-screen keyboard with the D-pad.
 
 | Page | What it does | It uses |
 |---|---|---|
 | **Sound** | Volume and mute for the output and the input; choose the output (speakers, HDMI, headphones…) and the microphone, and a device's connector. Sound already playing moves to the new output. | `pactl` (PipeWire or PulseAudio) |
+| **Displays** | Resolution and refresh rate of each display. With several: which are on, where each one is (right of, left of, above, below, or the same picture as another; the others move along when one changes size) and, on X11, the primary display. A new resolution, refresh rate or display switched on or off goes back after 15 seconds unless you keep it. What you keep is applied again when TVWCS starts with the same displays connected (saved in `~/.config/tvwcs/displays.json`). | `xrandr` (i3 and other X11 sessions), `swaymsg` (sway) |
 | **Bluetooth** | Switch Bluetooth on or off, search, pair (devices that need no code: headphones, speakers, game controllers, remotes), connect, disconnect and forget. Shows battery levels. | `bluetoothctl` (BlueZ) |
 | **Software updates** | Lists waiting updates from the system's package manager and Flatpak, installs them all (asking for your sudo password, like the power actions) with their output on screen, and offers a restart when one is needed. | apt, dnf, pacman (`checkupdates` when installed), zypper, xbps or apk; `flatpak` |
 | **System information** | This computer, its processor, memory, graphics, displays, disks, battery, and the TVWCS, Python and GTK versions. | `/proc`, `/sys`, `lspci` |
 | **Terminal** | A full terminal running your shell. Every key goes to it; **Back** (or **Shift+Esc**) leaves it. Without VTE, a console that runs one command at a time. | VTE for GTK 4 |
 | **Network** | Ethernet and Wi-Fi: status and addresses, connect and disconnect, Wi-Fi on or off, join a network (with its password), forget one, and IP settings (automatic or manual address, gateway and DNS). | `nmcli` (NetworkManager); read-only from `ip` without it |
 
-A page whose tool is missing says what to install; `install.sh` lists them too (`pulseaudio-utils`, `bluez`, `network-manager` and `gir1.2-vte-3.91` on Debian and Ubuntu).
+A page whose tool is missing says what to install; `install.sh` lists them too (`pulseaudio-utils`, `x11-xserver-utils`, `bluez`, `network-manager` and `gir1.2-vte-3.91` on Debian and Ubuntu).
 
 ## Troubleshooting
 
