@@ -122,7 +122,7 @@ class ApplicationProfilesWindow(Gtk.Window):
         self.rows=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); scroll.set_child(self.rows); self._refresh_rows()
         buttons=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); buttons.set_halign(Gtk.Align.END); box.append(buttons)
         add=Gtk.Button(label="+"); add.set_tooltip_text("Add launch profile"); add.connect("clicked",self._add); buttons.append(add)
-        close=Gtk.Button(label="Close"); close.connect("clicked",lambda *_:self.close()); buttons.append(close)
+        close=Gtk.Button(label="Close"); close.add_css_class("close-button"); close.connect("clicked",lambda *_:self.close()); buttons.append(close)
     def _refresh_rows(self):
         clear_box(self.rows)
         for profile in self.app.store.for_app(self.desktop_id):

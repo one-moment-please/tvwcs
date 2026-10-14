@@ -1,20 +1,31 @@
 """Hotkey specs ("F2", "Shift+F2", "Mod4+space", or a lone modifier such as "Mod4") and the i3 config they produce.
 No GTK dependency.
 
-A lone modifier (tapping Super by itself) cannot be an i3 binding without stealing Super from every
-Super+key shortcut. It is handled with xcape instead: xcape leaves Super working as a modifier and, only when
-it is pressed and released on its own, types a spare key (F13/F14) that i3 binds. So Super+Enter still works."""
+There are three sets of hotkeys, one per input device: keyboard, remote and gamepad. Each set has a key for the
+Quick Menu ("menu") and one for the Applications pane ("guide"); any of them may be unset (""). A gamepad sends
+no key presses by itself: map its buttons to keys with a tool such as AntiMicroX, then capture those keys here.
+
+A lone modifier (tapping Super by itself) is bound by its X keycode on release, for example
+`bindcode --release 133 ...` for the left Super key. Binding it on press would steal Super from every Super+key
+shortcut; on release, Super+Enter and the rest keep working."""
 from __future__ import annotations
 import shlex
 
-DEFAULT_HOTKEYS={"menu":"F2","guide":"Shift+F2"}
+DEVICES=("keyboard","remote","gamepad")
+ACTIONS=("menu","guide")
+DEVICE_LABELS={"keyboard":"Keyboard","remote":"Remote","gamepad":"Gamepad"}
+DEFAULT_HOTKEYS={
+    "keyboard":{"menu":"Mod4","guide":""},          # tap Super for the Quick Menu
+    "remote":{"menu":"F2","guide":"Shift+F2"},
+    "gamepad":{"menu":"","guide":""},
+}
 MODIFIER_ORDER=("Mod4","Mod1","Control","Shift")
 MODIFIER_NAMES={"Mod4":"Super","Mod1":"Alt","Control":"Ctrl","Shift":"Shift"}
 # GDK/X11 key names of physical modifier keys -> i3 modifier names
 MODIFIER_KEYS={"Super_L":"Mod4","Super_R":"Mod4","Alt_L":"Mod1","Alt_R":"Mod1","Meta_L":"Mod1","Meta_R":"Mod1",
                "Control_L":"Control","Control_R":"Control","Shift_L":"Shift","Shift_R":"Shift"}
-XCAPE_KEYS={"Mod4":"Super_L","Mod1":"Alt_L","Control":"Control_L","Shift":"Shift_L"}
-TAP_KEYS={"menu":"F13","guide":"F14"}   # spare keys xcape types for a lone modifier
+MODIFIER_KEYSYMS={"Mod4":"Super_L","Mod1":"Alt_L","Control":"Control_L","Shift":"Shift_L"}   # the left-hand key of each
+DEFAULT_KEYCODES={"Mod4":133,"Mod1":64,"Control":37,"Shift":50}   # their X keycodes on standard (evdev) keyboards
 
 def parse_spec(spec):
     """-> (modifiers, key) where key is None for a lone modifier; raises ValueError if malformed."""
@@ -40,26 +51,55 @@ def is_modifier_only(spec) -> bool:
     return parse_spec(spec)[1] is None
 
 def describe(spec) -> str:
+    if not spec: return "Not set"
     mods,key=parse_spec(spec)
     names=[MODIFIER_NAMES[m] for m in mods]
     if key is None: return f"{names[0]} (tap)"
     return " + ".join(names+[key.upper() if len(key)==1 else key])
 
-def effective_binding(name,spec) -> str:
-    """The key i3 actually binds for hotkey `name` ('menu' or 'guide')."""
-    return TAP_KEYS[name] if is_modifier_only(spec) else spec
+def binding(spec,keycodes=None) -> str:
+    """What follows `bindsym`/`bindcode` in i3's config for a hotkey. A lone modifier binds its key's keycode on release.
+    `keycodes` maps modifiers to this keyboard's keycodes (the running X server knows them); defaults otherwise."""
+    if not is_modifier_only(spec): return f"bindsym {spec}"
+    mod=parse_spec(spec)[0][0]
+    return f"bindcode --release {(keycodes or {}).get(mod,DEFAULT_KEYCODES[mod])}"
 
-def xcape_mapping(hotkeys):
-    """Argument for `xcape -e`, or None when no hotkey is a lone modifier."""
-    pairs=[f"{XCAPE_KEYS[parse_spec(spec)[0][0]]}={TAP_KEYS[name]}" for name,spec in hotkeys.items() if is_modifier_only(spec)]
-    return ";".join(pairs) or None
+def assigned(hotkeys):
+    """(device, action, spec) for every hotkey that is set, keyboard first."""
+    return [(d,a,hotkeys[d][a]) for d in DEVICES for a in ACTIONS if hotkeys.get(d,{}).get(a)]
 
-def render_i3(hotkeys, command) -> str:
+def clean_hotkeys(raw):
+    """Valid hotkeys from a settings value. The old single set ({"menu":..,"guide":..}) becomes the remote set.
+    A key may do only one thing, so a spec already used by an earlier slot is dropped."""
+    hk={d:dict(DEFAULT_HOTKEYS[d]) for d in DEVICES}
+    if not isinstance(raw,dict): return hk
+    if any(a in raw for a in ACTIONS) and not any(d in raw for d in DEVICES): raw={"remote":raw}
+    for d in DEVICES:
+        given=raw.get(d)
+        if not isinstance(given,dict): continue
+        for a in ACTIONS:
+            spec=given.get(a)
+            if isinstance(spec,str) and (spec=="" or valid_spec(spec)): hk[d][a]=spec
+    seen=set()
+    for d,a,spec in assigned(hk):
+        if spec in seen: hk[d][a]=""
+        else: seen.add(spec)
+    return hk
+
+def used_by(hotkeys,spec,skip=None):
+    """The (device, action) that already has `spec`, ignoring the slot `skip`; None when it is free."""
+    return next(((d,a) for d,a,s in assigned(hotkeys) if s==spec and (d,a)!=skip),None)
+
+def render_i3(hotkeys, command, keycodes=None) -> str:
     """Contents of hotkeys.conf, included from tvwcs.conf. `command` is the path of the tvwcs launcher."""
-    q=shlex.quote(command)
-    return ("# Generated by TVWCS Settings. Change hotkeys there; edits made here are overwritten.\n"
-            f"bindsym {effective_binding('menu',hotkeys['menu'])} exec --no-startup-id {q} toggle\n"
-            f"bindsym {effective_binding('guide',hotkeys['guide'])} exec --no-startup-id {q} guide\n")
+    q=shlex.quote(command); lines=["# Generated by TVWCS Settings. Change hotkeys there; edits made here are overwritten."]; bound=set()
+    for device,action,spec in assigned(hotkeys):
+        key=binding(spec,keycodes)
+        if key in bound: continue   # i3 refuses a config that binds the same key twice
+        bound.add(key)   # i3 has no end-of-line comments: a trailing "# ..." would become arguments to the command
+        lines.append(f"# {DEVICE_LABELS[device]}: {'Quick Menu' if action=='menu' else 'Applications'} ({describe(spec)})")
+        lines.append(f"{key} exec --no-startup-id {q} {'toggle' if action=='menu' else 'guide'}")
+    return "\n".join(lines)+"\n"
 
 class HotkeyCapture:
     """Turns raw key events into a spec while the user is choosing a hotkey.

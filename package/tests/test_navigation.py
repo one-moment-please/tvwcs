@@ -51,7 +51,7 @@ def make_window(**state):
     win=ui_window.TVWCSWindow.__new__(ui_window.TVWCSWindow)
     win.app=MagicMock(); win._groups={"quick":[],"guide":[],"options":[]}; win._header_group=[]; win._result_groups=[]; win._modal_groups=[]
     win.guide_open=False; win.options_open=False; win.guide_pane=None; win.options_pane=None; win._last_focus={}
-    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None
+    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None; win._focus_tip=None; win._focus_tip_source=0
     win.search_entry=Entry("search"); win.get_focus=lambda:W.focus
     win._type_to_search=MagicMock(); win._escape=MagicMock()
     for k,v in state.items(): setattr(win,k,v)
@@ -92,10 +92,10 @@ class NavigationTests(unittest.TestCase):
         guide=W("guide_pane"); win=make_window(guide_open=True,guide_pane=guide); g,toggle,opt,main=options_row(win,expanded=True)
         inner=W("g1",parent=guide); win._groups["guide"].append(NavGroup([inner])); W.focus=main
         win._move_within_group(1); win.app.show_panels.assert_not_called(); self.assertIs(W.focus,inner)
-    def test_right_past_the_end_of_the_guide_opens_settings(self):
+    def test_right_past_the_end_of_the_guide_stays_put(self):
         guide=W("guide_pane"); win=make_window(guide_open=True,guide_pane=guide)
         last=W("star",parent=guide); win._groups["guide"].append(NavGroup([W("main",parent=guide),last])); W.focus=last
-        win._move_within_group(1); win.app.show_panels.assert_called_once_with(True,True,focus="options")
+        self.assertTrue(win._move_within_group(1)); win.app.show_panels.assert_not_called(); self.assertIs(W.focus,last)
     def test_left_from_settings_closes_it_and_returns_to_the_guide(self):
         guide,options=W("guide"),W("options"); win=make_window(guide_open=True,options_open=True,guide_pane=guide,options_pane=options)
         row=W("row",parent=options); win._groups["options"].append(NavGroup([row])); W.focus=row
@@ -104,6 +104,37 @@ class NavigationTests(unittest.TestCase):
         guide,options=W("guide"),W("options"); win=make_window(guide_open=True,options_open=True,guide_pane=guide,options_pane=options)
         row=W("row",parent=options); win._groups["options"].append(NavGroup([row])); W.focus=row
         win._move_within_group(1); win.app.show_panels.assert_not_called()
+    def test_left_on_a_quick_menu_row_opens_its_options(self):
+        win=make_window(); g,toggle,opt,main=options_row(win); g.open_options=MagicMock(return_value=True); W.focus=main
+        self.assertTrue(win._move_within_group(-1)); g.open_options.assert_called_once()
+    def test_left_on_a_row_whose_options_are_open_moves_into_them(self):
+        win=make_window(); g,toggle,opt,main=options_row(win,expanded=True); g.open_options=MagicMock(); W.focus=main
+        win._move_within_group(-1); g.open_options.assert_not_called(); self.assertIs(W.focus,opt)
+    def fold_window(self):
+        win=make_window(); g,toggle,opt,main=options_row(win,expanded=True); g.menu=[toggle,opt]; g.collapse=MagicMock()
+        win._open_row=g; win._popovers=0; return win,g,toggle,opt,main
+    def test_options_fold_when_the_selection_leaves_them(self):
+        win,g,toggle,opt,main=self.fold_window()
+        win._fold_options(opt); g.collapse.assert_not_called()
+        win._fold_options(main); g.collapse.assert_called_once(); self.assertIsNone(win._open_row)
+    def test_options_stay_open_while_a_popup_or_dialog_from_them_is_up(self):
+        win,g,toggle,opt,main=self.fold_window(); win._popovers=1
+        win._fold_options(W("popup item")); g.collapse.assert_not_called()
+        win._popovers=0; win._modal_groups=[NavGroup([W("cancel")])]
+        win._fold_options(W("cancel")); g.collapse.assert_not_called()
+    def lanes(self):
+        guide=W("guide_pane"); win=make_window(guide_open=True,guide_pane=guide); rows={}
+        for lane in (0,1):
+            for n in range(2):
+                b=W(f"l{lane}r{n}",parent=guide); grp=NavGroup([b]); grp.lane=lane; win._groups["guide"].append(grp); rows[lane,n]=b
+        shared=W("system",parent=guide); win._groups["guide"].append(NavGroup([shared])); return win,rows,shared
+    def test_left_and_right_jump_between_settings_columns(self):
+        win,rows,_=self.lanes(); W.focus=rows[0,1]
+        win._move_within_group(1); self.assertIn(W.focus,(rows[1,0],rows[1,1]))
+        win._move_within_group(-1); self.assertIn(W.focus,(rows[0,0],rows[0,1])); win.app.show_panels.assert_not_called()
+    def test_up_down_stays_in_its_settings_column(self):
+        win,rows,shared=self.lanes(); W.focus=rows[0,0]
+        win._move_group(1); self.assertIs(W.focus,rows[0,1]); win._move_group(1); self.assertIs(W.focus,shared)
     def test_up_down_lands_on_the_main_button(self):
         win=make_window(); a=options_row(win,expanded=True); b=options_row(win,expanded=True); W.focus=a[3]
         win._move_group(1); self.assertIs(W.focus,b[3])

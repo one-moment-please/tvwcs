@@ -21,8 +21,10 @@ button.active { background: @ACCENT@; }
 button.launch-row { text-align: left; }
 button.dialog-button { padding: 0 16px; }
 button.danger:focus, button.danger:focus-visible { background: #e81123; }
-.window-controls button { min-width: 52px; }
-.window-controls button.close-button:hover, .window-controls button.close-button:focus { background: #e81123; }
+button.square { min-width: 44px; min-height: 44px; padding: 0; }
+button.close-button { background: #c50f1f; color: #ffffff; }
+button.close-button:hover { background: #e81123; }
+button.close-button:focus, button.close-button:focus-visible, button.close-button:active { background: #e81123; outline: 3px solid #ffffff; outline-offset: -3px; }
 .mode-button, button.options-toggle { min-width: 44px; padding: 0; }
 button.category-header { background: #262626; font-size: 18px; font-weight: 300; margin-top: 6px; }
 button.category-header:hover { background: #343434; }
@@ -43,6 +45,7 @@ entry:focus-within text, entry:focus-within image { color: #000000; }
 .modal-scrim { background: rgba(0, 0, 0, 0.78); }
 .modal-card { background: #262626; padding: 22px; border: 2px solid @ACCENT@; border-radius: 0; }
 .error { color: #ff5a67; }
+popover.focus-tip > contents, popover.focus-tip contents { background: #f2f2f2; color: #000000; border: 1px solid @ACCENT@; padding: 6px 10px; font-size: 14px; }
 popover > contents, popover contents { background: #2b2b2b; border: 2px solid @ACCENT@; border-radius: 0; box-shadow: none; padding: 6px; }
 scrollbar slider { background: #6e6e6e; border-radius: 0; min-width: 8px; min-height: 8px; }
 scrollbar trough { background: transparent; border-radius: 0; }

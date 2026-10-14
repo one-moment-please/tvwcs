@@ -4,7 +4,7 @@ import copy, json, os, re, shlex, uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from tvwcs.hotkeys import DEFAULT_HOTKEYS, valid_spec
+from tvwcs.hotkeys import DEFAULT_HOTKEYS, clean_hotkeys
 from tvwcs.pinlock import valid_hash
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
@@ -35,8 +35,9 @@ DEFAULT_SETTINGS={
     "scale":"desktop",              # key of SCALE_PRESETS
     "close_on_click_outside":False, # hide TVWCS when another window takes focus
     "open_in_new_workspace":False,  # selecting an open app gives it its own workspace instead of tiling it here
-    "hide_options_buttons":False,   # fold the ⋯ options buttons away; right-click (or ←) still opens each row's options
-    "hotkeys":dict(DEFAULT_HOTKEYS),
+    "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
+    "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
+    "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},
 }
 PIN_LAUNCH="launch"                  # the PIN is asked when the profile is launched
@@ -74,13 +75,9 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    for key in ("close_on_click_outside","open_in_new_workspace","hide_options_buttons"):
+    for key in ("close_on_click_outside","open_in_new_workspace","hide_options_buttons","button_hints"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
-    hk=raw.get("hotkeys")
-    if isinstance(hk,dict):
-        for name in ("menu","guide"):
-            if isinstance(hk.get(name),str) and valid_spec(hk[name]): s["hotkeys"][name]=hk[name]
-        if s["hotkeys"]["menu"]==s["hotkeys"]["guide"]: s["hotkeys"]=dict(DEFAULT_HOTKEYS)
+    s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     st=raw.get("startup")
     if isinstance(st,dict):
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]

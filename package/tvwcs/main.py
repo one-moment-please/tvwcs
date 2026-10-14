@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TVWCS — Metro-style TV launcher and workspace switcher for i3. Application controller and command line."""
 from __future__ import annotations
-import os, shlex, shutil, signal, subprocess, sys
+import os, shlex, signal, subprocess, sys
 from pathlib import Path
 import gi
 gi.require_version("Gtk", "4.0")
@@ -9,7 +9,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
-from tvwcs.hotkeys import render_i3, xcape_mapping
+from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
@@ -39,7 +39,7 @@ class TVWCSApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.NON_UNIQUE)
         self.window=None; self.catalogue=ApplicationCatalogue(); self.store=ConfigStore(); self.wm=I3WindowManager()
-        self.layout=None; self._owns_pid=False; self._xcape=None
+        self.layout=None; self._owns_pid=False
         self.pin_gate=PinGate(); self.owners=WindowOwners()
 
     @property
@@ -65,7 +65,7 @@ class TVWCSApp(Gtk.Application):
             self.apply_hotkeys(); GLib.timeout_add(1500,self._run_startup_action)
         self.window.set_visible(False)
     def do_shutdown(self):
-        self._stop_xcape(); self._release_pid(); Gtk.Application.do_shutdown(self)
+        self._release_pid(); Gtk.Application.do_shutdown(self)
     def _claim_pid(self):
         try:
             PID_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -118,7 +118,7 @@ class TVWCSApp(Gtk.Application):
         guide=(mode=="guide") and not (visible and w.guide_open)
         if visible: self.show_panels(guide,False,focus="guide" if guide else "quick"); return False
         self.wm.focus_output_under_mouse(); self.wm.move_tvwcs_to_current_workspace(); self.refresh_data(rebuild=False)
-        w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False
+        w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False; w.apps_view="applications"   # always opens on the guide
         self._update_layout(guide,False,focus_output=True)
         w.set_default_size(self.layout.width,self.layout.height); w._build(); w.present(); self.apply_geometry()
         w.focus_pane_soon("guide" if guide else "quick")
@@ -131,10 +131,10 @@ class TVWCSApp(Gtk.Application):
         w.set_panels(guide,options); w.set_default_size(self.layout.width,self.layout.height); self.apply_geometry()
         if focus: w.focus_pane_soon(focus)
     def apply_scale(self):
-        """The interface size changed: rebuild everything at the new size and reopen Settings where it was."""
+        """The interface size changed: rebuild everything at the new size; the Applications pane stays on Settings."""
         set_scale(self.scale_factor); w=self.window
         self._update_layout(w.guide_open,w.options_open,focus_output=False)
-        w.set_default_size(self.layout.width,self.layout.height); w._build(); self.apply_geometry(); w.focus_pane_soon("options")
+        w.set_default_size(self.layout.width,self.layout.height); w._build(); self.apply_geometry(); w.focus_pane_soon("guide")
 
     # ---------------------------------------------------------- open windows and workspaces
     def workspace_entries(self): return build_entries(self.wm.windows(),self.wm.workspaces(),self.match_application_window)
@@ -272,6 +272,12 @@ class TVWCSApp(Gtk.Application):
             except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}")
         # An action starts the application, so the main profile's PIN applies to it too.
         self._with_pins([profile] if profile and profile.pin_hash else [],go)
+    def restart(self):
+        """Start a fresh TVWCS once this process has exited (after an update replaced the program files), then quit."""
+        wait='while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2"'
+        try: subprocess.Popen(["sh","-c",wait,"sh",str(os.getpid()),str(LAUNCHER)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or i3) to use the new version."); return
+        self.hide_window(); self.quit()
     def run_system_action(self,action_id):
         command=command_for(action_id,self.store.settings)
         if not command: return
@@ -280,28 +286,28 @@ class TVWCSApp(Gtk.Application):
         except OSError as exc: self.notify_message(f"Could not run {command[0]}: {exc}")
 
     # ---------------------------------------------------------- hotkeys and start-up
-    def set_hotkey(self,name,spec):
-        self.store.settings["hotkeys"][name]=spec; self.store.save_settings(); self.apply_hotkeys()
+    def set_hotkey(self,device,name,spec):
+        """Set (or, with "", clear) one device's hotkey for the Quick Menu ("menu") or Applications ("guide")."""
+        self.store.settings["hotkeys"][device][name]=spec; self.store.save_settings(); self.apply_hotkeys()
     def apply_hotkeys(self):
-        """Write hotkeys.conf from the settings, ask i3 to reload if it changed, and run xcape for any lone-modifier hotkey."""
-        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER))
+        """Write hotkeys.conf from the settings and ask i3 to reload if it changed."""
+        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes())
         try: old=HOTKEYS_FILE.read_text(encoding="utf-8")
         except OSError: old=None
         if old!=text:
             try:
                 HOTKEYS_FILE.parent.mkdir(parents=True,exist_ok=True); HOTKEYS_FILE.write_text(text,encoding="utf-8"); self.wm.reload()
             except OSError as exc: self.notify_message(f"Could not save the hotkeys: {exc}")
-        self._restart_xcape()
-    def _stop_xcape(self):
-        if self._xcape is not None:
-            self._xcape.terminate(); self._xcape=None
-    def _restart_xcape(self):
-        self._stop_xcape()
-        mapping=xcape_mapping(self.store.settings["hotkeys"])
-        if not mapping: return
-        if not shutil.which("xcape"): self.notify_message("Tapping a modifier by itself needs xcape. Install it with: sudo apt install xcape"); return
-        try: self._xcape=subprocess.Popen(["xcape","-f","-t","300","-e",mapping],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        except OSError as exc: self.notify_message(f"Could not start xcape: {exc}")
+    @staticmethod
+    def _modifier_keycodes():
+        """This keyboard's keycodes for the left Super/Alt/Ctrl/Shift keys, as X reports them (missing ones use the defaults)."""
+        display=Gdk.Display.get_default(); codes={}
+        if display is None: return codes
+        for mod,name in MODIFIER_KEYSYMS.items():
+            try: ok,keys=display.map_keyval(Gdk.keyval_from_name(name))
+            except (AttributeError,TypeError): continue
+            if ok and keys: codes[mod]=min(k.keycode for k in keys)
+        return codes
     def _run_startup_action(self):
         """Once per login: open the chosen app, or whichever app was used last."""
         if STARTUP_MARKER.exists(): return GLib.SOURCE_REMOVE
