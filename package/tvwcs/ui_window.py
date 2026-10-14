@@ -6,18 +6,19 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk
 
-from tvwcs.hotkeys import HotkeyCapture
+from tvwcs.hotkeys import HotkeyCapture, describe
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.theme import render_css
 from tvwcs.ui_settings import build_settings_panel
-from tvwcs.widgets import (NavGroup, S, app_icon, child_marker, clear_box, glyph, icon_button, icon_only, muted_label, section_title, usable)
+from tvwcs.widgets import (NavGroup, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, icon_only, muted_label, section_title, usable)
 
 APPS_VIEWS=("applications","settings")   # what the right-hand pane can show; it opens on the applications guide
 FOCUS_TIP_DELAY=3000                     # ms a selected icon-only button waits before showing its tooltip (Settings > Button hints)
 FOCUS_TIP_DURATION=6000                  # ms the tooltip then stays up
+CHANNEL_DIGITS=3                         # typing this many digits of a channel number ...
+CHANNEL_DELAY=1000                       # ... and nothing else for this many ms launches that channel
 
 _TYPING_BLOCKED=Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.ALT_MASK|Gdk.ModifierType.SUPER_MASK|Gdk.ModifierType.META_MASK
-_I3_MODS=((Gdk.ModifierType.SUPER_MASK,"Mod4"),(Gdk.ModifierType.ALT_MASK,"Mod1"),(Gdk.ModifierType.CONTROL_MASK,"Control"),(Gdk.ModifierType.SHIFT_MASK,"Shift"))
 
 class TVWCSWindow(Gtk.ApplicationWindow):
     """One borderless window holding two panels side by side. The Quick Menu is always there; the
@@ -27,7 +28,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.app=app; self.guide_open=False; self.options_open=False
         self.guide_pane=None; self.options_pane=None; self.guide_scroll=None; self.guide_button=None; self.quick_content=None
         self.apps_stack=None; self.apps_view=APPS_VIEWS[0]; self.view_button=None; self.apps_title=None; self.apps_subtitle=None; self.settings_tab=None
-        self._focus_tip=None; self._focus_tip_source=0
+        self._focus_tip=None; self._focus_tip_source=0; self._channel_source=0; self._capture_cancel=None
         self._provider=None; self._expanded={"Media","Internet","Games"}; self._guide_scroll=0.0
         self._popovers=0; self._was_active=False; self._capture=None; self._capture_cb=None; self._pin=None
         self._reset_nav()
@@ -40,7 +41,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _reset_nav(self):
         self._groups={"quick":[],"guide":[],"options":[]}; self._header_group=[]
         self._search_results=[]; self._selected_result=0; self._result_groups=[]; self._result_mains=[]; self._stars={}
-        self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None
+        self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None; self._password=None
         self._all_guide_groups=None; self._open_row=None
 
     # ================================================================== construction
@@ -94,7 +95,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         guide_btn=Gtk.Button(); guide_btn.add_css_class("square"); guide_btn.set_child(glyph("open-menu-symbolic","☰")); guide_btn.set_tooltip_text("Open the applications window (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
         pane.append(header); self._header_group=[close_btn,guide_btn]   # focus order matches left-to-right layout
         body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_vexpand(True); pane.append(body)
-        self.search_entry=Gtk.SearchEntry(); self.search_entry.set_placeholder_text("Type to search apps, channels, workspaces…"); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search); body.append(self.search_entry)
+        self.search_entry=Gtk.SearchEntry(); self.search_entry.set_placeholder_text("Type to search apps, channels, workspaces…"); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search)
+        self.search_entry.connect("changed",self._search_typed); body.append(self.search_entry)
         self.results_scroll=Gtk.ScrolledWindow(); self.results_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); self.results_scroll.set_max_content_height(S(280)); self.results_scroll.set_propagate_natural_height(True); self.results_scroll.set_visible(False)
         self.results_box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); self.results_scroll.set_child(self.results_box); body.append(self.results_scroll)
         scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); body.append(scroll)
@@ -434,11 +436,24 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             main.connect("clicked",lambda _b,r=result:self.app.activate_result(r))
             line,group=self._options_row(main,options); self._result_groups.append(group); self._result_mains.append(main); self.results_box.append(line)
     def _activate_search(self,*_):
+        if self._channel_source: GLib.source_remove(self._channel_source); self._channel_source=0   # Enter launches it now
         q=self.search_entry.get_text().strip()
         if q.isdigit():
             p=next((p for p in self.app.store.profiles if p.channel==int(q)),None)
             if p: self.app.launch_profile(p); return
         if self._search_results: self.app.activate_result(self._search_results[self._selected_result])
+    def _search_typed(self,*_):
+        """A full channel number (three digits) left alone for a second launches its channel, without Enter."""
+        if self._channel_source: GLib.source_remove(self._channel_source); self._channel_source=0
+        q=self.search_entry.get_text().strip()
+        if len(q)==CHANNEL_DIGITS and q.isdigit() and any(p.channel==int(q) for p in self.app.store.profiles):
+            self._channel_source=GLib.timeout_add(CHANNEL_DELAY,self._launch_typed_channel,q)
+    def _launch_typed_channel(self,q):
+        self._channel_source=0
+        if self.is_visible() and not self._modal_groups and self.search_entry.get_text().strip()==q:
+            p=next((p for p in self.app.store.profiles if p.channel==int(q)),None)
+            if p: self.app.launch_profile(p)
+        return GLib.SOURCE_REMOVE
     def _select_result(self,index):
         self._selected_result=index
         for i,b in enumerate(self._result_mains):
@@ -597,6 +612,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         focused=self.get_focus(); editable=isinstance(focused,Gtk.Editable); typing=self._in_search(focused)
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self._escape(); return True   # the remote's Back key (XF86Back) is Esc
         if self._pin is not None and self._pin_key(keyval): return True
+        if self._password is not None and not editable and self._password_key(keyval): return True
         # Typing anywhere starts a search (not while a dialog is up, in another text field, or with a shortcut modifier held).
         if not self._modal_groups and not editable and not (state & _TYPING_BLOCKED):
             ch=Gdk.keyval_to_unicode(keyval)
@@ -640,12 +656,20 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     # ---------------------------------------------------------- close when focus leaves
     def _active_changed(self,*_):
-        if self.is_active(): self._was_active=True; return
+        if self.is_active():
+            self._was_active=True
+            # Clicking TVWCS brings it in front of an open dialog (profile editor, application profiles), which would
+            # then sit hidden behind it, blocking it. Close the dialogs instead, dropping what was not saved.
+            if self.app.has_dialogs(): GLib.timeout_add(120,self._dismiss_dialogs_if_active)
+            return
         if self._was_active and self.is_visible() and self.app.store.settings["close_on_click_outside"]:
             GLib.timeout_add(150,self._close_if_unfocused)
     def _close_if_unfocused(self):
         # Child windows (profile editor) and open popovers legitimately take focus; only a click elsewhere closes TVWCS.
         if self.is_visible() and not self.is_active() and self._popovers==0 and not self.app.has_dialogs(): self.app.hide_window()
+        return GLib.SOURCE_REMOVE
+    def _dismiss_dialogs_if_active(self):
+        if self.is_visible() and self.is_active(): self.app.dismiss_dialogs()   # still in front: not a passing focus change
         return GLib.SOURCE_REMOVE
     def note_shown(self): self._was_active=False; self._hide_focus_tip()
 
@@ -655,6 +679,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         clear_box(self.modal_card); self.modal_layer.set_visible(True)
     def close_modal(self):
         self._modal_groups=[]; self._modal_back=None; self.modal_layer.set_visible(False); self._capture=None; self._pin=None
+        if self._password is not None: self._password["entry"].set_text(""); self._password=None   # never left in the widget
         back=self._return_focus
         if back is not None and usable(back): back.grab_focus()
         else: self.focus_pane("quick")
@@ -721,6 +746,50 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if status=="ok": on_ok=st["on_ok"]; self.close_modal(); on_ok(); return
         self.ask_pin(profile,st["on_ok"],"Wrong PIN." if status=="wrong" else f"Too many wrong tries. Try again in {wait} seconds.")
 
+    def ask_password(self,action_label,on_ok,message=""):
+        """The administrator (sudo) password for a power action. It is typed on a keyboard (such as the one on the back
+        of a remote) into a hidden field, or, for a password of digits, on the keypad with the D-pad.
+        on_ok(password) runs on Enter or OK; the field is emptied as soon as the dialog closes."""
+        self._begin_modal(); self._title(f"Password for {action_label}")
+        text=muted_label(f"{action_label} needs administrator rights. Enter your password (the one sudo asks for). It is used once and never stored.")
+        text.set_margin_bottom(S(8)); self.modal_card.append(text)
+        if message:
+            e=Gtk.Label(label=message); e.add_css_class("error"); e.set_wrap(True); e.set_margin_bottom(S(8)); self.modal_card.append(e)
+        entry=Gtk.PasswordEntry(); entry.set_show_peek_icon(True); entry.add_css_class("pin-display"); entry.set_margin_bottom(S(8)); self.modal_card.append(entry)
+        def submit(*_):
+            password=entry.get_text()
+            if not password: return
+            self.close_modal(); on_ok(password)
+        entry.connect("activate",submit)
+        self._password={"entry":entry,"submit":submit}
+        groups=[NavGroup([entry])]
+        def key(text,handler,css=None):
+            b=Gtk.Button(label=text); b.add_css_class("pin-key")
+            if css: b.add_css_class(css)
+            b.connect("clicked",lambda *_:handler()); return b
+        for digits in (("1","2","3"),("4","5","6"),("7","8","9"),(None,"0",None)):
+            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); line.set_margin_bottom(S(4)); row=[]
+            for d in digits:
+                if d is not None: b=key(d,lambda d=d:self._password_type(d))
+                elif not row: b=key("⌫",self._password_back)
+                else: b=key("OK",submit,"active")
+                line.append(b); row.append(b)
+            self.modal_card.append(line); g=NavGroup(row); g.column=True; groups.append(g)
+        cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(6)); cancel.connect("clicked",lambda *_:self.close_modal()); self.modal_card.append(cancel); groups.append(NavGroup([cancel]))
+        self._modal_groups=groups; self._modal_back=self.close_modal
+        entry.grab_focus(); GLib.timeout_add(150,lambda:(self._password is not None and self._password["entry"] is entry and entry.grab_focus(),GLib.SOURCE_REMOVE)[1])   # after a just-shown window settles its own focus
+    def _password_type(self,text):
+        e=self._password["entry"]; e.set_text(e.get_text()+text)
+    def _password_back(self):
+        e=self._password["entry"]; e.set_text(e.get_text()[:-1])
+    def _password_key(self,keyval):
+        """With a keypad button selected, typed characters and Backspace still go into the password."""
+        if keyval==Gdk.KEY_BackSpace: self._password_back(); return True
+        if keyval in (Gdk.KEY_Return,Gdk.KEY_KP_Enter): return False   # activates the selected button
+        ch=Gdk.keyval_to_unicode(keyval)
+        if ch>=32 and chr(ch).isprintable(): self._password_type(chr(ch)); return True
+        return False
+
     def choose_option(self,title,options,current,callback):
         """A small pop-up listing the choices for a setting, with the current one ticked."""
         self._begin_modal(); self._title(title); groups=[]; focus=None
@@ -752,22 +821,63 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(8)); cancel.connect("clicked",lambda *_:self.close_modal()); self.modal_card.append(cancel); groups.append(NavGroup([cancel]))
         self._modal_groups=groups; self._modal_back=self.close_modal; groups[0][0].grab_focus()
 
-    def capture_hotkey(self,label,callback,can_clear=False):
-        """Wait for a key or combination and pass its spec to callback; with can_clear, a Clear button passes ""."""
+    def assign_hotkey(self,owner,label,on_set,back=None):
+        """Choose a hotkey for `owner` (("slot", device, action) or ("profile", id)) and pass it to on_set ("" clears it).
+        A key that something else already has is only taken from it after a warning and a confirmation.
+        back() runs instead of closing the dialog when it is cancelled."""
+        store=self.app.store
+        def got(spec):
+            other=store.hotkey_owner(spec,owner) if spec else None
+            if other is None: on_set(spec); return
+            taken=store.owner_label(other)
+            self.confirm("Hotkey already in use",f"{describe(spec)} is already the hotkey for “{taken}”. Use it for “{label}” instead? "
+                         f"“{taken}” will no longer have a hotkey.","Use it here",lambda:on_set(spec),back=back)
+        self.capture_hotkey(label,got,can_clear=True,cancelled=back)
+
+    def show_app_hotkeys(self,changed=None):
+        """The applications that have a hotkey: change or remove each one's. changed() runs after every change."""
+        self._begin_modal(); self._title("Application hotkeys"); groups=[]
+        again=lambda:self.show_app_hotkeys(changed)
+        def set_key(profile_id,spec):
+            self.app.set_profile_hotkey(profile_id,spec)
+            if changed: changed()
+            again()
+        profiles=self.app.store.hotkey_profiles()
+        if not profiles: self.modal_card.append(muted_label("No application has a hotkey yet. Give one a hotkey in its launch profile (✎ in the applications guide)."))
+        scroll=Gtk.ScrolledWindow(); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); scroll.set_max_content_height(S(380)); scroll.set_propagate_natural_height(True)
+        box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); scroll.set_child(box); self.modal_card.append(scroll)
+        apps=self.app.catalogue.by_id()
+        for p in profiles:
+            a=apps.get(p.desktop_id); row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10))
+            row.append(app_icon(a.icon if a else None,p.name,28))
+            name=Gtk.Label(label=p.name); name.set_xalign(0); name.set_hexpand(True); name.set_ellipsize(3); row.append(name)
+            key=Gtk.Label(label=describe(p.hotkey)); key.add_css_class("setting-value"); row.append(key)
+            change=Gtk.Button(); change.add_css_class("square"); change.set_child(glyph("document-edit-symbolic","✎")); change.set_tooltip_text(f"Change the hotkey for {p.name}")
+            change.connect("clicked",lambda _b,prof=p:self.assign_hotkey(("profile",prof.id),prof.name,lambda spec,pid=prof.id:set_key(pid,spec),back=again))
+            remove=Gtk.Button(); remove.add_css_class("square"); remove.add_css_class("close-button"); remove.set_child(glyph("window-close-symbolic","✕")); remove.set_tooltip_text(f"Remove the hotkey for {p.name}")
+            remove.connect("clicked",lambda _b,pid=p.id:set_key(pid,""))
+            row.append(change); row.append(remove); box.append(row); groups.append(NavGroup([change,remove]))
+        close=Gtk.Button(label="Close"); close.set_margin_top(S(8)); close.connect("clicked",lambda *_:self.close_modal()); self.modal_card.append(close); groups.append(NavGroup([close]))
+        self._modal_groups=groups; self._modal_back=self.close_modal; groups[0][0].grab_focus()
+
+    def capture_hotkey(self,label,callback,can_clear=False,cancelled=None):
+        """Wait for a key or combination and pass its spec to callback; with can_clear, a Clear button passes "".
+        cancelled() runs when it is cancelled instead of nothing."""
         self._begin_modal(); self._title("New hotkey"); self.modal_card.append(muted_label(f"Press the key or key combination for “{label}”.\nTap a modifier on its own (such as Super) to use it by itself. Esc cancels."))
         row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); row.set_homogeneous(True); row.set_margin_top(S(14))
         cancel=Gtk.Button(label="Cancel"); cancel.connect("clicked",lambda *_:self._end_capture(None)); row.append(cancel); buttons=[cancel]
         if can_clear:
             clear=Gtk.Button(label="Clear"); clear.connect("clicked",lambda *_:self._end_capture("")); row.append(clear); buttons.append(clear)
         self.modal_card.append(row)
-        self._modal_groups=[buttons]; self._modal_back=lambda:self._end_capture(None); self._capture=HotkeyCapture(); self._capture_cb=callback; cancel.grab_focus()
+        self._modal_groups=[buttons]; self._modal_back=lambda:self._end_capture(None); self._capture=HotkeyCapture(); self._capture_cb=callback; self._capture_cancel=cancelled; cancel.grab_focus()
     def _capture_key(self,keyval,state):
         name=Gdk.keyval_name(keyval) or ""
-        held=[m for mask,m in _I3_MODS if state & mask]
+        held=held_modifiers(state)
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back) and not held: self._end_capture(None); return True
         spec=self._capture.press(name,held)
         if spec: self._end_capture(spec)
         return True
     def _end_capture(self,spec):
-        callback=self._capture_cb; self._capture=None; self._capture_cb=None; self.close_modal()
+        callback=self._capture_cb; cancelled=self._capture_cancel; self._capture=None; self._capture_cb=None; self._capture_cancel=None; self.close_modal()
         if spec is not None and callback: callback(spec)   # "" is Clear
+        elif spec is None and cancelled: cancelled()

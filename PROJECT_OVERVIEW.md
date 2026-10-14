@@ -1,12 +1,12 @@
 # TVWCS: Project goals and intended behavior
 
-*Updated for Phase 2.5.*
+*Updated for 2.7.*
 
 ## A short introduction
 
 **TVWCS stands for TV Window Channel Switcher.** It is a lightweight, TV-style interface for using an ordinary Linux computer from the couch. It aims to make the computer feel more like a television or set-top box: browse a guide, assign channel numbers to things you use, pin favorites, search by name, and switch between applications that are already open.
 
-TVWCS does not replace Linux, the desktop, or the applications. It is a remote-friendly launcher and application switcher that sits on top of the existing desktop (i3 today, sway later). It should work with normal Linux applications without requiring each application to ship a TVWCS-specific plugin.
+TVWCS does not replace Linux, the desktop, or the applications. It is a remote-friendly launcher and application switcher that sits on top of the existing desktop (i3 or sway). It should work with normal Linux applications without requiring each application to ship a TVWCS-specific plugin.
 
 ## The problem it solves
 
@@ -91,19 +91,23 @@ Channel numbers are assigned by the user and stored locally. A number is a short
 ### 9. Switching between open applications
 
 
-TVWCS prefers focusing an existing window over starting another copy when it can identify a match. The window manager remains responsible for windows, focus, and workspaces; TVWCS issues requests through i3 and does not implement its own window management.
+TVWCS prefers focusing an existing window over starting another copy when it can identify a match. The window manager remains responsible for windows, focus, and workspaces; TVWCS issues requests through i3 (or sway) and does not implement its own window management.
 
 Application identity is imperfect across Linux apps. Matching uses the window class, instance, the `.desktop` file's `StartupWMClass`, and names, and is therefore best-effort. The same matching drives logos, badges and launch modes on open windows.
 
 ## Settings
 
-- **Interface size:** Desktop, 10-foot (1080p TV) or 10-foot (4K TV), chosen from a small pop-up list.
+- **Interface size:** Desktop, TV Mode (a 1080p TV) or 4K TV Mode, chosen from a small pop-up list. 4K TV Mode is only offered when a 4K (3840×2160) or larger display is connected.
 - **Close when clicking outside** TVWCS.
 - **Open running apps in a new workspace** (the toggle described under launch modes).
-- **Hotkeys:** three sets, for the keyboard (default: tap Super for the Quick Menu), the remote (default: F2 and Shift+F2) and a gamepad (unset by default; its buttons need mapping to keys with a tool such as AntiMicroX). Each set has a key for the Quick Menu and one for the Applications pane, any of which can be cleared, and a key can only do one thing. A modifier tapped on its own (such as Super) can be used; it is bound by its keycode and triggers when the key is released, so Super+Enter and every other Super shortcut keep working.
-- **At login:** open a chosen app (favorites listed first, then apps with channel numbers), or reopen the last app used, once per login.
+- **Always open apps in a new workspace:** every app, launched or already open, gets a workspace of its own whatever its profile says.
+- **Fullscreen is kept:** an app that was fullscreen when TVWCS opened is made fullscreen again when TVWCS closes or switches to it (i3 drops fullscreen when another window takes the focus, and sway would keep TVWCS hidden behind it, so TVWCS ends it while it is open).
+- **Dialogs never trap TVWCS:** clicking the TVWCS window while a profile editor is open closes the editor, without saving.
+- **Hotkeys:** three sets, for the keyboard (default: tap Super for the Quick Menu), the remote (default: F2 for the Quick Menu) and a gamepad (unset by default; its buttons need mapping to keys with a tool such as AntiMicroX). Each set has a key for the Quick Menu and one for the Applications pane, and the remote has one more that toggles fullscreen on the focused app; any of them can be cleared. A key can only do one thing: choosing one that is already in use (by another slot or an application) warns and asks before moving it.
+- **Application hotkeys:** any launch profile can have a hotkey that launches it, set in its editor. Settings counts them, and lists them to change or remove each one. A modifier tapped on its own (such as Super) can be used; it is bound by its keycode and triggers when the key is released, so Super+Enter and every other Super shortcut keep working.
+- **At login:** open a chosen app (favorites listed first, then apps with channel numbers), or reopen the last app used, once per login. It can also open the Quick Menu at login (after that app, if one is chosen).
 - **Check for updates:** asks GitHub for the latest published release; if it is newer, offers to download it, install it over the current copy (keeping the user's data), remove the download and restart TVWCS.
-- **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.
+- **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. When a power action needs root (no systemd or elogind, or polkit refuses), TVWCS uses a no-password doas or sudo rule if there is one (install.sh offers a narrow one), else asks for the sudo password in a remote-friendly dialog (keyboard, or keypad for a numeric password) and passes it to `sudo -S`, never storing it. Sleep, Reboot and Shut down use systemd, else elogind's `loginctl`, else the plain `zzz` / `reboot` / `poweroff` commands. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.
 
 ## What TVWCS is, and is not
 
@@ -121,24 +125,23 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 - A promise that every app will become fully controllable with a D-pad.
 - A system requiring a custom plugin for every streaming site or app.
 - A fixed, centrally maintained channel list.
-- A finished sway implementation (log-out and lock detect sway; window, workspace and hotkey control is i3 only for now).
 
 ## Technical direction
 
-The target is Linux Mint/Debian/Ubuntu with i3. GTK 4 supplies the interface and the Metro theme (one CSS block). The application catalogue comes from XDG desktop entries. i3's IPC, exposed by `i3-msg`, enumerates windows and workspaces, reports each monitor's usable rectangle, switches and moves workspaces, and positions the TVWCS panel. TVWCS does not read raw evdev devices; a remote that behaves like a keyboard works through the normal Linux input path.
+The target is any Linux distribution with i3 or sway, tested on Debian/Ubuntu/Mint, Arch, Fedora, Void and Alpine, with or without systemd. GTK 4 supplies the interface and the Metro theme (one CSS block). The application catalogue comes from XDG desktop entries. i3's IPC, exposed by `i3-msg` (and spoken by sway through `swaymsg`), enumerates windows and workspaces, reports each monitor's usable rectangle, switches and moves workspaces, and positions the TVWCS panel. TVWCS does not read raw evdev devices; a remote that behaves like a keyboard works through the normal Linux input path.
 
-The code is divided into small modules so the logic can be tested without a display: `model` (profiles, settings, layout maths, badges, search), `applications` (discovery, window-to-app matching), `workspaces` (workspace entries and names), `hotkeys` (hotkey specs and the i3 config they produce), `pinlock` (PIN hashing and try limits), `ownership` (which profile launched which window), `window_manager` (i3 adapter, with a clear boundary for a future sway adapter) and `system_actions`; and, for the GTK interface, `widgets`, `theme`, `ui_window`, `ui_settings`, `ui_editors` and `main`.
+The code is divided into small modules so the logic can be tested without a display: `model` (profiles, settings, layout maths, badges, search), `applications` (discovery, window-to-app matching), `workspaces` (workspace entries and names), `hotkeys` (hotkey specs and the i3 config they produce), `pinlock` (PIN hashing and try limits), `ownership` (which profile launched which window), `window_manager` (the i3 / sway adapter) and `system_actions`; and, for the GTK interface, `widgets`, `theme`, `ui_window`, `ui_settings`, `ui_editors` and `main`.
 
 ### Where things live
 
 | What | Where |
 |---|---|
-| The program | `~/.config/i3/tvwcs/` (recommended) |
-| i3 integration | `~/.config/i3/tvwcs/tvwcs.conf` |
+| The program | `~/.local/share/tvwcs/` (`~/.config/i3/tvwcs/` before 2.7; install.sh moves it) |
+| i3 / sway integration | `~/.local/share/tvwcs/tvwcs.conf` |
 | The user's data and settings | `~/.config/tvwcs/config.json` |
 | Hotkeys, written by Settings | `~/.config/tvwcs/hotkeys.conf` |
 
-The i3 config gains a single line, `include ~/.config/i3/tvwcs/tvwcs.conf`. That file starts TVWCS, includes the generated hotkeys file, and sets the window rules (floating, borderless panel; centered dialogs). Because the usable area differs per monitor and bar, TVWCS computes the panel's exact position and size at run time; the margin and Quick Menu width are settings in `config.json`. The user's data is kept apart from the program so that upgrading never touches channels, favorites or hotkeys. TVWCS recognises its own windows by an exact title (`TVWCS`) or a distinctive prefix (`TVWCS · `), never by a prefix an ordinary document name could share.
+The i3 or sway config gains a single line, `include ~/.local/share/tvwcs/tvwcs.conf`, which install.sh offers to add (or to create a config from the standard template when there is none). That file starts TVWCS, includes the generated hotkeys file, and sets the window rules (floating, borderless panel; centered dialogs). Because the usable area differs per monitor and bar, TVWCS computes the panel's exact position and size at run time; the margin and Quick Menu width are settings in `config.json`. The user's data is kept apart from the program so that upgrading never touches channels, favorites or hotkeys. TVWCS recognises its own windows by an exact title (`TVWCS`) or a distinctive prefix (`TVWCS · `), never by a prefix an ordinary document name could share.
 
 ## Phase 2.5 deliverables
 

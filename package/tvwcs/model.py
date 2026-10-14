@@ -4,7 +4,7 @@ import copy, json, os, re, shlex, uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from tvwcs.hotkeys import DEFAULT_HOTKEYS, clean_hotkeys
+from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_LABELS, assigned, clean_hotkeys, valid_spec
 from tvwcs.pinlock import valid_hash
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
@@ -23,7 +23,15 @@ def is_tvwcs_title(title: str) -> bool:
     return title==MAIN_TITLE or (title or "").startswith(DIALOG_PREFIX)
 
 SCALE_PRESETS={"desktop":1.0,"tenfoot":1.6,"tenfoot_4k":3.0}
-SCALE_LABELS={"desktop":"Desktop","tenfoot":"10-foot (1080p TV)","tenfoot_4k":"10-foot (4K TV)"}
+SCALE_LABELS={"desktop":"Desktop","tenfoot":"TV Mode","tenfoot_4k":"4K TV Mode"}
+UHD_SCALES=("tenfoot_4k",)   # only offered when a 4K (3840×2160) or larger display is connected
+
+def scale_choices(current, has_4k_display):
+    """The interface sizes to offer: 4K TV Mode needs a 4K display, unless it is the one already chosen."""
+    return [(k,v) for k,v in SCALE_LABELS.items() if has_4k_display or k not in UHD_SCALES or k==current]
+
+def is_4k(width, height) -> bool:
+    return max(width,height)>=3840 and min(width,height)>=2160
 STARTUP_MODES=("none","last","app")
 STARTUP_LABELS={"none":"Nothing","last":"Reopen the last app","app":"A chosen app"}
 
@@ -35,10 +43,11 @@ DEFAULT_SETTINGS={
     "scale":"desktop",              # key of SCALE_PRESETS
     "close_on_click_outside":False, # hide TVWCS when another window takes focus
     "open_in_new_workspace":False,  # selecting an open app gives it its own workspace instead of tiling it here
+    "always_new_workspace":False,   # every app, launched or already open, opens in a workspace of its own
     "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
     "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
-    "startup":{"mode":"none","profile_id":"","last_profile_id":""},
+    "startup":{"mode":"none","profile_id":"","last_profile_id":"","show_menu":False},   # show_menu: open the Quick Menu at login
 }
 PIN_LAUNCH="launch"                  # the PIN is asked when the profile is launched
 PIN_LAUNCH_AND_SHOW="launch_and_show"  # ... and when an open app of it is shown from a workspace that is not on screen
@@ -59,6 +68,7 @@ class LaunchProfile:
     pin_hash: str = ""        # salted hash of the PIN that protects this profile ("" = unprotected)
     pin_scope: str = PIN_LAUNCH
     description: str = ""     # secondary profiles: replaces the default description (the launch options)
+    hotkey: str = ""          # a hotkey spec (see hotkeys.py) that launches this profile ("" = none)
 
 def _clean_text(value) -> str:
     return " ".join(str(value or "").split())[:MAX_DESCRIPTION]
@@ -75,7 +85,7 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    for key in ("close_on_click_outside","open_in_new_workspace","hide_options_buttons","button_hints"):
+    for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     st=raw.get("startup")
@@ -83,6 +93,7 @@ def _clean_settings(raw) -> dict:
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]
         for key in ("profile_id","last_profile_id"):
             if isinstance(st.get(key),str): s["startup"][key]=st[key]
+        if isinstance(st.get("show_menu"),bool): s["startup"]["show_menu"]=st["show_menu"]
     return s
 
 class ConfigStore:
@@ -107,9 +118,10 @@ class ConfigStore:
                 mode=raw.get("launch_mode")
                 if mode not in LAUNCH_MODES: mode=LAUNCH_SAME
                 self.profiles.append(LaunchProfile(str(raw.get("id") or uuid.uuid4()),str(raw["desktop_id"]),str(raw.get("name") or "Launch"),str(raw.get("command") or ""),channel,bool(raw.get("favorite",False)),mode,str(raw.get("desktop_action") or ""),
-                                                  raw["pin_hash"] if valid_hash(raw.get("pin_hash")) else "",raw["pin_scope"] if raw.get("pin_scope") in PIN_SCOPES else PIN_LAUNCH,_clean_text(raw.get("description"))))
+                                                  raw["pin_hash"] if valid_hash(raw.get("pin_hash")) else "",raw["pin_scope"] if raw.get("pin_scope") in PIN_SCOPES else PIN_LAUNCH,_clean_text(raw.get("description")),
+                                                  raw["hotkey"] if isinstance(raw.get("hotkey"),str) and valid_spec(raw["hotkey"]) else ""))
             except (KeyError, TypeError, ValueError, AttributeError): continue
-        self._deduplicate_channels()
+        self._deduplicate_channels(); self._deduplicate_hotkeys()
     def save(self):
         self.path.parent.mkdir(parents=True,exist_ok=True)
         temp=self.path.with_suffix(".json.tmp")
@@ -137,6 +149,7 @@ class ConfigStore:
         if profile.launch_mode not in LAUNCH_MODES: raise ValueError("Unknown launch mode.")
         if profile.pin_scope not in PIN_SCOPES: raise ValueError("Unknown PIN scope.")
         if profile.pin_hash and not valid_hash(profile.pin_hash): raise ValueError("The PIN is not stored in a valid form.")
+        if profile.hotkey and not valid_spec(profile.hotkey): raise ValueError("The hotkey is not valid.")
         profile.description=_clean_text(profile.description)
         profile.name=profile.name.strip()
         if not profile.name: raise ValueError("Profile name cannot be empty.")
@@ -144,6 +157,8 @@ class ConfigStore:
             try: parts=shlex.split(profile.command)
             except ValueError as exc: raise ValueError(f"Command quoting is invalid: {exc}")
             if not parts: raise ValueError("Custom command cannot be empty.")
+        # A key does one thing: the editor has already asked before taking a hotkey from somewhere else.
+        if profile.hotkey: self._release_hotkey(profile.hotkey,("profile",profile.id))
         for i,p in enumerate(self.profiles):
             if p.id==profile.id: self.profiles[i]=profile; break
         else: self.profiles.append(profile)
@@ -166,6 +181,49 @@ class ConfigStore:
             self.settings["startup"]["last_profile_id"]=profile_id; self.save()
     def delete(self, profile_id):
         self.profiles=[p for p in self.profiles if p.id!=profile_id]; self.save()
+    # ---- hotkeys. Every hotkey has one owner: a device slot ("slot", device, action) or a profile ("profile", id).
+    def hotkey_owner(self, spec, skip=None):
+        """The owner of `spec` other than `skip`, or None when the key is free."""
+        if not spec: return None
+        for d,a,s in assigned(self.settings["hotkeys"]):
+            if s==spec and ("slot",d,a)!=skip: return ("slot",d,a)
+        return next((("profile",p.id) for p in self.profiles if p.hotkey==spec and ("profile",p.id)!=skip),None)
+    def owner_label(self, owner) -> str:
+        if owner is None: return ""
+        if owner[0]=="slot": return f"{DEVICE_LABELS[owner[1]]}: {ACTION_LABELS[owner[2]]}"
+        p=self.get(owner[1]); return p.name if p else "an application"
+    def _release_hotkey(self, spec, keep):
+        """Take `spec` away from every owner but `keep` (not saved)."""
+        for d,a,s in assigned(self.settings["hotkeys"]):
+            if s==spec and ("slot",d,a)!=keep: self.settings["hotkeys"][d][a]=""
+        for p in self.profiles:
+            if p.hotkey==spec and ("profile",p.id)!=keep: p.hotkey=""
+    def set_slot_hotkey(self, device, action, spec):
+        """Set (or, with "", clear) a device's hotkey, taking the key from whatever had it."""
+        if spec: self._release_hotkey(spec,("slot",device,action))
+        self.settings["hotkeys"][device][action]=spec; self.save()
+    def set_profile_hotkey(self, profile_id, spec):
+        """Set (or, with "", clear) a profile's hotkey, taking the key from whatever had it."""
+        p=self.get(profile_id)
+        if p is None: return
+        if spec:
+            if not valid_spec(spec): raise ValueError("The hotkey is not valid.")
+            self._release_hotkey(spec,("profile",p.id))
+        p.hotkey=spec; self.save()
+    def hotkey_profiles(self):
+        """Profiles that have a hotkey, by name."""
+        return sorted((p for p in self.profiles if p.hotkey),key=lambda p:p.name.casefold())
+    def app_hotkeys(self):
+        """(spec, profile id, name) of every profile hotkey, for hotkeys.render_i3."""
+        return [(p.hotkey,p.id,p.name) for p in self.hotkey_profiles()]
+    def _deduplicate_hotkeys(self):
+        """A profile cannot have a key a device slot or an earlier profile already has (only a hand-edited file does that)."""
+        seen={s for _d,_a,s in assigned(self.settings["hotkeys"])}
+        for p in sorted(self.profiles,key=lambda p:p.id):
+            if p.hotkey:
+                if p.hotkey in seen: p.hotkey=""
+                else: seen.add(p.hotkey)
+
     def _deduplicate_channels(self):
         seen=set()
         for p in sorted(self.profiles,key=lambda p:p.id):

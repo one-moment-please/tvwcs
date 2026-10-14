@@ -1,6 +1,8 @@
-"""Small i3 IPC adapter: monitor targeting, workspaces, per-profile workspace launch modes."""
+"""Small i3 / sway IPC adapter: monitor targeting, workspaces, per-profile workspace launch modes.
+sway speaks i3's IPC and command language, so the same commands work through swaymsg; only finding the monitor
+under the pointer differs (see focus_output_under_mouse)."""
 from __future__ import annotations
-import json, re, shutil, subprocess
+import json, os, re, shutil, subprocess
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, is_tvwcs_title
 
 TVWCS_CRITERIA='[title="^TVWCS$"]'
@@ -14,10 +16,17 @@ def _all_ok(out):
     try: return all(item.get("success",False) for item in json.loads(out))
     except (ValueError,TypeError,AttributeError): return False
 
+def running_sway(env=None):
+    """True inside a sway session (sway sets SWAYSOCK for everything it starts)."""
+    return bool((os.environ if env is None else env).get("SWAYSOCK"))
+
 class I3WindowManager:
-    def __init__(self):
-        self.binary=shutil.which("i3-msg")
-        self.xdotool=shutil.which("xdotool")
+    def __init__(self, env=None):
+        self.sway=running_sway(env) and bool(shutil.which("swaymsg"))
+        self.binary=shutil.which("swaymsg") if self.sway else shutil.which("i3-msg")
+        # xdotool reads the pointer from X. Under sway only XWayland windows report it, so it would be wrong there;
+        # sway's focus follows the mouse by default, so its focused output is used instead.
+        self.xdotool=None if self.sway else shutil.which("xdotool")
 
     @property
     def available(self): return bool(self.binary)
@@ -50,7 +59,9 @@ class I3WindowManager:
             cls=props.get("class") or node.get("app_id") or ""
             inst=props.get("instance") or ""
             title=node.get("name") or props.get("title") or cls or inst   # untitled windows stay listed
-            if wid is not None and node.get("id") is not None and title:
+            # A native Wayland window under sway has an app_id and no X window id.
+            is_window=wid is not None or (node.get("type") in ("con","floating_con") and bool(node.get("app_id")))
+            if is_window and node.get("id") is not None and title:
                 ncls=_norm(cls); ntitle=_norm(title)
                 window_type=(props.get("window_type") or node.get("window_type") or "").casefold()
                 # Bars/docks are infrastructure; TVWCS's own windows are not applications. They are matched by their
@@ -59,7 +70,8 @@ class I3WindowManager:
                 if not is_bar and not is_tvwcs_title(title):
                     found.append({"con_id":node["id"],"window":wid,"title":title,"class":cls,"instance":inst,
                                   "workspace":workspace,"output":output,"workspace_visible":workspace_visible,
-                                  "focused":bool(node.get("focused",False)),"urgent":bool(node.get("urgent",False))})
+                                  "focused":bool(node.get("focused",False)),"urgent":bool(node.get("urgent",False)),
+                                  "fullscreen":bool(node.get("fullscreen_mode",0))})
             for child in node.get("nodes",[]): walk(child,output,workspace,workspace_visible)
             for child in node.get("floating_nodes",[]): walk(child,output,workspace,workspace_visible)
         walk(tree)
@@ -105,7 +117,7 @@ class I3WindowManager:
         except (OSError,subprocess.SubprocessError,ValueError,KeyError): return None
 
     def focus_output_under_mouse(self):
-        """Focus the output beneath the pointer. Falls back to i3's current output."""
+        """Focus the output beneath the pointer. Falls back to the current output (always, under sway)."""
         if not self.binary: return None
         xy=self._mouse_xy(); outputs=self.outputs(); target=None
         if xy:
@@ -191,6 +203,31 @@ class I3WindowManager:
         """Close every window on a workspace."""
         ids=[w["con_id"] for w in self._all_windows() if w["workspace"]==name]
         return bool(ids) and all(_all_ok(self._call(f"[con_id={int(i)}] kill")) for i in ids)
+
+    def fullscreen_windows(self):
+        """con_ids of the windows that are fullscreen now."""
+        return {int(w["con_id"]) for w in self._all_windows() if w.get("fullscreen")}
+
+    def leave_fullscreen(self):
+        """Take the current workspace's fullscreen window out of fullscreen, so TVWCS can show over it: sway keeps a
+        fullscreen window above every other window on its workspace, and i3 drops its fullscreen anyway when TVWCS takes
+        the focus. restore_fullscreen puts it back."""
+        if not self.binary: return
+        current=(self.current_workspace() or {}).get("name")
+        for w in self._all_windows():
+            if w.get("fullscreen") and w["workspace"]==current: self._call(f"[con_id={int(w['con_id'])}] fullscreen disable")
+
+    def restore_fullscreen(self, con_ids, skip_current=False):
+        """Put windows that were fullscreen back into fullscreen. i3 drops a window's fullscreen when another window on
+        its workspace (TVWCS, or an app tiled in beside it) takes focus. On the current workspace only the focused window
+        is restored, so a fullscreen window never covers the app just chosen; with `skip_current` (an app was just
+        launched and may not have mapped yet) none is."""
+        if not self.binary or not con_ids: return
+        current=(self.current_workspace() or {}).get("name")
+        for w in self._all_windows():
+            if int(w["con_id"]) not in con_ids or w.get("fullscreen"): continue
+            if w["workspace"]==current and (skip_current or not w.get("focused")): continue
+            self._call(f"[con_id={int(w['con_id'])}] fullscreen enable")   # i3 keeps the focus where it is for another workspace's window
 
     def reload(self): return bool(self._call("reload"))
 

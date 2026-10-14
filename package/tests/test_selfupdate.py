@@ -42,6 +42,19 @@ class InstallTests(unittest.TestCase):
                 selfupdate.install_release(Release("2.6.0","v2.6.0","https://example/z.zip",""),dest)
             self.assertEqual((dest/"ran").read_text().splitlines()[0],str(dest))
             self.assertFalse(seen[0].exists())   # the download folder is gone afterwards
+    def test_an_install_in_the_old_location_updates_into_the_new_one(self):
+        with tempfile.TemporaryDirectory() as d, patch.dict("os.environ",{"XDG_CONFIG_HOME":f"{d}/cfg","XDG_DATA_HOME":f"{d}/data"}):
+            self.assertEqual(selfupdate.update_target(Path(d)/"cfg"/"i3"/"tvwcs"),Path(d)/"data"/"tvwcs")
+            self.assertEqual(selfupdate.update_target(Path(d)/"opt"),Path(d)/"opt"); self.assertIsNone(selfupdate.update_target(None))
+    def test_migrate_lets_install_sh_move_the_old_copy(self):
+        with tempfile.TemporaryDirectory() as d:
+            src=Path(d)/"src.zip"; dest=Path(d)/"dest"; dest.mkdir()
+            self._zip(src,{"tvwcs/install.sh":'echo "${TVWCS_MIGRATE:-no}" > "$TVWCS_DEST/migrate"\n',"tvwcs/tvwcs/main.py":""})
+            with patch.object(selfupdate,"_download",lambda _u,t:Path(t).write_bytes(src.read_bytes())):
+                selfupdate.install_release(Release("2.7.0","v2.7.0","x",""),dest)
+                self.assertEqual((dest/"migrate").read_text().strip(),"no")
+                selfupdate.install_release(Release("2.7.0","v2.7.0","x",""),dest,migrate=True)
+                self.assertEqual((dest/"migrate").read_text().strip(),"1")
     def test_a_zip_that_is_not_tvwcs_is_refused(self):
         with tempfile.TemporaryDirectory() as d:
             src=Path(d)/"src.zip"; self._zip(src,{"other/install.sh":"exit 0\n"})

@@ -57,21 +57,29 @@ class SettingsAndProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"
             s=ConfigStore(path).settings
-            self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"],s["hotkeys"],s["startup"]["mode"]),("desktop",False,False,{"keyboard":{"menu":"Mod4","guide":""},"remote":{"menu":"F2","guide":"Shift+F2"},"gamepad":{"menu":"","guide":""}},"none"))
+            self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"],s["hotkeys"],s["startup"]["mode"]),("desktop",False,False,{"keyboard":{"menu":"Mod4","guide":""},"remote":{"menu":"F2","guide":"","fullscreen":""},"gamepad":{"menu":"","guide":""}},"none"))
+            self.assertFalse(s["always_new_workspace"])
             path.write_text(json.dumps({"settings":{"scale":"huge","close_on_click_outside":True,"open_in_new_workspace":"yes","hotkeys":{"keyboard":{"menu":"Mod1","guide":"bad key"},"gamepad":{"menu":"F7"}},"startup":{"mode":"app","profile_id":"p1"}}}))
             s=ConfigStore(path).settings
             self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"]),("desktop",True,False))
-            self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1","guide":""},"remote":{"menu":"F2","guide":"Shift+F2"},"gamepad":{"menu":"F7","guide":""}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
+            self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1","guide":""},"remote":{"menu":"F2","guide":"","fullscreen":""},"gamepad":{"menu":"F7","guide":""}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
+    def test_open_quick_menu_at_login_setting(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"
+            self.assertFalse(ConfigStore(path).settings["startup"]["show_menu"])
+            path.write_text(json.dumps({"settings":{"startup":{"show_menu":"yes"}}})); self.assertFalse(ConfigStore(path).settings["startup"]["show_menu"])
+            store=ConfigStore(path); store.settings["startup"]["show_menu"]=True; store.save()
+            self.assertTrue(ConfigStore(path).settings["startup"]["show_menu"])
     def test_a_key_used_twice_keeps_only_its_first_use(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"remote":{"menu":"F5","guide":"F5"},"gamepad":{"menu":"Mod4"}}}}))
             hk=ConfigStore(path).settings["hotkeys"]
-            self.assertEqual((hk["remote"],hk["gamepad"]["menu"]),({"menu":"F5","guide":""},""))   # Mod4 is already the keyboard's
+            self.assertEqual((hk["remote"],hk["gamepad"]["menu"]),({"menu":"F5","guide":"","fullscreen":""},""))   # Mod4 is already the keyboard's
     def test_old_single_hotkey_set_becomes_the_remote_set(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"menu":"F9","guide":"Shift+F9"}}}))
             hk=ConfigStore(path).settings["hotkeys"]
-            self.assertEqual((hk["remote"],hk["keyboard"]["menu"]),({"menu":"F9","guide":"Shift+F9"},"Mod4"))
+            self.assertEqual((hk["remote"],hk["keyboard"]["menu"]),({"menu":"F9","guide":"Shift+F9","fullscreen":""},"Mod4"))
     def test_defaults_are_not_shared_between_stores(self):
         with tempfile.TemporaryDirectory() as d:
             a=ConfigStore(Path(d)/"a.json"); a.settings["hotkeys"]["remote"]["menu"]="F9"
@@ -128,6 +136,48 @@ class SettingsAndProfileTests(unittest.TestCase):
         self.assertEqual(profile_detail(LaunchProfile("1","b.desktop","P",command="b --kiosk"),app),"b --kiosk")
         self.assertEqual(profile_detail(LaunchProfile("1","b.desktop","P",desktop_action="Private",command="b --x"),app),"Private Window  ·  b --x")
         self.assertEqual(profile_detail(LaunchProfile("1","b.desktop","P"),app),"")
+
+class ProfileHotkeyTests(unittest.TestCase):
+    def test_profile_hotkey_persists_and_bad_ones_are_dropped(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"; store=ConfigStore(path)
+            store.set_profile(LaunchProfile("a","firefox.desktop","Firefox",hotkey="Mod4+f"))
+            self.assertEqual(ConfigStore(path).get("a").hotkey,"Mod4+f")
+            with self.assertRaises(ValueError): store.set_profile(LaunchProfile("b","x.desktop","X",hotkey="a;rm"))
+            path.write_text(json.dumps({"profiles":[{"id":"a","desktop_id":"a.desktop","name":"A","hotkey":"bad key"}]}))
+            self.assertEqual(ConfigStore(path).get("a").hotkey,"")
+    def test_a_hand_edited_duplicate_keeps_the_device_slot(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"
+            path.write_text(json.dumps({"profiles":[{"id":"a","desktop_id":"a.desktop","name":"A","hotkey":"F2"},
+                                                    {"id":"b","desktop_id":"b.desktop","name":"B","hotkey":"F8"},{"id":"c","desktop_id":"c.desktop","name":"C","hotkey":"F8"}]}))
+            store=ConfigStore(path)
+            self.assertEqual([store.get(i).hotkey for i in "abc"],["","F8",""])   # F2 is the remote's Quick Menu
+    def test_owner_lookup_and_taking_a_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"; store=ConfigStore(path)
+            store.set_profile(LaunchProfile("a","firefox.desktop","Firefox",hotkey="F8"))
+            self.assertEqual(store.hotkey_owner("F2"),("slot","remote","menu")); self.assertEqual(store.owner_label(("slot","remote","menu")),"Remote: Quick Menu")
+            self.assertEqual(store.hotkey_owner("F8"),("profile","a")); self.assertEqual(store.owner_label(("profile","a")),"Firefox")
+            self.assertIsNone(store.hotkey_owner("F8",("profile","a"))); self.assertIsNone(store.hotkey_owner("F9")); self.assertIsNone(store.hotkey_owner(""))
+            store.set_slot_hotkey("remote","fullscreen","F8")   # taken from Firefox
+            self.assertEqual((store.get("a").hotkey,store.settings["hotkeys"]["remote"]["fullscreen"]),("","F8"))
+            store.set_profile_hotkey("a","F2")                  # taken from the remote's Quick Menu
+            self.assertEqual((store.get("a").hotkey,store.settings["hotkeys"]["remote"]["menu"]),("F2",""))
+            store.set_profile(LaunchProfile("b","x.desktop","X",hotkey="F2"))   # saving a profile takes it too
+            reloaded=ConfigStore(path)
+            self.assertEqual((reloaded.get("a").hotkey,reloaded.get("b").hotkey),("","F2"))
+            self.assertEqual([p.id for p in reloaded.hotkey_profiles()],["b"]); self.assertEqual(reloaded.app_hotkeys(),[("F2","b","X")])
+            store.set_profile_hotkey("b",""); self.assertEqual(store.hotkey_profiles(),[])
+
+class ScaleTests(unittest.TestCase):
+    def test_4k_mode_needs_a_4k_display_unless_already_chosen(self):
+        from tvwcs.model import SCALE_LABELS, is_4k, scale_choices
+        self.assertEqual((SCALE_LABELS["tenfoot"],SCALE_LABELS["tenfoot_4k"]),("TV Mode","4K TV Mode"))
+        self.assertEqual([k for k,_ in scale_choices("desktop",False)],["desktop","tenfoot"])
+        self.assertEqual([k for k,_ in scale_choices("desktop",True)],["desktop","tenfoot","tenfoot_4k"])
+        self.assertEqual([k for k,_ in scale_choices("tenfoot_4k",False)],["desktop","tenfoot","tenfoot_4k"])
+        self.assertTrue(is_4k(3840,2160)); self.assertTrue(is_4k(2160,3840)); self.assertFalse(is_4k(1920,1080)); self.assertFalse(is_4k(5120,1440))
 
 class LayoutTests(unittest.TestCase):
     AREA={"x":0,"y":30,"width":1920,"height":1050}   # y offset = a 30 px bar on top

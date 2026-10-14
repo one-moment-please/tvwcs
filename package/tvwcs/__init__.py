@@ -1,9 +1,9 @@
-"""TVWCS - TV Window Channel Switcher: a remote-friendly GTK 4 launcher for i3."""
+"""TVWCS - TV Window Channel Switcher: a remote-friendly GTK 4 launcher for i3 and sway."""
 import os
 from pathlib import Path
 
 def _read_version():
-    """The VERSION file: next to the package once installed (~/.config/i3/tvwcs/VERSION), at the repository root in a checkout."""
+    """The VERSION file: next to the package once installed (~/.local/share/tvwcs/VERSION), at the repository root in a checkout."""
     here = Path(__file__).resolve().parent
     for candidate in (here.parent / "VERSION", here.parent.parent / "VERSION"):
         try: return candidate.read_text(encoding="utf-8").strip()
