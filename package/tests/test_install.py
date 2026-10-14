@@ -207,7 +207,7 @@ class InstallTests(unittest.TestCase):
         env["PATH"]=f"{bin_}:{sysbin}"
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
         out=self.converse(["y","n","n","n","n"],**env)
-        self.assertRegex(out,r"pipewire pipewire-pulse wireplumber +PipeWire: sound")
+        self.assertRegex(out,r"pipewire pipewire-pulse wireplumber dbus-user-session +PipeWire: sound")
         self.assertIn("pipewire pipewire-pulse wireplumber",(bin_/"apt").read_text(),out)
     def without_gtk(self,bin_):
         """These tests need neither window manager here, and GTK missing (so the package list is always asked about)."""

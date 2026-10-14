@@ -85,7 +85,7 @@ git clone https://github.com/one-moment-please/tvwcs && cd tvwcs
 
 The installer then sets up i3 and/or sway (whichever is installed). It asks before changing anything, and backs a config up as `config.tvwcs-backup` before it edits it:
 
-- **Packages are missing:** it lists each one with what it is for (GTK 4 for Python, i3, `xdotool`, PipeWire with its PulseAudio layer when there is no sound server, and the Control Panel's tools) and offers to install them with your package manager; otherwise it prints the command.
+- **Packages are missing:** it lists each one with what it is for (GTK 4 for Python, i3, `xdotool`, PipeWire with its PulseAudio layer when there is no sound server, and the Control Panel's tools) and offers to install them with your package manager; otherwise it prints the command. PipeWire starts by itself with systemd; without systemd, TVWCS's i3/sway config starts it.
 - **Neither i3 nor sway is installed:** it offers to install one with your package manager: i3 together with Xorg, `startx`, `xdotool` and `xrandr` (recommended, and the default on Enter), or sway. It then carries on as below, so it can create the config and set the computer to start it at boot.
 - **You have a config:** it offers to add one line to it, and reloads the window manager if it is running:
   ```i3

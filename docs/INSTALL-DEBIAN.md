@@ -102,4 +102,4 @@ The same section turns the SSH server on and off, and shows the command to conne
 - **`Connection refused`:** the SSH server is not running. On the TV computer, run `sudo systemctl enable --now ssh`.
 - **The installer asks no questions:** you signed in without `-t`. Sign in again with `ssh -t`.
 - **The TV still shows a text log-in after the install:** someone was logged in on that screen during the install. Log out there (`exit`), or restart the computer (`sudo reboot`).
-- **No sound:** restart the computer once after the install, so PipeWire starts in the TV's session. Then choose the output (such as HDMI) on the Control Panel's **Sound** page.
+- **No sound:** PipeWire needs no setup: Debian starts it at every log-in. If there is still no sound, restart the computer once (`sudo reboot`). Then choose the output (such as HDMI) on the Control Panel's **Sound** page.

@@ -165,7 +165,8 @@ pkg() {
         debian:nmcli) echo network-manager ;;                arch:nmcli) echo networkmanager ;;
         alpine:nmcli) echo networkmanager-cli ;;             gentoo:nmcli) echo net-misc/networkmanager ;;   *:nmcli) echo NetworkManager ;;
         # sound: PipeWire with its PulseAudio layer (the Sound page talks to it with pactl) and its session manager
-        debian:pipewire|arch:pipewire|alpine:pipewire) echo "pipewire pipewire-pulse wireplumber" ;;
+        debian:pipewire) echo "pipewire pipewire-pulse wireplumber dbus-user-session" ;;   # WirePlumber needs the session bus
+        arch:pipewire|alpine:pipewire) echo "pipewire pipewire-pulse wireplumber" ;;
         fedora:pipewire|suse:pipewire) echo "pipewire pipewire-pulseaudio wireplumber" ;;
         void:pipewire) echo "pipewire wireplumber" ;;   gentoo:pipewire) echo "media-video/pipewire media-video/wireplumber" ;;
         debian:xrandr) echo x11-xserver-utils ;;             arch:xrandr) echo xorg-xrandr ;;               gentoo:xrandr) echo x11-apps/xrandr ;;
@@ -249,6 +250,12 @@ if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then ne
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Control Panel: Bluetooth"
 command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Control Panel: network (Ethernet and Wi-Fi)"
 python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Control Panel: the terminal page"
+start_pipewire() {   # PipeWire just installed: start it in a session that runs now (systemd starts it by itself from the next log-in)
+    command -v pipewire >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1 || return 0
+    if systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1; then
+        echo "Started PipeWire for $(id -un)."
+    fi
+}
 ask_yes() {   # like ask, but only on a terminal (TVWCS_ASSUME_YES never installs packages). Enter means yes.
     [ -t 0 ] || return 1
     printf "%s [Y/n] " "$1"
@@ -261,7 +268,7 @@ if [ -n "$NEEDS" ]; then
     ALL=$(printf '%s' "$NEEDS" | cut -f1 | tr '\n' ' '); ALL=${ALL% }
     if [ "$(distro)" != unknown ] && ask_yes "Install them now?"; then
         # shellcheck disable=SC2086   # one word per package
-        if pkg_install $ALL; then echo "Installed them."
+        if pkg_install $ALL; then echo "Installed them."; start_pipewire
         else echo "Not everything could be installed. Install what is missing with:  $(install_hint "$ALL")" >&2; fi
     else
         echo "To install them:  $(install_hint "$ALL")"
