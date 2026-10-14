@@ -453,6 +453,9 @@ def main():
     if args==["guide"]: return send_signal(signal.SIGUSR2)
     if args==["stop"]: return send_signal(signal.SIGTERM)
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
-    if args: print("Usage: tvwcs [toggle|guide|stop|launch PROFILE_ID]",file=sys.stderr); return 2
+    if args[:1]==["control"] and len(args)<=2:   # the Control Panel, a separate application (optionally opened on one page)
+        from tvwcs.ui_control import main as control_panel
+        return control_panel(args[1:])
+    if args: print("Usage: tvwcs [toggle|guide|stop|launch PROFILE_ID|control [PAGE]]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())

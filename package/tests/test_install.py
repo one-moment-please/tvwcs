@@ -38,6 +38,12 @@ class InstallTests(unittest.TestCase):
         self.assertIn(f"exec --no-startup-id '{self.dest}/bin/tvwcs'\n",conf); self.assertNotIn(".config/i3/tvwcs",conf.split("# ---")[1])
         self.assertIn(f"'{self.dest}/bin/tvwcs' toggle",(self.home/".config"/"tvwcs"/"hotkeys.conf").read_text())
         self.assertIn("No i3 config found",out); self.assertFalse(self.i3.exists())   # never created without a terminal
+    def test_lists_the_control_panel_with_the_applications(self):
+        self.run_install()
+        entry=(self.home/".local"/"share"/"applications"/"com.tvwcs.ControlPanel.desktop").read_text()
+        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" control\n',entry)   # quoted: this home folder has a space
+        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" control network\n',entry); self.assertNotIn("Exec=tvwcs",entry)
+        self.assertIn("Categories=Settings;System;",entry); self.assertTrue((self.dest/"com.tvwcs.ControlPanel.desktop").is_file())
     def test_adds_the_include_line_when_allowed_and_only_once(self):
         self.write_i3("set $mod Mod4\n")
         out=self.run_install(); self.assertIn("Left",out); self.assertEqual(self.i3.read_text(),"set $mod Mod4\n")   # no terminal: no change

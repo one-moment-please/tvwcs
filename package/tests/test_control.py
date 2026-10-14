@@ -1,0 +1,192 @@
+"""The Control Panel's readers: the output of pactl, bluetoothctl, nmcli, ip, the package managers and /proc, parsed
+from saved samples. No display, sound server, adapter or network needed."""
+import tempfile, unittest
+from pathlib import Path
+
+from tvwcs import control_bluetooth as bt, control_network as net, control_sound as sound, control_sysinfo as info, control_updates as upd
+from tvwcs.control_cmd import Result, key_values, split_terse
+
+SINKS="""Sink #52
+\tState: RUNNING
+\tName: alsa_output.pci-0000_00_1f.3.analog-stereo
+\tDescription: Built-in Audio Analog Stereo
+\tDriver: PipeWire
+\tMute: no
+\tVolume: front-left: 26214 /  40% / -23.88 dB,   front-right: 32768 /  50% / -18.06 dB
+\t        balance 0.10
+\tProperties:
+\t\tdevice.icon_name = "audio-card-analog"
+\tPorts:
+\t\tanalog-output-speaker: Speakers (type: Speaker, priority: 10000, availability group: Legacy 1, availability unknown)
+\t\tanalog-output-headphones: Headphones (type: Headphones, priority: 9900, availability group: Legacy 2, not available)
+\tActive Port: analog-output-speaker
+\tFormats:
+\t\tpcm
+
+Sink #60
+\tName: alsa_output.pci-0000_01_00.1.hdmi-stereo
+\tDescription: TU106 HDMI / DisplayPort
+\tMute: yes
+\tVolume: front-left: 65536 / 100% / 0.00 dB,   front-right: 65536 / 100% / 0.00 dB
+"""
+SOURCES="""Source #53
+\tName: alsa_output.pci-0000_00_1f.3.analog-stereo.monitor
+\tDescription: Monitor of Built-in Audio Analog Stereo
+\tMute: no
+\tVolume: front-left: 65536 / 100% / 0.00 dB
+\tMonitor of Sink: alsa_output.pci-0000_00_1f.3.analog-stereo
+Source #54
+\tName: alsa_input.usb-Blue_Yeti-00.analog-stereo
+\tDescription: Yeti Stereo Microphone
+\tMute: no
+\tVolume: front-left: 45875 /  70% / -9.29 dB,   front-right: 45875 /  70% / -9.29 dB
+\tMonitor of Sink: n/a
+\tProperties:
+\t\tdevice.class = "sound"
+"""
+
+class CommandTests(unittest.TestCase):
+    def test_split_terse_unescapes_colons_and_backslashes(self):
+        self.assertEqual(split_terse(r"*:Home\:5G:78:WPA2"),["*","Home:5G","78","WPA2"])
+        self.assertEqual(split_terse(r"GENERAL.HWADDR:AA\:BB\:CC",1),["GENERAL.HWADDR","AA:BB:CC"])
+        self.assertEqual(split_terse(r"a\\b:c"),["a\\b","c"])
+    def test_key_values_and_message(self):
+        self.assertEqual(key_values("\tName: tv\n\tPowered: yes\n")["Powered"],"yes")
+        self.assertEqual(Result(False,1,"","first\nError: the reason\n").message,"Error: the reason")
+
+class SoundTests(unittest.TestCase):
+    def test_outputs_with_ports_volume_and_mute(self):
+        a,b=sound.parse_devices(SINKS,"sink")
+        self.assertEqual((a.index,a.label,a.volume,a.muted,a.active_port),(52,"Built-in Audio Analog Stereo",45,False,"analog-output-speaker"))
+        self.assertEqual([(p.name,p.label,p.available) for p in a.ports],
+                         [("analog-output-speaker","Speakers",True),("analog-output-headphones","Headphones",False)])
+        self.assertEqual((b.muted,b.volume,b.ports),(True,100,[]))
+    def test_inputs_leave_out_monitors(self):
+        sources=sound.parse_devices(SOURCES,"source")
+        self.assertEqual([s.is_monitor for s in sources],[True,False])
+        self.assertEqual(sources[1].volume,70)
+    def test_info_and_server_name(self):
+        sink,source,server=sound.parse_info("Server Name: PulseAudio (on PipeWire 1.0.5)\nDefault Sink: hdmi\nDefault Source: mic\n")
+        self.assertEqual((sink,source,sound.server_label(server)),("hdmi","mic","PipeWire 1.0.5"))
+        self.assertEqual(sound.server_label("pulseaudio"),"PulseAudio")
+    def test_volume_steps_land_on_multiples_and_stay_in_range(self):
+        self.assertEqual([sound.stepped(v,1) for v in (0,47,45,98,100)],[5,50,50,100,100])
+        self.assertEqual([sound.stepped(v,-1) for v in (0,3,47,45,100)],[0,0,45,40,95])
+    def test_stream_indexes(self):
+        self.assertEqual(sound.parse_short_streams("12\t52\t83\tPipeWire\ts16le\n15\t52\t90\n"),[12,15])
+
+BT_INFO="""Device 00:1B:66:AA:BB:CC (public)
+\tName: MOMENTUM 4
+\tAlias: Living room headphones
+\tIcon: audio-headset
+\tPaired: yes
+\tTrusted: yes
+\tConnected: yes
+\tUUID: Audio Sink                (0000110b-0000-1000-8000-00805f9b34fb)
+\tBattery Percentage: 0x50 (80)
+"""
+
+class BluetoothTests(unittest.TestCase):
+    def test_controller(self):
+        text="Controller 5C:F3:70:11:22:33 (public)\n\tName: tv\n\tPowered: no\n\tPowerState: off-blocked\n"
+        self.assertEqual(bt.parse_show(text),("5C:F3:70:11:22:33",False,True))
+        self.assertEqual(bt.parse_show("No default controller available\n"),("",False,False))
+    def test_device_list_skips_status_lines(self):
+        text="Agent registered\n[CHG] Controller 5C:F3:70:11:22:33 Discovering: yes\nDevice 00:1B:66:AA:BB:CC MOMENTUM 4\nDevice 4C:B9:9B:01:02:03 4C-B9-9B-01-02-03\n"
+        self.assertEqual(bt.parse_devices(text),[("00:1B:66:AA:BB:CC","MOMENTUM 4"),("4C:B9:9B:01:02:03","4C-B9-9B-01-02-03")])
+    def test_device_info(self):
+        d=bt.parse_info("00:1B:66:AA:BB:CC",BT_INFO)
+        self.assertEqual((d.name,d.paired,d.trusted,d.connected,d.battery,d.kind[2]),("Living room headphones",True,True,True,80,"Headset"))
+        self.assertIsNone(bt.parse_info("00:1B:66:AA:BB:CC","Device 00:1B:66:AA:BB:CC not available\n"))
+    def test_failures_are_explained(self):
+        self.assertEqual(bt.failure(Result(True,0,"Attempting to pair with X\nPairing successful\n","")),"")
+        self.assertIn("did not answer",bt.failure(Result(True,0,"Failed to connect: org.bluez.Error.Failed br-connection-page-timeout\n","")))
+        self.assertIn("pairing mode",bt.failure(Result(False,1,"Failed to pair: org.bluez.Error.AuthenticationFailed\n","")))
+        self.assertIn("no longer in range",bt.failure(Result(False,1,"Device 00:1B:66:AA:BB:CC not available\n","")))
+
+class NetworkTests(unittest.TestCase):
+    def test_devices(self):
+        text="eth0:ethernet:connected:Wired connection 1\nwlan0:wifi:disconnected:--\nlo:loopback:connected (externally):lo\np2p-dev-wlan0:wifi-p2p:disconnected:--\n"
+        found=net.parse_device_list(text)
+        self.assertEqual([(i.device,i.kind,i.connection,i.connected) for i in found],[("eth0","ethernet","Wired connection 1",True),("wlan0","wifi","",False)])
+    def test_device_details(self):
+        text=("GENERAL.HWADDR:AA\\:BB\\:CC\\:DD\\:EE\\:FF\nGENERAL.STATE:100 (connected)\nIP4.ADDRESS[1]:192.168.1.20/24\n"
+              "IP4.GATEWAY:192.168.1.1\nIP4.ROUTE[1]:dst = 0.0.0.0/0, nh = 192.168.1.1, mt = 100\nIP4.DNS[1]:192.168.1.1\nIP4.DNS[2]:1.1.1.1\n")
+        i=net.parse_device_show(text,net.Interface("eth0","ethernet"))
+        self.assertEqual((i.mac,i.state,i.addresses,i.gateway,i.dns),("AA:BB:CC:DD:EE:FF","connected",["192.168.1.20/24"],"192.168.1.1",["192.168.1.1","1.1.1.1"]))
+    def test_wifi_list_merges_access_points_and_skips_hidden(self):
+        text="*:Home\\:5G:40:WPA2\n :Home\\:5G:78:WPA2\n :Cafe:90:\n :Office:65:WPA1 WPA2\n ::30:WPA2\n"
+        nets=net.parse_wifi_list(text)
+        self.assertEqual([(n.ssid,n.signal,n.in_use,n.secured) for n in nets],
+                         [("Home:5G",40,True,True),("Cafe",90,False,False),("Office",65,False,True)])
+    def test_ip_json_without_networkmanager(self):
+        addr='[{"ifname":"lo","link_type":"loopback","flags":["UP","LOWER_UP"],"addr_info":[{"family":"inet","local":"127.0.0.1","prefixlen":8}]},'\
+             '{"ifname":"enp3s0","link_type":"ether","address":"aa:bb:cc:dd:ee:ff","flags":["BROADCAST","UP","LOWER_UP"],'\
+             '"addr_info":[{"family":"inet","local":"10.0.0.5","prefixlen":24},{"family":"inet6","local":"fe80::1","prefixlen":64}]},'\
+             '{"ifname":"docker0","link_type":"ether","flags":["UP"],"addr_info":[]}]'
+        route='[{"dst":"default","gateway":"10.0.0.1","dev":"enp3s0"},{"dst":"10.0.0.0/24","dev":"enp3s0"}]'
+        found=net.parse_ip_json(addr,route,physical=lambda name:name=="enp3s0")
+        self.assertEqual([(i.device,i.state,i.addresses,i.gateway,i.mac) for i in found],[("enp3s0","connected",["10.0.0.5/24"],"10.0.0.1","aa:bb:cc:dd:ee:ff")])
+        self.assertEqual(net.parse_ip_json("not json",""),[])
+    def test_ipv4_settings(self):
+        s=net.parse_ipv4("ipv4.method:manual\nipv4.addresses:192.168.1.20/24\nipv4.gateway:192.168.1.1\nipv4.dns:1.1.1.1,9.9.9.9\n")
+        self.assertEqual((s.automatic,s.address,s.gateway,s.dns),(False,"192.168.1.20/24","192.168.1.1","1.1.1.1,9.9.9.9"))
+        self.assertTrue(net.parse_ipv4("ipv4.method:auto\nipv4.addresses:\nipv4.gateway:--\n").automatic)
+    def test_ipv4_validation(self):
+        self.assertEqual(net.validate_ipv4(net.Ipv4Settings("auto"))[0],"")
+        problem,args=net.validate_ipv4(net.Ipv4Settings("manual","192.168.1.20","192.168.1.1","1.1.1.1 9.9.9.9"))
+        self.assertEqual((problem,args[3],args[7]),("","192.168.1.20/24","1.1.1.1,9.9.9.9"))
+        self.assertIn("not an IPv4 address",net.validate_ipv4(net.Ipv4Settings("manual","192.168.1"))[0])
+        self.assertIn("not on the network",net.validate_ipv4(net.Ipv4Settings("manual","192.168.1.20/24","10.0.0.1"))[0])
+        self.assertIn("DNS server",net.validate_ipv4(net.Ipv4Settings("manual","192.168.1.20/24","","one.one"))[0])
+    def test_signal_bars(self):
+        self.assertEqual([net.signal_bars(s) for s in (0,30,60,100)],["▂","▂▄","▂▄▆","▂▄▆█"])
+
+class UpdatesTests(unittest.TestCase):
+    def test_apt(self):
+        text="Listing...\nbash/noble-updates,noble-security 5.2.21-2ubuntu4.1 amd64 [upgradable from: 5.2.21-2ubuntu4]\nfirefox/noble 129.0 amd64\n"
+        self.assertEqual(upd.parse_apt(text),[upd.Update("bash","5.2.21-2ubuntu4.1","5.2.21-2ubuntu4","noble-updates"),upd.Update("firefox","129.0","","noble")])
+    def test_dnf(self):
+        text="\nfirefox.x86_64                 128.0-1.fc40               updates\nkernel.x86_64   6.9.7-200.fc40   updates\nObsoleting Packages\ngrub2.x86_64  1:2.06-1  updates\n"
+        self.assertEqual([u.name for u in upd.parse_dnf(text)],["firefox","kernel"])
+    def test_pacman_zypper_xbps_apk_flatpak(self):
+        self.assertEqual(upd.parse_pacman("linux 6.9.7.arch1-1 -> 6.9.8.arch1-1\nmesa 1 -> 2 [ignored]\n"),[upd.Update("linux","6.9.8.arch1-1","6.9.7.arch1-1")])
+        self.assertEqual(upd.parse_zypper("S | Repository | Name | Current Version | Available Version | Arch\n--+---\nv | Main Repository | bash | 5.2.26-1.1 | 5.2.32-1.1 | x86_64\n"),
+                         [upd.Update("bash","5.2.32-1.1","5.2.26-1.1","Main Repository")])
+        self.assertEqual(upd.parse_xbps("firefox-128.0_1 update x86_64 https://repo-default.voidlinux.org/current 1234 5678\n"),[upd.Update("firefox","128.0_1")])
+        self.assertEqual(upd.parse_apk("Installed:                                Available:\nbusybox-1.36.1-r28  < 1.36.1-r29\nlibcrypto3-3.3.1-r0 < 3.3.1-r3\n"),
+                         [upd.Update("busybox","1.36.1-r29","1.36.1-r28"),upd.Update("libcrypto3","3.3.1-r3","3.3.1-r0")])
+        self.assertEqual(upd.parse_flatpak("org.mozilla.firefox\t129.0\tflathub\norg.gnome.Platform\t\tflathub\n"),
+                         [upd.Update("org.mozilla.firefox","129.0","","flathub"),upd.Update("org.gnome.Platform","","","flathub")])
+    def test_detect_uses_the_first_manager_found(self):
+        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("pacman","flatpak") else None).id,"pacman")
+        self.assertIsNone(upd.detect(which=lambda c:None))
+    def test_age_and_reboot(self):
+        self.assertEqual([upd.age_text(t,1000000) for t in (999990,1000000-300,1000000-7200,1000000-86400*3)],["just now","5 minutes ago","2 hours ago","3 days ago"])
+        self.assertEqual(upd.age_text(None),"")
+        self.assertTrue(upd.reboot_needed("6.9",exists=lambda p:p=="/run/reboot-required"))
+        self.assertTrue(upd.reboot_needed("6.9",exists=lambda p:p=="/usr/lib/modules"))   # the running kernel's modules are gone
+        self.assertFalse(upd.reboot_needed("6.9",exists=lambda p:p in ("/usr/lib/modules","/usr/lib/modules/6.9")))
+
+class SysinfoTests(unittest.TestCase):
+    def test_parsers(self):
+        self.assertEqual(info.parse_os_release('NAME="Linux Mint"\nVERSION="22 (Wilma)"\nPRETTY_NAME="Linux Mint 22"\n'),"Linux Mint 22")
+        self.assertEqual(info.parse_os_release('NAME=Alpine\nVERSION=3.20\n'),"Alpine 3.20")
+        self.assertEqual(info.parse_cpu("processor\t: 0\nmodel name\t: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz\n"),"Intel Core i5-8250U CPU @ 1.60GHz")
+        self.assertEqual(info.parse_cpu("processor\t: 0\nBogoMIPS\t: 108.00\n\nHardware\t: BCM2835\nModel\t: Raspberry Pi 4\n"),"Raspberry Pi 4")
+        self.assertEqual(info.parse_meminfo("MemTotal:  8000000 kB\nMemFree: 100 kB\nMemAvailable:  4000000 kB\n"),(8192000000,4096000000))
+        self.assertEqual(info.parse_lspci_gpus("00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620 (rev 07)\n01:00.0 3D controller: NVIDIA Corporation GP108M\n00:1f.3 Audio device: Intel\n"),
+                         ["Intel Corporation UHD Graphics 620","NVIDIA Corporation GP108M"])
+    def test_formatting(self):
+        self.assertEqual([info.size_text(n) for n in (512,1500,7.6e9)],["512 B","1.5 kB","7.6 GB"])
+        self.assertEqual([info.duration_text(s) for s in (59,3660,7200,90061)],["0 minutes","1 hour, 1 minute","2 hours","1 day, 1 hour"])
+    def test_battery_and_temperature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); (root/"BAT0").mkdir(); (root/"BAT0"/"capacity").write_text("85\n"); (root/"BAT0"/"status").write_text("Charging\n")
+            self.assertEqual(info.battery(str(root)),"85 %, charging")
+            for name,kind,temp in (("thermal_zone0","acpitz","30000"),("thermal_zone1","x86_pkg_temp","48500")):
+                (root/name).mkdir(); (root/name/"type").write_text(kind); (root/name/"temp").write_text(temp)
+            self.assertEqual(info.cpu_temperature(str(root)),"48 °C")
+            self.assertEqual(info.battery(str(root/"none")),"")
+
+if __name__=="__main__": unittest.main()
