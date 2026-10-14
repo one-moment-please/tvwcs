@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.7.0 — 2026-10-14
 
 **Hotkeys**
 - The remote set has a new *Fullscreen* key (unset by default) that toggles fullscreen on the focused app. It never acts on TVWCS's own windows.

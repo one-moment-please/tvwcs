@@ -1,6 +1,6 @@
 # TVWCS: Project goals and intended behavior
 
-*Updated for Phase 2.5.*
+*Updated for 2.7.*
 
 ## A short introduction
 

@@ -2,6 +2,8 @@
 
 TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and window switcher for ordinary Linux desktop applications on i3 or sway. It is not a media center and needs no app-specific plugins. See `PROJECT_OVERVIEW.md` for the goals behind it.
 
+**New in 2.7:** sway support; installs into `~/.local/share/tvwcs` and sets up your i3 / sway config for you (or creates one); a hotkey for any application; a remote key for fullscreen, and fullscreen apps stay fullscreen; Arch, Fedora and systems without systemd; an on-screen password prompt when Reboot or Shut down needs one. See `CHANGELOG.md` for everything.
+
 <table>
   <tr>
     <th width="25%">Quick Menu</th>
@@ -22,7 +24,7 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
     <td colspan="2"><img src="assets/settings.png" alt="The Settings view of the Applications pane" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2" valign="top">Settings, in the same pane (the button at the top right goes back to the guide). The left column holds Display, Behavior, At login and Updates; each row shows its current value on the right, and Enter changes it. The right column holds the three hotkey sets: keyboard (tap Super for the Quick Menu), remote (F2) and gamepad (not set). The System actions sit in a grid underneath. This Quick Menu has its options buttons hidden, one of the Behavior settings.</td>
+    <td colspan="2" valign="top">Settings, in the same pane (the button at the top right goes back to the guide). The left column holds Display, Behavior, At login and Updates; each row shows its current value on the right, and Enter changes it. The right column holds the three hotkey sets: keyboard (tap Super for the Quick Menu), remote (F2) and gamepad (not set). The System actions sit in a grid underneath. (This screenshot is from 2.6: since 2.7 the right column also has the remote's Fullscreen key and an Application hotkeys section, and Behavior and At login have a setting more each.) This Quick Menu has its options buttons hidden, one of the Behavior settings.</td>
   </tr>
 </table>
 
@@ -93,7 +95,7 @@ Hotkeys come in three sets, one each for the keyboard, the remote and a gamepad,
 
 Any launch profile can also have a hotkey that launches it, set in its editor. **Settings › Application hotkeys** counts them and lists them to change or remove. A key does one thing: choosing one that is already in use warns you and asks before moving it.
 
-From a terminal you can run `tvwcs toggle`, `tvwcs guide`, `tvwcs stop` and `tvwcs launch <profile id>`.
+From a terminal you can run `~/.local/share/tvwcs/bin/tvwcs` with `toggle`, `guide`, `stop` or `launch <profile id>`.
 
 **Quick Menu:** search, then your open applications grouped by workspace, then your favorites. A row's options can open an app the other way (tiled here, or in its own workspace), run its `.desktop` actions, move a workspace to another monitor, expand a workspace into its apps, or close it.
 
