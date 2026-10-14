@@ -83,6 +83,7 @@ git clone https://github.com/one-moment-please/tvwcs && cd tvwcs
 
 The installer then sets up i3 and/or sway (whichever is installed). It asks before changing anything, and backs a config up as `config.tvwcs-backup` before it edits it:
 
+- **Packages are missing:** it lists each one with what it is for (GTK 4 for Python, i3, `xdotool`, and the Control Panel's tools) and offers to install them with your package manager; otherwise it prints the command.
 - **Neither i3 nor sway is installed:** it offers to install one with your package manager: i3 together with Xorg, `startx`, `xdotool` and `xrandr` (recommended, and the default on Enter), or sway. It then carries on as below, so it can create the config and set the computer to start it at boot.
 - **You have a config:** it offers to add one line to it, and reloads the window manager if it is running:
   ```i3
@@ -141,7 +142,7 @@ Its pages are tabs down the left: **↑ ↓** on the tabs changes page, **→** 
 | **Terminal** | A full terminal running your shell. Every key goes to it; **Back** (or **Shift+Esc**) leaves it. Without VTE, a console that runs one command at a time. | VTE for GTK 4 |
 | **Network** | Ethernet and Wi-Fi: status and addresses, connect and disconnect, Wi-Fi on or off, join a network (with its password), forget one, and IP settings (automatic or manual address, gateway and DNS). | `nmcli` (NetworkManager); read-only from `ip` without it |
 
-A page whose tool is missing says what to install; `install.sh` lists them too (`pulseaudio-utils`, `x11-xserver-utils`, `bluez`, `network-manager` and `gir1.2-vte-3.91` on Debian and Ubuntu).
+A page whose tool is missing says what to install; `install.sh` lists every missing package with what it is for and offers to install them (`pulseaudio-utils`, `x11-xserver-utils`, `bluez`, `network-manager` and `gir1.2-vte-3.91` on Debian and Ubuntu).
 
 ## Troubleshooting
 

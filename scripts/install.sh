@@ -135,7 +135,7 @@ fi
 # ------------------------------------------------------------------ what else is needed, in this distribution's terms
 # distro -> the family whose package manager and names apply, from /etc/os-release (ID, then ID_LIKE)
 distro() {
-    ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi; for D in ${ID:-} ${ID_LIKE:-}; do
+    ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi; for D in ${ID:-} ${ID_LIKE:-}; do
         case "$D" in
             arch|artix|manjaro|endeavouros) echo arch; exit ;;
             fedora|rhel|centos|rocky|almalinux|nobara) echo fedora; exit ;;
@@ -223,7 +223,6 @@ offer_wm_install() {
     read -r ANSWER || ANSWER=3
     case "$ANSWER" in ""|1*|[Ii]*) WM=i3 ;; 2*|[Ss]*) WM=sway ;; *) echo "Nothing was installed."; return 0 ;; esac
     PKGS=$(wm_packages "$WM")
-    python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || PKGS="$PKGS $(pkg gtk)"   # what TVWCS itself needs
     echo "Installing $WM with: $PKGS (your password may be asked for)"
     # shellcheck disable=SC2086   # one word per package
     if pkg_install $PKGS; then echo "Installed $WM."
@@ -231,16 +230,38 @@ offer_wm_install() {
 }
 offer_wm_install
 
-missing=""
-python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="$missing $(pkg gtk)"
-command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || missing="$missing $(pkg i3)"
-command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || missing="$missing $(pkg xdotool)"
-[ -z "$missing" ] || echo "Missing packages:  $(install_hint "${missing# }")"
-optional=""
-for TOOL in pactl bluetoothctl nmcli; do command -v "$TOOL" >/dev/null 2>&1 || optional="$optional $(pkg "$TOOL")"; done
-command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1 && optional="$optional $(pkg xrandr)"   # sway has its own
-python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || optional="$optional $(pkg vte)"
-[ -z "$optional" ] || echo "Optional, for the Control Panel's sound, displays, Bluetooth, network and terminal pages:  $(install_hint "${optional# }")"
+# ------------------------------------------------------------------ the other packages TVWCS uses
+# Listed with what each is for, and offered for installing (on a terminal, on a known distribution); else the
+# command to install them is printed.
+NEEDS=""   # one line per need: "packages<TAB>what for"
+need() { NEEDS="$NEEDS$1	$2
+"; }
+python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || need "$(pkg gtk)" "GTK 4 for Python: TVWCS's windows (required)"
+command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg i3)" "i3: the window manager TVWCS runs in (required)"
+command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
+command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Control Panel: sound"
+if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Control Panel: displays (sway has its own)"; fi
+command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Control Panel: Bluetooth"
+command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Control Panel: network (Ethernet and Wi-Fi)"
+python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Control Panel: the terminal page"
+ask_yes() {   # like ask, but only on a terminal (TVWCS_ASSUME_YES never installs packages). Enter means yes.
+    [ -t 0 ] || return 1
+    printf "%s [Y/n] " "$1"
+    read -r ANSWER || return 1
+    case "$ANSWER" in [Nn]*) return 1 ;; *) return 0 ;; esac
+}
+if [ -n "$NEEDS" ]; then
+    echo; echo "Missing packages:"
+    printf '%s' "$NEEDS" | while IFS='	' read -r P W; do printf '  %-34s %s\n' "$P" "$W"; done
+    ALL=$(printf '%s' "$NEEDS" | cut -f1 | tr '\n' ' '); ALL=${ALL% }
+    if [ "$(distro)" != unknown ] && ask_yes "Install them now?"; then
+        # shellcheck disable=SC2086   # one word per package
+        if pkg_install $ALL; then echo "Installed them."
+        else echo "Not everything could be installed. Install what is missing with:  $(install_hint "$ALL")" >&2; fi
+    else
+        echo "To install them:  $(install_hint "$ALL")"
+    fi
+fi
 
 # ------------------------------------------------------------------ window manager configs
 # The include line, written with ~ when the install is in your home folder (i3 and sway both expand it).

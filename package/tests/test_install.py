@@ -206,7 +206,7 @@ class InstallTests(unittest.TestCase):
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'
             f'case "$*" in *install*) for p in i3 startx; do printf "#!/bin/sh\\n" > "{bin_}/$p"; chmod +x "{bin_}/$p"; done ;; esac\n')
         (bin_/"apt-get").chmod(0o755)
-        out=self.converse(["","n","n","y"],TVWCS_WMS="",**env)   # Enter: i3; no i3 config; no power rule; yes to the automatic login
+        out=self.converse(["","n","n","n","y"],TVWCS_WMS="",**env)   # Enter: i3; not the other packages; no i3 config; no power rule; yes to the automatic login
         apt=(bin_/"apt").read_text()
         self.assertIn("apt-get update -q\n",apt); self.assertIn("install -y i3 xserver-xorg xinit xdotool x11-xserver-utils",apt)
         self.assertIn("1) i3 with Xorg (recommended)",out); self.assertIn("Installed i3.",out)
@@ -215,8 +215,20 @@ class InstallTests(unittest.TestCase):
         env,_override=self.autologin_tools()
         bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=arch\n")
         (bin_/"pacman").write_text(f'#!/bin/sh\necho "pacman $*" >> "{bin_}/pacman.log"\n'); (bin_/"pacman").chmod(0o755)
-        self.assertIn("Nothing was installed.",self.converse(["3","n","n"],TVWCS_WMS="",**env))
+        self.assertIn("Nothing was installed.",self.converse(["3","n","n","n"],TVWCS_WMS="",**env))
         self.assertFalse((bin_/"pacman.log").exists())
-        self.converse(["2","n","n"],TVWCS_WMS="",**env)
+        self.converse(["2","n","n","n"],TVWCS_WMS="",**env)
         self.assertEqual((bin_/"pacman.log").read_text().split("\n")[0].split()[:5],["pacman","-S","--needed","--noconfirm","sway"])
+    def test_lists_missing_packages_with_their_use_and_installs_them(self):
+        env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
+        out=self.converse(["y","n","n"],**env)   # install; no i3 config; no power rule
+        self.assertRegex(out,r"python3-gi gir1\.2-gtk-4\.0 +GTK 4 for Python: TVWCS's windows \(required\)")
+        self.assertRegex(out,r"xdotool +places TVWCS's window"); self.assertRegex(out,r"gir1\.2-vte-3\.91 +Control Panel: the terminal page")
+        self.assertNotIn("Control Panel: sound",out)
+        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 xdotool gir1.2-vte-3.91\n",(bin_/"apt").read_text())
+        out=self.converse(["n","n","n"],**env)
+        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 xdotool gir1.2-vte-3.91",out)
 if __name__=="__main__": unittest.main()
