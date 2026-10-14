@@ -56,12 +56,21 @@ unzip ~/Downloads/TVWCS-*.zip
 ./tvwcs/install.sh
 ```
 
-**From the repository, without git:** download the latest code as a tarball with `curl` (or `wget`), extract it in a temporary folder and run its installer. `tar` is on every Linux system, and this works over SSH too (use `ssh -t` so the installer can ask its questions).
+**From the repository, without git:** download the latest code as a tarball, extract it in a temporary folder and run its installer. `tar` is on every Linux system, and this works over SSH too (use `ssh -t` so the installer can ask its questions).
+
+With `wget` (installed by default on Debian, where `curl` is not):
+
+```bash
+cd "$(mktemp -d)"
+wget -qO- https://github.com/one-moment-please/tvwcs/archive/refs/heads/main.tar.gz | tar -xz
+./tvwcs-main/scripts/install.sh
+```
+
+With `curl`:
 
 ```bash
 cd "$(mktemp -d)"
 curl -fsSL https://github.com/one-moment-please/tvwcs/archive/refs/heads/main.tar.gz | tar -xz
-# or: wget -qO- https://github.com/one-moment-please/tvwcs/archive/refs/heads/main.tar.gz | tar -xz
 ./tvwcs-main/scripts/install.sh
 ```
 
