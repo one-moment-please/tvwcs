@@ -577,6 +577,7 @@ class SystemPage(Page):
 # ====================================================================== Terminal
 class TerminalPage(Page):
     key="terminal"; title="Terminal"; icon="utilities-terminal-symbolic"; fallback="▮"; refreshable=False
+    enter_at_top=True   # coming in from the tabs lands on the buttons: once in the terminal, every arrow key is the shell's
     def __init__(self, win):
         super().__init__(win); self.terminal=None; self.child=None; self.process=None
     def summary(self): return os.environ.get("SHELL","/bin/sh") if Vte is not None else "Command console"
@@ -588,8 +589,13 @@ class TerminalPage(Page):
             restart=Gtk.Button(label="New session"); restart.connect("clicked",lambda *_:self.start(restart=True))
             copy=Gtk.Button(label="Copy"); copy.connect("clicked",lambda *_:self.terminal.copy_clipboard_format(Vte.Format.TEXT))
             paste=Gtk.Button(label="Paste"); paste.connect("clicked",lambda *_:self.terminal.paste_clipboard())
-            for b in (restart,copy,paste): bar.append(b)
-            hint=muted_label("Every key goes to the terminal. Back (or Shift+Esc) returns to the tabs. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.")
+            tab=Gtk.Button(label="Tab"); tab.set_tooltip_text("Send the Tab key to the shell (completes what you typed)")
+            tab.connect("clicked",lambda *_:self.send(b"\t"))
+            esc=Gtk.Button(label="Esc"); esc.set_tooltip_text("Send the Esc key to the shell")
+            esc.connect("clicked",lambda *_:self.send(b"\x1b"))
+            for b in (restart,copy,paste,tab,esc): bar.append(b)
+            hint=muted_label("↓ goes into the terminal, where every key goes to the shell. Esc or Back comes back up to these buttons. "
+                             "Ctrl+Shift+C and Ctrl+Shift+V copy and paste.")
             hint.set_hexpand(True); hint.set_margin_start(S(12)); bar.append(hint)
             self.terminal=Vte.Terminal(); self.terminal.set_vexpand(True); self.terminal.set_hexpand(True)
             self.terminal.set_font_scale(max(1.0,self.win.app.scale)); self.terminal.set_scrollback_lines(5000)
@@ -597,7 +603,7 @@ class TerminalPage(Page):
             self.terminal.connect("child-exited",self._exited)
             keys=Gtk.EventControllerKey(); keys.connect("key-pressed",self._terminal_key); self.terminal.add_controller(keys)
             frame=Gtk.Box(); frame.add_css_class("console-frame"); frame.append(self.terminal); box.append(frame)
-            self.groups=[NavGroup([restart,copy,paste]),NavGroup([self.terminal])]
+            self.groups=[NavGroup([restart,copy,paste,tab,esc]),NavGroup([self.terminal])]
         else:
             self.entry=Gtk.Entry(); self.entry.set_hexpand(True); self.entry.set_placeholder_text("Type a command, then Enter")
             self.entry.connect("activate",lambda *_:self.run_command(self.entry.get_text()))
@@ -630,6 +636,10 @@ class TerminalPage(Page):
             self.child=pid
         self.terminal.spawn_async(Vte.PtyFlags.DEFAULT,os.path.expanduser("~"),[shell],None,GLib.SpawnFlags.DEFAULT,None,None,-1,None,spawned)
         if restart: self.terminal.grab_focus()
+    def send(self, data):
+        """Type a key the remote has no button for (Tab, Esc) into the shell. The selection stays on the button, so it
+        can be pressed again (Tab twice lists the completions)."""
+        if self.child is not None: self.terminal.feed_child(list(data))
     def _exited(self, *_):
         self.child=None; self.terminal.feed(b"\r\n[The shell has ended. Choose New session to start another.]\r\n")
     def _terminal_key(self, _controller, keyval, _keycode, state):
@@ -676,9 +686,11 @@ class NetworkPage(Page):
         self.row("Wi-Fi",_on_off(s.wifi_enabled),lambda:self.act(lambda:network.set_wifi(not s.wifi_enabled),
                  "Switching Wi-Fi "+("off…" if s.wifi_enabled else "on…"),"Wi-Fi"),icon="network-wireless-symbolic",fallback="📶",ident="wifi")
         if not s.wifi_enabled: return
-        self.row("Search for networks","Searching…" if self.scanning else "",None if self.scanning else self.scan,icon="edit-find-symbolic",fallback="⌕",ident="scan")
-        if not s.networks: self.note("No networks found yet." if not self.scanning else "Looking…")
         device=wireless[0]
+        if device.connected: self.ip_row(device)
+        self.row("Search for networks","Searching…" if self.scanning else "",None if self.scanning else self.scan,icon="edit-find-symbolic",fallback="⌕",
+                 detail="Looks for Wi-Fi networks nearby. The list is not searched again until you choose this.",ident="scan")
+        if not s.networks: self.note("Looking…" if self.scanning else "No networks listed. Choose Search for networks to look for them.")
         for n in s.networks: self.wifi_row(n,device)
 
     @staticmethod
@@ -697,18 +709,22 @@ class NetworkPage(Page):
                 go=lambda i=i:self.win.confirm(f"Disconnect {i.device}?",f"Disconnect {i.connection or i.device}? Anything using the network will lose it until you connect again.",
                                                "Disconnect",lambda:self.act(lambda:network.disconnect_device(i.device),f"Disconnecting {i.device}…","Ethernet"))
             else: go=lambda i=i:self.act(lambda:network.connect_device(i.device),f"Connecting {i.device}…","Ethernet")
-        if managed and i.connection_uuid:
-            extras.append(self.button("emblem-system-symbolic","⚙",f"IP settings of {i.connection or i.device}",lambda i=i:self.ip_settings(i.connection_uuid,i.connection or i.device)))
         label=("Ethernet" if i.kind=="ethernet" else "Wi-Fi")+f" ({i.device})"
         self.row(label,self._state_text(i),go,detail=self._details(i),icon="network-wired-symbolic" if i.kind=="ethernet" else "network-wireless-symbolic",
                  fallback="⇄",ident=f"if:{i.device}",extras=extras,value_css="state-on" if i.connected else "setting-value")
+        if managed: self.ip_row(i)
+
+    def ip_row(self, i):
+        """IP address, default gateway and DNS servers of the interface's connection: from DHCP, or set by hand."""
+        if not i.connection_uuid: return
+        value="Automatic (DHCP)" if i.method!="manual" else "Fixed"+(f": {i.addresses[0].split('/')[0]}" if i.addresses else "")
+        self.row(f"IP settings ({i.device})",value,lambda i=i:self.ip_settings(i),icon="preferences-system-network-symbolic",fallback="⚙",
+                 detail="IP address, default gateway and DNS servers, or back to automatic (DHCP)",ident=f"ip:{i.device}")
 
     def wifi_row(self, n, device):
         detail=f"{network.signal_bars(n.signal)}  {n.signal} %"+(f" · {n.security}" if n.secured else " · Open")
         if n.in_use and device.addresses: detail+=" · "+self._details(device)
         extras=[]
-        if n.in_use and device.connection_uuid:
-            extras.append(self.button("emblem-system-symbolic","⚙",f"IP settings of {n.ssid}",lambda:self.ip_settings(device.connection_uuid,n.ssid)))
         if n.saved_uuid:
             extras.append(self.button("user-trash-symbolic","✕",f"Forget {n.ssid}",lambda n=n:self.win.confirm(f"Forget {n.ssid}?",
                           f"The saved password and settings for {n.ssid} are removed"+(", and this computer leaves it." if n.in_use else "."),
@@ -742,19 +758,23 @@ class NetworkPage(Page):
             self.redraw()
         self.busy=True; in_background(lambda:network.read_state(scan=True),done,lambda _e:done(None))
 
-    def ip_settings(self, uuid, name):
+    def ip_settings(self, i):
+        uuid,name=i.connection_uuid,i.connection or i.device
         self.set_status("Reading IP settings…")
-        in_background(lambda:network.read_ipv4(uuid),lambda s:(self.set_status(""),self.ip_form(uuid,name,s)))
-    def ip_form(self, uuid, name, s, error=""):
-        again=lambda error="":self.ip_form(uuid,name,s,error)
+        in_background(lambda:network.read_ipv4(uuid),lambda s:(self.set_status(""),self.ip_form(uuid,name,s,iface=i)))
+    def ip_form(self, uuid, name, s, error="", iface=None):
+        again=lambda error="":self.ip_form(uuid,name,s,error,iface)
         def edit(field,title,message):
             def set_value(text): setattr(s,field,text.strip()); again()
             self.win.ask_text(title,message,set_value,getattr(s,field),back=lambda:again())
-        def flip(): s.method="auto" if s.method=="manual" else "manual"; again()
-        rows=[("Addresses","Automatic (DHCP)" if s.automatic else "Manual",flip)]
+        def flip():
+            nonlocal s
+            s=network.Ipv4Settings("auto",s.address,s.gateway,s.dns) if not s.automatic else network.fixed_from(s,iface)
+            again()
+        rows=[("Get the settings automatically (DHCP)","Yes" if s.automatic else "No, set them here",flip)]
         if not s.automatic:
             rows+=[("IP address",s.address,lambda:edit("address","IP address","With its prefix, for example 192.168.1.20/24 (without one, /24 is used).")),
-                   ("Gateway",s.gateway,lambda:edit("gateway","Gateway","The router's address, for example 192.168.1.1. Can be left empty.")),
+                   ("Default gateway",s.gateway,lambda:edit("gateway","Default gateway","The router's address, for example 192.168.1.1. Can be left empty.")),
                    ("DNS servers",s.dns,lambda:edit("dns","DNS servers","One or more, separated by commas, for example 1.1.1.1, 9.9.9.9."))]
         def save():
             problem,_args=network.validate_ipv4(s)
@@ -762,6 +782,7 @@ class NetworkPage(Page):
             self.win.close_modal()
             self.act(lambda:network.apply_ipv4(uuid,s),f"Applying the IP settings of {name}…","IP settings")
         self.win.form(f"IP settings · {name}",rows,"Save",save,
-                      "Automatic asks the router for an address. Saving reconnects, so the connection drops for a moment.",error)
+                      "Automatic (DHCP) asks the router for the address, gateway and DNS servers; choose the first row to switch. "
+                      "Saving reconnects, so the connection drops for a moment.",error)
 
 PAGES=(SoundPage,DisplaysPage,BluetoothPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)

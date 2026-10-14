@@ -141,6 +141,25 @@ class NetworkTests(unittest.TestCase):
         self.assertIn("DNS server",net.validate_ipv4(net.Ipv4Settings("manual","192.168.1.20/24","","one.one"))[0])
     def test_signal_bars(self):
         self.assertEqual([net.signal_bars(s) for s in (0,30,60,100)],["▂","▂▄","▂▄▆","▂▄▆█"])
+    def test_a_fixed_address_starts_from_the_one_in_use(self):
+        now=net.Interface("eth0","ethernet",addresses=["192.168.1.37/24"],gateway="192.168.1.1",dns=["192.168.1.1","1.1.1.1"])
+        s=net.fixed_from(net.Ipv4Settings("auto"),now)
+        self.assertEqual((s.automatic,s.address,s.gateway,s.dns),(False,"192.168.1.37/24","192.168.1.1","192.168.1.1, 1.1.1.1"))
+        self.assertEqual(net.fixed_from(net.Ipv4Settings("auto","10.0.0.5/24"),now).address,"10.0.0.5/24")   # one already typed is kept
+    def test_wifi_is_scanned_only_when_asked_and_the_ip_method_is_read(self):
+        calls=[]
+        answers={"RUNNING":"running","DEVICE,TYPE,STATE,CONNECTION":"eth0:ethernet:connected:Wired\nwlan0:wifi:disconnected:--\n",
+                 "NAME,UUID,TYPE,DEVICE":"Wired:u-1:802-3-ethernet:eth0\n","ipv4.method":"manual","radio":"enabled","IN-USE,SSID,SIGNAL,SECURITY":" :Cafe:90:\n"}
+        def fake_run(argv,timeout=None):
+            calls.append(argv)
+            return Result(True,0,next((v for k,v in answers.items() if k in argv),""),"")
+        from unittest import mock
+        with mock.patch.object(net,"run",fake_run),mock.patch.object(net,"have",lambda _n:True):
+            state=net.read_state()
+            self.assertEqual([a[a.index("--rescan")+1] for a in calls if "--rescan" in a],["no"])
+            self.assertEqual(state.of_kind("ethernet")[0].method,"manual"); self.assertEqual(state.of_kind("wifi")[0].method,"")
+            calls.clear(); net.read_state(scan=True)
+            self.assertEqual([a[a.index("--rescan")+1] for a in calls if "--rescan" in a],["yes"])
 
 class UpdatesTests(unittest.TestCase):
     def test_apt(self):

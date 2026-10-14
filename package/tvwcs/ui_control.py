@@ -8,7 +8,7 @@ TVWCS's Settings, and it works with a D-pad alone:
   and from the tabs closes the Control Panel.
 - Dialogs are drawn over the window, as in TVWCS. Text (a Wi-Fi password, an address) is typed on a keyboard, or on
   the on-screen keyboard with the D-pad.
-- In the terminal every key goes to the shell; Back (or Shift+Esc) leaves it."""
+- In the terminal every key goes to the shell; Esc (or Back) goes up to the buttons above it."""
 from __future__ import annotations
 import os, subprocess, sys, threading
 import gi
@@ -161,7 +161,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def enter_page(self, page=None):
         """Move the selection into the page: back to where it was in it, else onto its first row."""
         page=page or self.page; self.show_page(page)
-        last=self._last_page_focus.get(page.key)
+        last=None if getattr(page,"enter_at_top",False) else self._last_page_focus.get(page.key)
         if last is not None and usable(last) and self._in(last,page.root) and last.grab_focus(): return True
         return self._focus_first(page.groups) or self._focus_first(page.nav_groups()) or True   # the first row, not ⟳
 
@@ -235,8 +235,8 @@ class ControlWindow(Gtk.ApplicationWindow):
     def _key_pressed(self, _controller, keyval, _keycode, state):
         focused=self.get_focus()
         if self.page is not None and not self._modal_groups and self.page.captures_keys(focused):
-            if keyval==Gdk.KEY_Back or (keyval==Gdk.KEY_Escape and state & Gdk.ModifierType.SHIFT_MASK):
-                self.tab_buttons[self.page.key].grab_focus(); return True
+            if keyval in (Gdk.KEY_Back,Gdk.KEY_Escape):   # up to the page's buttons; the shell gets Esc from its Esc button
+                self._focus_first(self.page.groups) or self.tab_buttons[self.page.key].grab_focus(); return True
             return False   # every other key belongs to the terminal
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self.back(); return True
         editable=isinstance(focused,Gtk.Editable) or isinstance(focused,Gtk.Text)
