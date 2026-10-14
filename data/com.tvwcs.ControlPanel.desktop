@@ -2,18 +2,22 @@
 Type=Application
 Name=Control Panel
 GenericName=System settings
-Comment=Sound, Bluetooth, software updates, system information, a terminal and the network, made for a remote
+Comment=Sound, displays, Bluetooth, software updates, system information, a terminal and the network, made for a remote
 Exec=tvwcs control
 Icon=preferences-system
 Terminal=false
 Categories=Settings;System;
-Keywords=sound;volume;audio;bluetooth;updates;system;terminal;network;wifi;ethernet;
+Keywords=sound;volume;audio;display;monitor;resolution;refresh;bluetooth;updates;system;terminal;network;wifi;ethernet;
 StartupWMClass=com.tvwcs.ControlPanel
-Actions=sound;bluetooth;updates;system;terminal;network;
+Actions=sound;displays;bluetooth;updates;system;terminal;network;
 
 [Desktop Action sound]
 Name=Sound
 Exec=tvwcs control sound
+
+[Desktop Action displays]
+Name=Displays
+Exec=tvwcs control displays
 
 [Desktop Action bluetooth]
 Name=Bluetooth

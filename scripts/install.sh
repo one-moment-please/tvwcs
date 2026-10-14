@@ -10,7 +10,8 @@
 # from the old location: updating the include line and removing the old copy (the in-app updater sets it once you
 # have agreed to the move there).
 # TVWCS_NO_RESTART=1 skips the offer to restart a running TVWCS. TVWCS_WMS="i3 sway" chooses which window managers
-# to set up (default: those installed). TVWCS_ETC overrides /etc (where the standard config templates are).
+# to set up (default: those installed). TVWCS_ETC overrides /etc (where the standard config templates are), and
+# TVWCS_RUN and TVWCS_VAR override /run and /var (where the init system is detected).
 set -eu
 RUN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)  # folder holding this script (repo scripts/, or a release root)
 
@@ -97,6 +98,10 @@ fi
 install_launcher
 VERSION=$(cat "$SRC/VERSION" 2>/dev/null || echo "?")
 echo "TVWCS $VERSION installed in $DEST"
+# Run over SSH without a terminal (ssh host install.sh), nothing can be asked: every question is answered no.
+if [ ! -t 0 ] && [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}" ] && [ -z "${TVWCS_ASSUME_YES:-}" ]; then
+    echo "There is no terminal to ask questions on, so every question is answered no. To be asked, run: ssh -t <computer> <path>/install.sh"
+fi
 
 # An install in the old location is moved over: its hand-edited fragment backup comes along, and the hotkeys
 # (which run its launcher by full path) are pointed at the new one.
@@ -151,13 +156,15 @@ pkg() {
         alpine:gtk) echo "py3-gobject3 gtk4.0" ;;            alpine:i3) echo i3wm ;;
         gentoo:gtk) echo "dev-python/pygobject gui-libs/gtk" ;;
         gentoo:i3) echo x11-wm/i3 ;;                         gentoo:xdotool) echo x11-misc/xdotool ;;
+        arch:xinit) echo xorg-xinit ;;                       fedora:xinit) echo xorg-x11-xinit ;;   gentoo:xinit) echo x11-apps/xinit ;;
         *:gtk) echo "PyGObject GTK4" ;;
-        # the Control Panel's tools (optional): pactl, bluetoothctl, nmcli, and VTE for its terminal
+        # the Control Panel's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
         debian:pactl|fedora:pactl|suse:pactl|void:pactl|alpine:pactl) echo pulseaudio-utils ;;
         arch:pactl) echo libpulse ;;                         gentoo:pactl) echo media-libs/libpulse ;;
         arch:bluetoothctl) echo bluez-utils ;;               gentoo:bluetoothctl) echo net-wireless/bluez ;;  *:bluetoothctl) echo bluez ;;
         debian:nmcli) echo network-manager ;;                arch:nmcli) echo networkmanager ;;
         alpine:nmcli) echo networkmanager-cli ;;             gentoo:nmcli) echo net-misc/networkmanager ;;   *:nmcli) echo NetworkManager ;;
+        debian:xrandr) echo x11-xserver-utils ;;             arch:xrandr) echo xorg-xrandr ;;               gentoo:xrandr) echo x11-apps/xrandr ;;
         debian:vte) echo gir1.2-vte-3.91 ;;                  arch:vte) echo vte4 ;;                          fedora:vte) echo vte291-gtk4 ;;
         *:vte) echo "VTE-for-GTK-4" ;;
         *) echo "$1" ;;
@@ -177,8 +184,9 @@ command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || missing
 [ -z "$missing" ] || echo "Missing packages:  $(install_hint "${missing# }")"
 optional=""
 for TOOL in pactl bluetoothctl nmcli; do command -v "$TOOL" >/dev/null 2>&1 || optional="$optional $(pkg "$TOOL")"; done
+command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1 && optional="$optional $(pkg xrandr)"   # sway has its own
 python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || optional="$optional $(pkg vte)"
-[ -z "$optional" ] || echo "Optional, for the Control Panel's sound, Bluetooth, network and terminal pages:  $(install_hint "${optional# }")"
+[ -z "$optional" ] || echo "Optional, for the Control Panel's sound, displays, Bluetooth, network and terminal pages:  $(install_hint "${optional# }")"
 
 # ------------------------------------------------------------------ window manager configs
 # The include line, written with ~ when the install is in your home folder (i3 and sway both expand it).
@@ -345,13 +353,34 @@ if [ -z "$WMS" ]; then
 fi
 for WM in $WMS; do setup_wm "$WM"; done
 
+# ---- reaching the running i3 / sway, also from an SSH login (which has no DISPLAY, SWAYSOCK or I3SOCK)
+user_runtime() {   # this user's runtime folder: XDG_RUNTIME_DIR, else /run/user/<uid> when it exists, else ""
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then echo "$XDG_RUNTIME_DIR"
+    elif [ -d "/run/user/$(id -u)" ]; then echo "/run/user/$(id -u)"; fi
+}
+wm_tool() { if [ "$1" = i3 ]; then echo i3-msg; else echo swaymsg; fi; }
+wm_socket() {   # wm_socket <i3|sway>: the IPC socket of this user's running i3 / sway that answers, or ""
+    WS_TOOL=$(wm_tool "$1"); command -v "$WS_TOOL" >/dev/null 2>&1 || return 0
+    WS_R=$(user_runtime)
+    if [ "$1" = sway ]; then set -- "${SWAYSOCK:-}" "${WS_R:-/nonexistent}"/sway-ipc."$(id -u)".*.sock
+    else
+        WS_P=""; [ -n "${DISPLAY:-}" ] && [ -z "${SWAYSOCK:-}" ] && WS_P=$(i3 --get-socketpath 2>/dev/null || true)
+        [ -n "${SWAYSOCK:-}" ] || WS_P="${I3SOCK:-} $WS_P"   # under sway, I3SOCK is sway's own socket
+        set -- $WS_P "${WS_R:-/nonexistent}"/i3/ipc-socket.* /tmp/i3-"$(id -un)".*/ipc-socket.*
+    fi
+    for WS in "$@"; do   # sockets left behind by an earlier session do not answer
+        [ -n "$WS" ] && [ -S "$WS" ] && "$WS_TOOL" -s "$WS" -t get_version >/dev/null 2>&1 && { echo "$WS"; return 0; }
+    done
+    return 0
+}
+wm_msg() {   # wm_msg <i3|sway> <arguments>: send a command to the running one; fails when none is running
+    WS=$(wm_socket "$1"); [ -n "$WS" ] || return 1
+    WS_TOOL=$(wm_tool "$1"); shift; "$WS_TOOL" -s "$WS" "$@"
+}
+
 # A window manager that is running reloads its changed config, so TVWCS's hotkeys work straight away.
 for WM in $CHANGED_WMS; do
-    if [ "$WM" = i3 ] && [ -z "${SWAYSOCK:-}" ] && command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then
-        i3-msg -q reload && echo "Reloaded i3."
-    elif [ "$WM" = sway ] && [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1; then
-        swaymsg -q reload && echo "Reloaded sway."
-    fi
+    if wm_msg "$WM" -q reload >/dev/null 2>&1; then echo "Reloaded $WM."; fi
 done
 
 # ------------------------------------------------------------------ power actions without a password (optional)
@@ -427,27 +456,192 @@ setup_power_rule() {
 }
 setup_power_rule
 
+# ------------------------------------------------------------------ log in and start i3 / sway at boot (optional)
+# On a computer with no login screen (display manager) yet, offer to log this user in on the first console at boot
+# and start i3 (through startx) or sway there, so it boots straight into TVWCS like a TV. Only offered on a terminal,
+# and only on a clear yes. The console login is set up through systemd (getty@tty1) or runit (agetty-tty1); the
+# window manager is started from the login shell's profile, only on tty1 and only when no session is running there.
+DISPLAY_MANAGERS="gdm gdm3 sddm lightdm lxdm xdm slim ly greetd emptty nodm entrance lemurs tbsm cdm"
+login_manager() {   # the login screen installed here, or ""
+    [ -e "$ETC/systemd/system/display-manager.service" ] && { echo display-manager.service; return; }
+    for DM in $DISPLAY_MANAGERS; do
+        command -v "$DM" >/dev/null 2>&1 && { echo "$DM"; return; }
+        [ -e "$ETC/sv/$DM" ] && [ -e "${TVWCS_VAR:-/var}/service/$DM" ] && { echo "$DM"; return; }
+    done
+    echo ""
+}
+init_system() {   # systemd, runit or other
+    if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd
+    elif [ -d "$ETC/sv/agetty-tty1" ] && command -v sv >/dev/null 2>&1; then echo runit
+    else echo other; fi
+}
+as_root() {   # run a command as root, asking for the password on this terminal
+    if [ "$(id -u)" = 0 ]; then "$@"
+    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+    elif command -v doas >/dev/null 2>&1; then doas "$@"
+    else echo "Neither sudo nor doas is installed; cannot change the system's settings." >&2; return 1; fi
+}
+GETTY_OVERRIDE=$ETC/systemd/system/getty@tty1.service.d/autologin.conf
+console_login_set() {   # the first console already logs someone in by itself
+    case $(init_system) in
+        systemd) [ -f "$GETTY_OVERRIDE" ] && grep -q -- '--autologin' "$GETTY_OVERRIDE" ;;
+        runit) grep -q -- '--autologin' "$ETC/sv/agetty-tty1/conf" 2>/dev/null ;;
+        *) return 1 ;;
+    esac
+}
+set_console_login() {   # set_console_login <user>
+    case $(init_system) in
+        systemd)
+            AGETTY=$(command -v agetty 2>/dev/null || echo /sbin/agetty)
+            TMP=$(mktemp)
+            printf '%s\n' "# Written by TVWCS's install.sh: logs $1 in on the first console at boot. Delete this file to undo it." \
+                "[Service]" "ExecStart=" "ExecStart=-$AGETTY -o '-p -f -- \\\\u' --noclear --autologin $1 %I \$TERM" > "$TMP"
+            as_root sh -c 'mkdir -p "$(dirname "$1")" && cat > "$1" && chmod 0644 "$1"' sh "$GETTY_OVERRIDE" < "$TMP"; R=$?; rm -f "$TMP"
+            [ $R = 0 ] || return 1
+            echo "Added $GETTY_OVERRIDE (delete it to undo the automatic login)." ;;
+        runit)
+            CONF=$ETC/sv/agetty-tty1/conf
+            as_root sh -c 'cp "$1" "$1.tvwcs-backup" && sed "s/^\([[:space:]]*\)GETTY_ARGS=\"*\([^\"]*\)\"*/\1GETTY_ARGS=\"--autologin $2 \2\"/" "$1.tvwcs-backup" > "$1"' sh "$CONF" "$1" || return 1
+            grep -q -- '--autologin' "$CONF" || { echo "GETTY_ARGS=\"--autologin $1 --noclear\"" | as_root tee -a "$CONF" >/dev/null || return 1; }
+            echo "Changed $CONF to log $1 in automatically (the original is $CONF.tvwcs-backup)." ;;
+        *) return 1 ;;
+    esac
+}
+# The start lines for the login shell, between markers so that running install.sh again replaces them.
+START_BEGIN="# >>> TVWCS: start the window manager after the automatic login (added by install.sh; delete to undo) >>>"
+START_END="# <<< TVWCS <<<"
+start_block() {   # start_block <i3|sway> <sh|fish>
+    if [ "$1" = i3 ]; then RUN="startx"; NEED=startx; else RUN="sway"; NEED=sway; fi
+    echo "$START_BEGIN"
+    if [ "$2" = fish ]; then
+        echo "if status is-login; and test -z \"\$DISPLAY\$WAYLAND_DISPLAY\"; and test (tty) = /dev/tty1; and command -q $NEED"
+        echo "    exec $RUN"; echo "end"
+    else
+        echo "if [ -z \"\${DISPLAY:-}\${WAYLAND_DISPLAY:-}\" ] && [ \"\$(tty)\" = /dev/tty1 ] && command -v $NEED >/dev/null 2>&1; then"
+        echo "    exec $RUN"; echo "fi"
+    fi
+    echo "$START_END"
+}
+profile_file() {   # "kind file": the file this user's login shell reads at log-in, and its kind (sh or fish)
+    LOGIN_SHELL=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7); LOGIN_SHELL=${LOGIN_SHELL:-${SHELL:-/bin/sh}}
+    case ${LOGIN_SHELL##*/} in
+        fish) echo "fish $CONFIG_HOME/fish/conf.d/tvwcs-autostart.fish" ;;
+        zsh) echo "sh ${ZDOTDIR:-$HOME}/.zprofile" ;;
+        bash) for F in "$HOME/.bash_profile" "$HOME/.bash_login"; do [ -f "$F" ] && { echo "sh $F"; return; }; done
+              echo "sh $HOME/.profile" ;;
+        *) echo "sh $HOME/.profile" ;;
+    esac
+}
+write_start() {   # write_start <i3|sway>: add (or replace) the start lines in the login shell's profile
+    WM=$1; PF=$(profile_file); KIND=${PF%% *}; FILE=${PF#* }
+    mkdir -p "$(dirname "$FILE")"; TMP=$(mktemp)
+    if [ -f "$FILE" ]; then
+        backup "$FILE"
+        B="$START_BEGIN" E="$START_END" awk '$0 == ENVIRON["B"] { skip = 1 } !skip { print } $0 == ENVIRON["E"] { skip = 0 }' "$FILE" > "$TMP"
+    fi
+    { [ -s "$TMP" ] && echo; start_block "$WM" "$KIND"; } >> "$TMP"
+    cat "$TMP" > "$FILE"; rm -f "$TMP"
+    echo "Added the lines that start $WM on the first console to $FILE$( [ -f "$FILE.tvwcs-backup" ] && echo " (backup: $FILE.tvwcs-backup)")."
+    if [ "$WM" = i3 ]; then   # startx runs ~/.xinitrc
+        if [ ! -f "$HOME/.xinitrc" ]; then
+            printf '#!/bin/sh\n# Written by TVWCS'"'"'s install.sh: startx starts i3.\nexec i3\n' > "$HOME/.xinitrc"; echo "Created $HOME/.xinitrc, which starts i3."
+        elif ! grep -q 'i3' "$HOME/.xinitrc"; then
+            echo "Note: your ~/.xinitrc does not start i3; startx runs it as it is. Make its last line: exec i3"
+        fi
+    fi
+}
+setup_autologin() {
+    [ -t 0 ] || return 0
+    ME=$(id -un); [ "$(id -u)" = 0 ] && return 0   # never log root in by itself
+    case "$ME" in [a-z_]*) ;; *) return 0 ;; esac
+    case "$ME" in *[!a-zA-Z0-9_.-]*) return 0 ;; esac
+    [ -z "$(login_manager)" ] || return 0
+    [ "$(init_system)" != other ] || return 0
+    CHOICES=""
+    for WM in $WMS; do
+        command -v "$WM" >/dev/null 2>&1 || continue
+        if [ "$WM" = i3 ] && ! command -v startx >/dev/null 2>&1; then
+            echo; echo "To start i3 automatically at boot, TVWCS needs startx:  $(install_hint "$(pkg xinit)")  and then run install.sh again."; continue
+        fi
+        CHOICES="$CHOICES $WM"
+    done
+    CHOICES=${CHOICES# }; [ -n "$CHOICES" ] || return 0
+    echo
+    if console_login_set; then
+        echo "This computer already logs someone in by itself at start-up, so the automatic login was not offered."; return 0
+    fi
+    case "$CHOICES" in
+        *" "*) ask_no "There is no login screen on this computer. Log in as $ME automatically when it starts, and start i3 or sway?" || return 0
+               printf "Start which one? 1) i3  2) sway [1]: "; read -r ANSWER || ANSWER=1
+               case "$ANSWER" in 2*|s*|S*) WM=sway ;; *) WM=i3 ;; esac ;;
+        *) WM=$CHOICES
+           ask_no "There is no login screen on this computer. Log in as $ME automatically when it starts, and start $WM?" || return 0 ;;
+    esac
+    echo "Anyone who switches the computer on gets your session without a password. Changing the system's login asks for your password now."
+    set_console_login "$ME" || { echo "Could not set up the automatic login; nothing was changed." >&2; return 0; }
+    write_start "$WM"; open_at_login
+    CFG=$(wm_config "$WM")
+    if [ -z "$CFG" ] || [ "$(include_state "$CFG")" != current ]; then
+        echo "Note: your $WM config does not include TVWCS, so TVWCS will not start with $WM. Add this line to it:"; echo "    $INCLUDE_LINE"
+    fi
+    echo "From now on, the computer logs in as $ME and starts $WM when it starts."
+    AUTOLOGIN_WM=$WM
+}
+open_at_login() {   # TVWCS opens its Quick Menu when the session starts (Settings > At login), as a TV would
+    if XDG_CONFIG_HOME="$CONFIG_HOME" PYTHONPATH="$DEST" python3 -c 'from tvwcs.model import ConfigStore
+s = ConfigStore(); s.settings["startup"]["show_menu"] = True; s.save()' 2>/dev/null; then
+        echo "TVWCS now opens its Quick Menu at log-in (Settings > At login changes that)."
+    else echo "Could not set TVWCS to open at log-in; turn it on in its Settings > At login." >&2; fi
+}
+# Once the install is done, the session the automatic login starts is started now rather than at the next boot.
+start_console_session() {
+    WM=$AUTOLOGIN_WM; echo
+    if [ -n "$(wm_socket "$WM")" ]; then echo "$WM is already running; the automatic login takes over at the next start."; return 0; fi
+    if [ "$(tty 2>/dev/null || true)" = /dev/tty1 ] && [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        echo "Starting $WM..."   # this is the first console itself: start it in this login, as the automatic one would
+        if [ "$WM" = i3 ]; then exec startx; else exec sway; fi
+    fi
+    # Over SSH, or from another console: restart the first console's login, which logs in and starts it there.
+    # Someone logged in there (at a text prompt, say) would lose their session, so then it waits for the next start.
+    if command -v who >/dev/null 2>&1 && who 2>/dev/null | awk '$2 == "tty1" { found = 1 } END { exit !found }'; then
+        echo "Someone is logged in on the computer's first console, so $WM was not started now; it starts there at the next start."; return 0
+    fi
+    case $(init_system) in
+        systemd) as_root systemctl restart getty@tty1.service ;;
+        runit) as_root sv restart "${TVWCS_VAR:-/var}/service/agetty-tty1" ;;
+    esac || { echo "Could not start the console login now; $WM starts when the computer next starts." >&2; return 0; }
+    if command -v chvt >/dev/null 2>&1; then as_root chvt 1 >/dev/null 2>&1 || true; fi   # put the first console on the screen
+    echo "Started $WM: the computer's screen logs in as $(id -un) and shows it now."
+}
+AUTOLOGIN_WM=""
+setup_autologin
+
 # ------------------------------------------------------------------ restart a running TVWCS
 # A running TVWCS keeps using the old program until it is restarted. Offer to do that now. The in-app updater sets
 # TVWCS_NO_RESTART because it restarts TVWCS itself; without a terminal to ask in, only say what to do.
-PIDFILE="${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/tvwcs}/tvwcs.pid"   # the same rule as tvwcs/session.py
-PID=$(cat "$PIDFILE" 2>/dev/null || true)
 running() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && { [ ! -r "/proc/$1/cmdline" ] || grep -q tvwcs "/proc/$1/cmdline"; }; }
+# The same rule as tvwcs/session.py: XDG_RUNTIME_DIR, else ~/.cache/tvwcs. Over SSH this login may have no
+# XDG_RUNTIME_DIR while the graphical one does, so /run/user/<uid> is tried too: the first that holds a running TVWCS.
+RUNTIME=""; PIDFILE=""; PID=""
+for D in "$(user_runtime)" "${XDG_CACHE_HOME:-$HOME/.cache}/tvwcs"; do
+    [ -n "$D" ] || continue
+    [ -n "$PIDFILE" ] || { RUNTIME=$D; PIDFILE=$D/tvwcs.pid; }
+    P=$(cat "$D/tvwcs.pid" 2>/dev/null || true)
+    if running "$P"; then RUNTIME=$D; PIDFILE=$D/tvwcs.pid; PID=$P; break; fi
+done
 start_tvwcs() {
-    # Start it the way the window manager does (so it gets its environment), or detached from this terminal.
-    if [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1; then
-        swaymsg -q "exec '$DEST/bin/tvwcs'"
-    elif command -v i3-msg >/dev/null 2>&1 && i3-msg -t get_version >/dev/null 2>&1; then
-        i3-msg -q "exec --no-startup-id '$DEST/bin/tvwcs'"
-    else
-        setsid nohup "$DEST/bin/tvwcs" >/dev/null 2>&1 < /dev/null &
-    fi
+    # Start it the way the window manager does (so it gets the session's environment), or detached from this
+    # terminal in a graphical one. Over SSH there is no display to start it on except through the window manager.
+    if wm_msg sway -q "exec '$DEST/bin/tvwcs'" 2>/dev/null; then :
+    elif wm_msg i3 -q "exec --no-startup-id '$DEST/bin/tvwcs'" 2>/dev/null; then :
+    elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then setsid nohup "$DEST/bin/tvwcs" >/dev/null 2>&1 < /dev/null &
+    else return 1; fi
 }
 restart_tvwcs() {
-    "$DEST/bin/tvwcs" stop >/dev/null 2>&1 || true
+    XDG_RUNTIME_DIR="$RUNTIME" "$DEST/bin/tvwcs" stop >/dev/null 2>&1 || kill "$PID" 2>/dev/null || true
     n=0; while running "$PID" && [ $n -lt 50 ]; do sleep 0.1; n=$((n+1)); done
     if running "$PID"; then echo "TVWCS did not stop; restart it yourself (or log in again) to load the new version." >&2; return; fi
-    start_tvwcs
+    if ! start_tvwcs; then echo "TVWCS was stopped, but i3 or sway could not be reached to start it again; it starts at the next log-in." >&2; return; fi
     n=0; while [ $n -lt 50 ]; do
         NEW=$(cat "$PIDFILE" 2>/dev/null || true)
         if [ "$NEW" != "$PID" ] && running "$NEW"; then echo "TVWCS restarted with version $VERSION."; return; fi
@@ -488,3 +682,6 @@ if [ -n "$MIGRATING" ]; then
         echo "Kept $LEGACY; you can delete it whenever you like."
     fi
 fi
+
+# ------------------------------------------------------------------ start the session set up above, now
+[ -z "$AUTOLOGIN_WM" ] || start_console_session

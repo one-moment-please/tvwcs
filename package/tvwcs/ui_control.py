@@ -34,6 +34,10 @@ button.tab-button:focus, button.tab-button:focus-visible { background: @ACCENT@;
 button.tab-button label { font-weight: 300; }
 button.tab-button:focus label { font-weight: 700; }
 button.info-row:focus .setting-value { color: #ffffff; }
+.display-box { background: alpha(@ACCENT@, 0.6); border: 2px solid #1b1b1b; }
+.display-box.primary { background: @ACCENT@; }
+.display-number { font-size: 30px; font-weight: 700; color: #ffffff; }
+.display-name { font-size: 12px; color: #ffffff; }
 .row-detail { color: #8a8a8a; font-size: 12px; }
 button:focus .row-detail { color: #e3eefa; }
 .state-on { color: #6ccb5f; font-weight: 700; }
@@ -97,7 +101,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app,title=TITLE)
         self.app=app; self.pages=[]; self.page=None; self.tab_buttons={}
-        self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._text=None; self._last_page_focus={}
+        self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._text=None; self._last_page_focus={}; self._countdown=None
         self.add_css_class("tvwcs-window"); self.set_icon_name("preferences-system")
         self.set_default_size(S(1180),S(760))
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
@@ -304,6 +308,22 @@ class ControlWindow(Gtk.ApplicationWindow):
         cancel_action=back or self.close_modal
         cancel,=self._buttons(("Cancel",cancel_action,None)); groups.append([cancel])
         self._finish_modal(groups,cancel_action,focus)
+
+    def countdown(self, title, message, seconds, keep_label, on_keep, undo_label, on_undo):
+        """Ask whether to keep a change that may have left the screen unreadable. message(seconds) is the text; with
+        no answer by the end of the countdown (or on Esc), on_undo runs. Keep is selected: whoever can see it can use it."""
+        self._begin_modal(title); text=self._message(""); left=[seconds]; token=object(); self._countdown=token
+        def finish(handler):
+            if self._countdown is not token: return
+            self._countdown=None; self.close_modal(); handler()
+        def tick():
+            if self._countdown is not token: return GLib.SOURCE_REMOVE
+            left[0]-=1
+            if left[0]<=0: finish(on_undo); return GLib.SOURCE_REMOVE
+            text.set_text(message(left[0])); return GLib.SOURCE_CONTINUE
+        text.set_text(message(seconds))
+        undo,keep=self._buttons((undo_label,lambda:finish(on_undo),None),(keep_label,lambda:finish(on_keep),"active"))
+        GLib.timeout_add_seconds(1,tick); self._finish_modal([[undo,keep]],lambda:finish(on_undo),keep)
 
     def form(self, title, rows, save_label, on_save, message="", error="", back=None):
         """A small form: each row (label, value, handler) is one button showing its current value, Enter changes it

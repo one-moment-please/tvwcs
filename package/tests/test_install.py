@@ -1,6 +1,6 @@
 """install.sh in a throwaway home folder: where it installs, the include line it adds or moves, the old location
 it migrates from, and the window manager config it can create. Skipped outside the repository (no scripts/)."""
-import os, pty, select, subprocess, tempfile, time, unittest
+import json, os, pty, select, subprocess, tempfile, time, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -130,4 +130,72 @@ class InstallTests(unittest.TestCase):
         self.assertIn("already work without a password",self.converse(["n"],**env))
         env,_=self.fake_tools("User tv may run the following commands on box:\n    (root) NOPASSWD: "+first+"\n    (ALL) ALL\n")   # a later rule wins
         self.assertIn("without asking for your password?",self.converse(["n","n"],**env))
+    def autologin_tools(self,*programs,shell="/bin/bash"):
+        """fake_tools, plus a systemd system, a login shell for tv, and pretend programs (i3, startx, sway, a login screen).
+        systemctl, sv and chvt only write down how they were called; nobody is logged in on a console."""
+        env,bin_=self.fake_tools()
+        for name in programs: (bin_/name).touch(); (bin_/name).chmod(0o755)
+        for name in ("systemctl","sv","chvt"): (bin_/name).write_text(f'#!/bin/sh\necho "{name} $*" >> "{bin_}/calls"\n'); (bin_/name).chmod(0o755)
+        self.calls=bin_/"calls"; self.who=bin_/"who.txt"
+        (bin_/"who").write_text(f'#!/bin/sh\ncat "{self.who}" 2>/dev/null; exit 0\n'); (bin_/"who").chmod(0o755)
+        (bin_/"getent").write_text(f'#!/bin/sh\necho "tv:x:1000:1000::{self.home}:{shell}"\n'); (bin_/"getent").chmod(0o755)
+        run=Path(self.tmp.name)/"fakerun"; (run/"systemd"/"system").mkdir(parents=True,exist_ok=True)
+        return {**env,"TVWCS_RUN":str(run)},Path(self.env["TVWCS_ETC"])/"systemd"/"system"/"getty@tty1.service.d"/"autologin.conf"
+    def test_offers_to_log_in_and_start_i3_at_boot_when_there_is_no_login_screen(self):
+        env,override=self.autologin_tools("i3","startx")
+        out=self.converse(["n","n","n"],**env)   # no i3 config; no power rule; no automatic login
+        self.assertIn("Log in as tv automatically when it starts, and start i3?",out); self.assertFalse(override.exists())
+        out=self.converse(["n","n","y"],**env)
+        text=override.read_text()
+        self.assertEqual(self.calls.read_text(),"systemctl restart getty@tty1.service\nchvt 1\n",out)   # started now, on the screen
+        config=json.loads((self.home/".config"/"tvwcs"/"config.json").read_text())
+        self.assertTrue(config["settings"]["startup"]["show_menu"])   # TVWCS opens at log-in
+        self.assertIn("does not include TVWCS",out)   # the i3 config was not created
+        self.assertIn("ExecStart=\n",text); self.assertIn("--autologin tv %I $TERM",text); self.assertIn("-o '-p -f -- \\\\u'",text)
+        profile=(self.home/".profile").read_text()
+        self.assertIn('[ "$(tty)" = /dev/tty1 ] && command -v startx >/dev/null 2>&1; then\n    exec startx\nfi',profile)
+        self.assertEqual((self.home/".xinitrc").read_text().splitlines()[-1],"exec i3")
+        self.assertEqual(subprocess.run(["sh","-n",str(self.home/".profile")]).returncode,0)
+        out=self.converse(["n","n"],**env)   # asked again: it is already set up
+        self.assertIn("already logs someone in",out); self.assertEqual((self.home/".profile").read_text(),profile)
+    def test_starts_sway_from_zsh_and_replaces_its_own_lines(self):
+        env,override=self.autologin_tools("i3","startx","sway",shell="/usr/bin/zsh")
+        zprofile=self.home/".zprofile"; zprofile.write_text("export EDITOR=vi\n")
+        self.converse(["n","n","n","y","2"],TVWCS_WMS="i3 sway",**env)   # no i3 or sway config; no power rule; yes; sway
+        self.assertTrue(override.exists()); override.unlink()
+        self.converse(["n","n","n","y","2"],TVWCS_WMS="i3 sway",**env)
+        text=zprofile.read_text()
+        self.assertTrue(text.startswith("export EDITOR=vi\n")); self.assertEqual(text.count("exec sway"),1); self.assertNotIn("startx",text)
+    def test_does_not_take_over_a_console_someone_is_logged_in_on(self):
+        env,override=self.autologin_tools("i3","startx")
+        self.who.write_text("tv       tty1         2026-10-14 21:00\n")
+        out=self.converse(["n","n","y"],**env)
+        self.assertTrue(override.exists()); self.assertIn("Someone is logged in",out); self.assertFalse(self.calls.exists())
+    def test_no_offer_with_a_login_screen_or_without_a_terminal(self):
+        env,override=self.autologin_tools("i3","startx","lightdm")
+        self.assertNotIn("automatically when it starts",self.converse(["n","n","y"],**env))
+        env,override=self.autologin_tools("i3","startx")
+        self.run_install(**env); self.assertFalse(override.exists())
+    def test_runit_console_login(self):
+        env,_override=self.autologin_tools("i3","startx","sv")
+        empty=Path(self.tmp.name)/"norun"; empty.mkdir(); env["TVWCS_RUN"]=str(empty)   # no systemd
+        conf=Path(self.env["TVWCS_ETC"])/"sv"/"agetty-tty1"/"conf"; conf.parent.mkdir(parents=True)
+        conf.write_text('if [ -x /sbin/agetty -o -x /bin/agetty ]; then\n\tGETTY_ARGS="--noclear"\nfi\nBAUD_RATE=38400\n')
+        self.converse(["n","n","y"],**env)
+        self.assertIn("sv restart /var/service/agetty-tty1",self.calls.read_text())
+        self.assertEqual(conf.read_text(),'if [ -x /sbin/agetty -o -x /bin/agetty ]; then\n\tGETTY_ARGS="--autologin tv --noclear"\nfi\nBAUD_RATE=38400\n')
+        self.assertTrue(Path(f"{conf}.tvwcs-backup").is_file())
+    def test_reaches_a_running_i3_by_its_socket_from_an_ssh_login(self):
+        """Over SSH there is no DISPLAY or I3SOCK: i3 is found by the socket in the user's runtime folder."""
+        import socket
+        env,bin_=self.fake_tools()
+        (bin_/"i3-msg").write_text(f'#!/bin/sh\necho "$*" >> "{bin_}/i3-msg.log"\n'); (bin_/"i3-msg").chmod(0o755)
+        sock_dir=Path(self.env["XDG_RUNTIME_DIR"])/"i3"; sock_dir.mkdir(parents=True)
+        sock=socket.socket(socket.AF_UNIX); sock.bind(str(sock_dir/"ipc-socket.42")); self.addCleanup(sock.close)
+        self.write_i3("# i3 config file (v4)\n")
+        out=self.run_install(TVWCS_ASSUME_YES="1",SSH_CONNECTION="10.0.0.2 50000 10.0.0.3 22",**env)
+        self.assertIn("Reloaded i3.",out); self.assertNotIn("no terminal",out)
+        self.assertIn(f"-s {sock_dir}/ipc-socket.42 -q reload",(bin_/"i3-msg.log").read_text())
+    def test_says_how_to_be_asked_over_ssh_without_a_terminal(self):
+        self.assertIn("ssh -t",self.run_install(SSH_CONNECTION="10.0.0.2 50000 10.0.0.3 22"))
 if __name__=="__main__": unittest.main()

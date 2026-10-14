@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TVWCS — Metro-style TV launcher and workspace switcher for i3 and sway. Application controller and command line."""
 from __future__ import annotations
-import os, shlex, signal, subprocess, sys
+import os, shlex, signal, subprocess, sys, threading
 from pathlib import Path
 import gi
 gi.require_version("Gtk", "4.0")
@@ -65,6 +65,13 @@ class TVWCSApp(Gtk.Application):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGWINCH,lambda:(self._take_requests(),GLib.SOURCE_CONTINUE)[1])
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGTERM,self._on_stop_signal)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGINT,self._on_stop_signal)
+        threading.Thread(target=self._restore_displays,daemon=True).start()
+    @staticmethod
+    def _restore_displays():
+        """The display settings kept in the Control Panel: xrandr and sway forget them at log-out."""
+        from tvwcs import control_display
+        problem=control_display.restore()
+        if problem: print(f"Could not apply the saved display settings: {problem}",file=sys.stderr)
     def _on_stop_signal(self): self.quit(); return GLib.SOURCE_REMOVE
     def do_activate(self):
         first=self.window is None
