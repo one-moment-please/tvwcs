@@ -1,5 +1,5 @@
 import unittest
-from tvwcs.system_actions import SYSTEM_ACTIONS, command_for, lock_command, logout_command, unavailable_message
+from tvwcs.system_actions import SYSTEM_ACTIONS, command_for, lock_command, login_manager_installed, logout_command, power_menu, unavailable_message
 
 class SystemActionTests(unittest.TestCase):
     def test_dialog_contents(self):
@@ -34,4 +34,11 @@ class SystemActionTests(unittest.TestCase):
         self.assertEqual([command_for(a,which=void,systemd=False) for a in ("sleep","reboot","shutdown")],[["zzz"],["reboot"],["poweroff"]])
         self.assertIsNone(command_for("sleep",which=have(set()),systemd=False))
         self.assertIn("elogind",unavailable_message("reboot")); self.assertIn("lock_command",unavailable_message("lock"))
+    def test_power_menu_offers_lock_when_enabled_and_log_out_with_a_login_screen(self):
+        ids=lambda settings,dm:[a.id for a in power_menu(settings,dm)]
+        self.assertEqual(ids({},False),["sleep","reboot","shutdown"])
+        self.assertEqual(ids({"quick_lock_button":True},True),["lock","sleep","reboot","shutdown","logout"])
+    def test_finds_a_login_screen(self):
+        self.assertTrue(login_manager_installed(lambda p:p=="/etc/systemd/system/display-manager.service",lambda n:None))
+        self.assertTrue(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))
 if __name__=="__main__": unittest.main()

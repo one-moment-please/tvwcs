@@ -1,4 +1,4 @@
-"""Bluetooth for the Control Panel, through BlueZ's `bluetoothctl`. No GTK dependency.
+"""Bluetooth for Settings, through BlueZ's `bluetoothctl`. No GTK dependency.
 
 bluetoothctl runs one command per call (non-interactive mode). Pairing registers a NoInputNoOutput agent, which
 pairs headphones, speakers, gamepads and remotes ("just works"); a device that insists on typing a code (some

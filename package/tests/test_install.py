@@ -1,6 +1,6 @@
 """install.sh in a throwaway home folder: where it installs, the include line it adds or moves, the old location
 it migrates from, and the window manager config it can create. Skipped outside the repository (no scripts/)."""
-import json, os, pty, select, subprocess, tempfile, time, unittest
+import json, os, pty, select, shutil, subprocess, tempfile, time, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -41,8 +41,8 @@ class InstallTests(unittest.TestCase):
     def test_lists_the_control_panel_with_the_applications(self):
         self.run_install()
         entry=(self.home/".local"/"share"/"applications"/"com.tvwcs.ControlPanel.desktop").read_text()
-        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" control\n',entry)   # quoted: this home folder has a space
-        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" control network\n',entry); self.assertNotIn("Exec=tvwcs",entry)
+        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" settings\n',entry)   # quoted: this home folder has a space
+        self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" settings network\n',entry); self.assertNotIn("Exec=tvwcs",entry)
         self.assertIn("Categories=Settings;System;",entry); self.assertTrue((self.dest/"com.tvwcs.ControlPanel.desktop").is_file())
     def test_adds_the_include_line_when_allowed_and_only_once(self):
         self.write_i3("set $mod Mod4\n")
@@ -198,4 +198,55 @@ class InstallTests(unittest.TestCase):
         self.assertIn(f"-s {sock_dir}/ipc-socket.42 -q reload",(bin_/"i3-msg.log").read_text())
     def test_says_how_to_be_asked_over_ssh_without_a_terminal(self):
         self.assertIn("ssh -t",self.run_install(SSH_CONNECTION="10.0.0.2 50000 10.0.0.3 22"))
+    def test_offers_pipewire_when_there_is_no_sound_server(self):
+        env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        sysbin=Path(self.tmp.name)/"sysbin"; sysbin.mkdir()   # the system's programs, less any sound server it has
+        for d in os.environ["PATH"].split(":"):
+            for prog in (Path(d).iterdir() if Path(d).is_dir() else ()):
+                if prog.name not in ("pipewire","pulseaudio") and not (sysbin/prog.name).exists() and prog.is_file() and os.access(prog,os.X_OK): (sysbin/prog.name).symlink_to(prog)
+        env["PATH"]=f"{bin_}:{sysbin}"
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
+        out=self.converse(["y","n","n","n","n"],**env)
+        self.assertRegex(out,r"pipewire pipewire-pulse wireplumber dbus-user-session +PipeWire: sound")
+        self.assertIn("pipewire pipewire-pulse wireplumber",(bin_/"apt").read_text(),out)
+    def without_gtk(self,bin_):
+        """These tests need neither window manager here, and GTK missing (so the package list is always asked about)."""
+        if shutil.which("i3") or shutil.which("sway"): self.skipTest("i3 or sway is installed here")
+        (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)
+    def test_offers_to_install_i3_then_to_start_it_at_boot(self):
+        """Neither i3 nor sway: Enter installs the recommended i3 (with Xorg and startx), then the automatic login is offered."""
+        env,override=self.autologin_tools()
+        bin_=Path(env["PATH"].split(":")[0]); etc=Path(self.env["TVWCS_ETC"]); self.without_gtk(bin_)
+        (etc/"os-release").write_text("ID=debian\n")
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'
+            f'case "$*" in *install*) for p in i3 startx; do printf "#!/bin/sh\\n" > "{bin_}/$p"; chmod +x "{bin_}/$p"; done ;; esac\n')
+        (bin_/"apt-get").chmod(0o755)
+        out=self.converse(["","n","n","n","y"],TVWCS_WMS="",**env)   # Enter: i3; not the other packages; no i3 config; no power rule; yes to the automatic login
+        apt=(bin_/"apt").read_text()
+        self.assertIn("apt-get update -q\n",apt); self.assertIn("install -y i3 xserver-xorg xinit xdotool x11-xserver-utils",apt)
+        self.assertIn("1) i3 with Xorg (recommended)",out); self.assertIn("Installed i3.",out)
+        self.assertTrue(override.exists(),out); self.assertIn("exec startx",(self.home/".profile").read_text())
+    def test_install_offer_can_be_declined_and_sway_chosen(self):
+        env,_override=self.autologin_tools()
+        bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=arch\n"); self.without_gtk(bin_)
+        (bin_/"pacman").write_text(f'#!/bin/sh\necho "pacman $*" >> "{bin_}/pacman.log"\n'); (bin_/"pacman").chmod(0o755)
+        self.assertIn("Nothing was installed.",self.converse(["3","n","n","n"],TVWCS_WMS="",**env))
+        self.assertFalse((bin_/"pacman.log").exists())
+        self.converse(["2","n","n","n"],TVWCS_WMS="",**env)
+        self.assertEqual((bin_/"pacman.log").read_text().split("\n")[0].split()[:5],["pacman","-S","--needed","--noconfirm","sway"])
+    def test_lists_missing_packages_with_their_use_and_installs_them(self):
+        env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xdotool","pipewire","unclutter","xprintidle"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
+        out=self.converse(["y","n","n"],**env)   # install; no i3 config; no power rule
+        self.assertRegex(out,r"python3-gi gir1\.2-gtk-4\.0 +GTK 4 for Python: TVWCS's windows \(required\)")
+        self.assertRegex(out,r"gir1\.2-vte-3\.91 +Settings: the terminal page")
+        self.assertNotIn("Settings: sound",out); self.assertNotIn("xdotool",out)   # installed here, so not listed
+        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91\n",(bin_/"apt").read_text())
+        (bin_/"unclutter").unlink()
+        self.assertRegex(self.converse(["n","n","n"],**env),r"unclutter-xfixes +hides the mouse pointer after 3 seconds")
+        (bin_/"unclutter").write_text("#!/bin/sh\n"); (bin_/"unclutter").chmod(0o755)
+        out=self.converse(["n","n","n"],**env)
+        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91",out)
 if __name__=="__main__": unittest.main()

@@ -1,14 +1,14 @@
-"""The TVWCS Control Panel: Sound, Bluetooth, Software updates, System information, Terminal and Network, as
+"""TVWCS Settings: Sound, Bluetooth, Software updates, System information, Terminal and Network, as
 vertical tabs on the left with the chosen page beside them. It is an ordinary application (it has its own launcher,
 so it is in the applications guide under System), drawn with the TVWCS Metro theme at the interface size chosen in
 TVWCS's Settings, and it works with a D-pad alone:
 
 - ↑ / ↓ on the tabs changes page at once; → (or Enter) goes into the page, ← from a page's left edge comes back.
 - In a page, ↑ / ↓ move between rows and ← / → along a row; Esc (or the remote's Back key) goes back to the tabs,
-  and from the tabs closes the Control Panel.
+  and from the tabs closes Settings.
 - Dialogs are drawn over the window, as in TVWCS. Text (a Wi-Fi password, an address) is typed on a keyboard, or on
   the on-screen keyboard with the D-pad.
-- In the terminal every key goes to the shell; Back (or Shift+Esc) leaves it."""
+- In the terminal every key goes to the shell; Esc (or Back) goes up to the buttons above it."""
 from __future__ import annotations
 import os, subprocess, sys, threading
 import gi
@@ -17,12 +17,13 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs import privilege
+from tvwcs.hotkeys import HotkeyCapture, describe
 from tvwcs.model import SCALE_PRESETS, ConfigStore
 from tvwcs.theme import render_css
-from tvwcs.widgets import NavGroup, S, clear_box, glyph, icon_button, set_scale, usable
+from tvwcs.widgets import NavGroup, S, clear_box, glyph, held_modifiers, icon_button, set_scale, usable
 
 APP_ID="com.tvwcs.ControlPanel"
-TITLE="Control Panel"
+TITLE="Settings"
 PASSWORD_TRIES=3
 
 CONTROL_CSS="""
@@ -62,7 +63,7 @@ def in_background(work, done, failed=None):
         try: result=work()
         except Exception as exc:   # a bug in a reader must not leave the page saying "Working…" for ever
             if failed: GLib.idle_add(lambda e=exc:(failed(e),GLib.SOURCE_REMOVE)[1])
-            else: print(f"Control Panel: {exc!r}",file=sys.stderr)
+            else: print(f"Settings: {exc!r}",file=sys.stderr)
             return
         GLib.idle_add(lambda:(done(result),GLib.SOURCE_REMOVE)[1])
     threading.Thread(target=run,daemon=True).start()
@@ -102,10 +103,11 @@ class ControlWindow(Gtk.ApplicationWindow):
         super().__init__(application=app,title=TITLE)
         self.app=app; self.pages=[]; self.page=None; self.tab_buttons={}
         self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._text=None; self._last_page_focus={}; self._countdown=None
+        self._capture=None; self._capture_cb=None; self._capture_cancel=None
         self.add_css_class("tvwcs-window"); self.set_icon_name("preferences-system")
         self.set_default_size(S(1180),S(760))
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        key.connect("key-pressed",self._key_pressed); self.add_controller(key)
+        key.connect("key-pressed",self._key_pressed); key.connect("key-released",self._key_released); self.add_controller(key)
         self.connect("notify::focus-widget",self._focus_changed)
         self._provider=Gtk.CssProvider(); display=Gdk.Display.get_default()
         if display: Gtk.StyleContext.add_provider_for_display(display,self._provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
@@ -121,8 +123,8 @@ class ControlWindow(Gtk.ApplicationWindow):
         column=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); column.add_css_class("pane"); column.add_css_class("tab-column")
         column.set_size_request(S(330),-1); column.set_hexpand(False); panes.append(column)
         header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_end(S(20)); header.set_margin_bottom(S(14))
-        brand=Gtk.Label(label="Control Panel"); brand.add_css_class("brand"); brand.set_xalign(0); brand.set_hexpand(True); header.append(brand)
-        self.close_button=icon_button("window-close-symbolic","✕","Close the Control Panel"); self.close_button.add_css_class("close-button"); self.close_button.add_css_class("square")
+        brand=Gtk.Label(label="Settings"); brand.add_css_class("brand"); brand.set_xalign(0); brand.set_hexpand(True); header.append(brand)
+        self.close_button=icon_button("window-close-symbolic","✕","Close Settings"); self.close_button.add_css_class("close-button"); self.close_button.add_css_class("square")
         self.close_button.connect("clicked",lambda *_:self.close()); header.append(self.close_button); column.append(header)
         tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); tabs.set_vexpand(True); column.append(tabs)
         # ---- the page, beside them
@@ -161,7 +163,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def enter_page(self, page=None):
         """Move the selection into the page: back to where it was in it, else onto its first row."""
         page=page or self.page; self.show_page(page)
-        last=self._last_page_focus.get(page.key)
+        last=None if getattr(page,"enter_at_top",False) else self._last_page_focus.get(page.key)
         if last is not None and usable(last) and self._in(last,page.root) and last.grab_focus(): return True
         return self._focus_first(page.groups) or self._focus_first(page.nav_groups()) or True   # the first row, not ⟳
 
@@ -233,10 +235,11 @@ class ControlWindow(Gtk.ApplicationWindow):
         return True
 
     def _key_pressed(self, _controller, keyval, _keycode, state):
+        if self._capture is not None and self._capture_key(keyval,state): return True
         focused=self.get_focus()
         if self.page is not None and not self._modal_groups and self.page.captures_keys(focused):
-            if keyval==Gdk.KEY_Back or (keyval==Gdk.KEY_Escape and state & Gdk.ModifierType.SHIFT_MASK):
-                self.tab_buttons[self.page.key].grab_focus(); return True
+            if keyval in (Gdk.KEY_Back,Gdk.KEY_Escape):   # up to the page's buttons; the shell gets Esc from its Esc button
+                self._focus_first(self.page.groups) or self.tab_buttons[self.page.key].grab_focus(); return True
             return False   # every other key belongs to the terminal
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self.back(); return True
         editable=isinstance(focused,Gtk.Editable) or isinstance(focused,Gtk.Text)
@@ -247,8 +250,13 @@ class ControlWindow(Gtk.ApplicationWindow):
             return self._move_within(1 if keyval==Gdk.KEY_Right else -1)
         return False
 
+    def _key_released(self, _controller, keyval, _keycode, _state):
+        if self._capture is not None:
+            spec=self._capture.release(Gdk.keyval_name(keyval) or "")
+            if spec: self._end_capture(spec)
+
     def back(self):
-        """Esc / Back: close a dialog, else leave the page for its tab, else close the Control Panel."""
+        """Esc / Back: close a dialog, else leave the page for its tab, else close Settings."""
         if self._modal_groups: (self._modal_back or self.close_modal)(); return
         if self._area(self.get_focus())=="page": self.tab_buttons[self.page.key].grab_focus(); return
         self.close()
@@ -296,18 +304,56 @@ class ControlWindow(Gtk.ApplicationWindow):
         self._finish_modal([[cancel,go]],cancel_action,cancel)
 
     def choose_option(self, title, options, current, callback, back=None):
-        """A short list of choices with the current one ticked."""
-        self._begin_modal(title); groups=[]; focus=None
+        """A list of choices with the current one ticked. A long list scrolls, following the selection."""
+        self._begin_modal(title); groups=[]; focus=None; holder=self.modal_card
+        if len(options)>8:
+            scroll=Gtk.ScrolledWindow(); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
+            scroll.set_max_content_height(S(440)); scroll.set_propagate_natural_height(True)
+            holder=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(6)); scroll.set_child(holder); self.modal_card.append(scroll)
         for key,label in options:
             chosen=key==current
             b=Gtk.Button(); b.add_css_class("dialog-button"); row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14))
             mark=glyph("object-select-symbolic","✓",24) if chosen else Gtk.Label(); mark.set_size_request(S(28),-1); row.append(mark)
             l=Gtk.Label(label=label); l.set_xalign(0); l.set_hexpand(True); l.set_wrap(True); row.append(l); b.set_child(row)
-            b.connect("clicked",lambda _b,k=key:(self.close_modal(),callback(k))); self.modal_card.append(b); groups.append([b])
+            b.connect("clicked",lambda _b,k=key:(self.close_modal(),callback(k))); holder.append(b); groups.append([b])
             if chosen: focus=b
         cancel_action=back or self.close_modal
         cancel,=self._buttons(("Cancel",cancel_action,None)); groups.append([cancel])
         self._finish_modal(groups,cancel_action,focus)
+
+    # ---------------------------------------------------------- choosing a hotkey (Options)
+    def capture_hotkey(self, label, callback, can_clear=False, cancelled=None):
+        """Wait for a key or combination and pass its spec to callback; with can_clear, a Clear button passes "".
+        cancelled() runs when it is cancelled."""
+        self._begin_modal("New hotkey")
+        self._message(f"Press the key or key combination for “{label}”.\nTap a modifier on its own (such as Super) to use it by itself. Esc cancels.")
+        specs=[("Cancel",lambda:self._end_capture(None),None)]+([("Clear",lambda:self._end_capture(""),None)] if can_clear else [])
+        buttons=self._buttons(*specs)
+        self._capture=HotkeyCapture(); self._capture_cb=callback; self._capture_cancel=cancelled
+        self._finish_modal([buttons],lambda:self._end_capture(None),buttons[0])
+    def _capture_key(self, keyval, state):
+        name=Gdk.keyval_name(keyval) or ""; held=held_modifiers(state)
+        if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back) and not held: self._end_capture(None); return True
+        if keyval in (Gdk.KEY_Left,Gdk.KEY_Right,Gdk.KEY_Up,Gdk.KEY_Down,Gdk.KEY_Return,Gdk.KEY_KP_Enter) and not held:
+            return False   # moves between Cancel and Clear and presses them
+        spec=self._capture.press(name,held)
+        if spec: self._end_capture(spec)
+        return True
+    def _end_capture(self, spec):
+        callback=self._capture_cb; cancelled=self._capture_cancel; self._capture=None; self._capture_cb=None; self._capture_cancel=None
+        self.close_modal()
+        if spec is not None and callback: callback(spec)   # "" is Clear
+        elif spec is None and cancelled: cancelled()
+    def assign_hotkey(self, store, owner, label, on_set, back=None):
+        """Choose a hotkey for `owner` (("slot", device, action) or ("profile", id)) and pass it to on_set ("" clears it).
+        A key something else already has is only taken from it after a warning."""
+        def got(spec):
+            other=store.hotkey_owner(spec,owner) if spec else None
+            if other is None: on_set(spec); return
+            taken=store.owner_label(other)
+            self.confirm("Hotkey already in use",f"{describe(spec)} is already the hotkey for “{taken}”. Use it for “{label}” instead? "
+                         f"“{taken}” will no longer have a hotkey.","Use it here",lambda:on_set(spec),back=back)
+        self.capture_hotkey(label,got,can_clear=True,cancelled=back)
 
     def countdown(self, title, message, seconds, keep_label, on_keep, undo_label, on_undo):
         """Ask whether to keep a change that may have left the screen unreadable. message(seconds) is the text; with

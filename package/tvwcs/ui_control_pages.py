@@ -1,4 +1,4 @@
-"""The Control Panel's pages. Each reads the system on a worker thread (control_* modules), then draws its rows;
+"""The Settings app's pages. Each reads the system on a worker thread (control_* modules), then draws its rows;
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
@@ -8,9 +8,12 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
-from tvwcs import control_bluetooth as bluetooth, control_display as display, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
-from tvwcs import privilege
-from tvwcs.system_actions import command_for
+from tvwcs import control_bluetooth as bluetooth, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
+from pathlib import Path
+from tvwcs import __version__, power, privilege, selfupdate
+from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
+from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, is_4k, scale_choices, startup_choices
+from tvwcs.system_actions import command_for, login_manager_installed
 from tvwcs.ui_control import StreamedRun, in_background
 from tvwcs.widgets import NavGroup, S, clear_box, glyph, muted_label, section_title, usable
 
@@ -155,6 +158,220 @@ def _outcome(result, otherwise):
     """A control_cmd.Result as act() wants it: "" when it worked, else why not."""
     return "" if result.ok else (result.message or otherwise)
 
+# ====================================================================== Options (TVWCS's own)
+def tell_tvwcs(request):
+    """Ask the running TVWCS to read its options again ("reload") or to restart ("restart PATH"); False when it is not running."""
+    from tvwcs.main import PID_FILE, send_request   # TVWCS's own module, only needed here
+    try: os.kill(int(PID_FILE.read_text(encoding="ascii").strip()),0)
+    except (OSError,ValueError): return False   # not running: it reads its options when it starts
+    return send_request(request)==0
+
+class OptionsPage(Page):
+    """TVWCS's options: the Quick Menu's buttons, the interface size, behaviour, what opens at login, hotkeys and
+    TVWCS's own updates. Each change is saved to TVWCS's config file, read fresh first so nothing TVWCS saved
+    meanwhile is lost, and the running TVWCS is asked to read it again."""
+    key="options"; title="Options"; icon="preferences-other-symbolic"; fallback="⚙"; refreshable=False
+    def __init__(self, win):
+        super().__init__(win); self.update_text=""; self.updating=False
+    def read(self): return ConfigStore()
+    def summary(self): return f"TVWCS {__version__}"
+    def change(self, edit, notice=""):
+        """edit(store) changes a freshly read store; it is saved, and TVWCS reads it again."""
+        store=ConfigStore(); edit(store); store.save(); self.state=store; self.redraw()
+        tell_tvwcs("reload")
+        if notice: self.win.notice("Options",notice)
+    def toggle(self, key):
+        def edit(store): store.settings[key]=not store.settings[key]
+        return lambda:self.change(edit)
+    def option(self, label, key, hint="", invert=False):
+        on=bool(self.state.settings[key])!=invert
+        self.row(label,_on_off(on),self.toggle(key),ident=f"opt:{key}")
+        if hint: self.note(hint)
+
+    def draw(self, store):
+        st=store.settings
+        self.section("QUICK MENU")
+        self.option("Settings button (⚙)","quick_settings_button","Opens this Settings app from the Quick Menu.")
+        self.option("Close button (✕)","quick_close_button","Esc and the remote's Back key close the Quick Menu too.")
+        locker=command_for("lock",st)
+        self.option("Lock in the power menu","quick_lock_button",
+                    "The power menu (⏻) always has Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
+                    ". It has no Log out here: without a login screen, logging out would only leave a text console.")
+                    +("" if locker else " No screen locker is installed (such as i3lock, or swaylock on sway), so Lock would not work yet."))
+        self.option("Options buttons on rows (☰)","hide_options_buttons","Even hidden, a row's options open by pressing ← on it, or by right-clicking it.",invert=True)
+        self.option("Button hints","button_hints","Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
+
+        self.section("DISPLAY")
+        has_4k=self.has_4k()
+        self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
+        self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
+
+        self.section("BEHAVIOR")
+        self.option("Close when clicking outside","close_on_click_outside")
+        self.option("Always open apps in a new workspace","always_new_workspace",
+                    "On: every app, whether you launch it or select it while it is open, gets a workspace of its own, whatever its profile says.")
+        self.option("Open running apps in a new workspace","open_in_new_workspace",
+                    "On: selecting an open app gives it a workspace of its own. Off: it is tiled into the current workspace.")
+
+        self.section("AT LOGIN")
+        names={p.id:p.name for p in store.profiles}
+        self.row("Open at login",STARTUP_LABELS[st["startup"]["mode"]],lambda:self.win.choose_option("Open at login",[(m,STARTUP_LABELS[m]) for m in STARTUP_MODES],
+                 st["startup"]["mode"],lambda m:self.change(lambda s:s.settings["startup"].update(mode=m))),ident="opt:startup")
+        self.row("Chosen app",names.get(st["startup"]["profile_id"],"Not chosen"),lambda:self.choose_app(store),ident="opt:startup-app")
+        self.note("“Reopen the last app” starts whichever app you used most recently. Either runs once per login, a moment after TVWCS starts.")
+        self.row("Open the Quick Menu at login",_on_off(st["startup"]["show_menu"]),
+                 lambda:self.change(lambda s:s.settings["startup"].update(show_menu=not s.settings["startup"]["show_menu"])),ident="opt:startup-menu")
+
+        hints={"keyboard":"A modifier tapped on its own (such as Super) triggers when it is released, so Super combinations keep working.",
+               "remote":"Most remotes send ordinary keys; F2 suits many of them. Fullscreen switches the app you are using in and out of fullscreen.",
+               "gamepad":"A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys; then choose those keys here."}
+        for device in DEVICES:
+            self.section(f"{DEVICE_LABELS[device].upper()} HOTKEYS")
+            for name in DEVICE_ACTIONS[device]:
+                self.row(ACTION_LABELS[name],describe(st["hotkeys"][device][name]),lambda d=device,n=name:self.change_hotkey(store,d,n),ident=f"key:{device}:{name}")
+            self.note(hints[device])
+        self.row("Reset all hotkeys","Defaults",self.reset_hotkeys,ident="key:reset")
+        self.note("Keyboard: tap Super. Remote: F2. Gamepad: none. Application hotkeys are kept, unless one uses a default key.")
+        self.section("APPLICATION HOTKEYS")
+        n=len(store.hotkey_profiles())
+        self.row("Applications with a hotkey","None" if n==0 else f"{n} mapped",self.app_hotkeys,ident="key:apps")
+        self.note("Give an application a hotkey in its launch profile (✎ in the applications guide). Open this to change or remove them.")
+
+        self.section("TVWCS UPDATES")
+        self.row("Check for updates",self.update_text or f"Version {__version__}",None if self.updating else self.check_updates,ident="opt:update")
+        self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
+
+    def note(self, text, css=None):
+        l=super().note(text,css); l.set_margin_bottom(S(6)); return l
+
+    # ---------------------------------------------------------- choices
+    def has_4k(self):
+        gd=Gdk.Display.get_default(); monitors=gd.get_monitors() if gd else None
+        for i in range(monitors.get_n_items() if monitors is not None else 0):
+            m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
+            if is_4k(g.width*f,g.height*f): return True
+        return False
+    def pick_scale(self, key):
+        self.change(lambda s:s.settings.update(scale=key),"TVWCS uses the new size now. Settings uses it the next time it opens.")
+    def choose_app(self, store):
+        options=[]
+        for heading,profiles in startup_choices(store.profiles):
+            for p in profiles: options.append((p.id,(f"{p.channel:03d}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
+        if not options: self.win.notice("Chosen app","There are no applications to choose from yet."); return
+        def picked(pid): self.change(lambda s:s.settings["startup"].update(profile_id=pid,mode="app"))
+        self.win.choose_option("Open at login",options,store.settings["startup"]["profile_id"],picked)
+
+    # ---------------------------------------------------------- hotkeys (TVWCS writes hotkeys.conf when it reads them again)
+    def change_hotkey(self, store, device, name):
+        label=f"{DEVICE_LABELS[device]}: {ACTION_LABELS[name]}"
+        self.win.assign_hotkey(store,("slot",device,name),label,lambda spec:self.change(lambda s:s.set_slot_hotkey(device,name,spec)))
+    def reset_hotkeys(self):
+        def edit(s):
+            for device in DEVICES:
+                for name in DEVICE_ACTIONS[device]: s.set_slot_hotkey(device,name,DEFAULT_HOTKEYS[device][name])
+        self.change(edit)
+    def app_hotkeys(self):
+        store=ConfigStore(); profiles=store.hotkey_profiles()
+        if not profiles:
+            self.win.notice("Application hotkeys","No application has a hotkey yet. Give one a hotkey in its launch profile (✎ in the applications guide)."); return
+        def chosen(pid):
+            p=store.get(pid)
+            def set_key(spec): self.change(lambda s:s.set_profile_hotkey(pid,spec)); self.app_hotkeys()
+            self.win.choose_option(p.name,[("change","Change the hotkey"),("remove","Remove the hotkey")],None,
+                                   lambda what:self.win.assign_hotkey(store,("profile",pid),p.name,set_key,back=self.app_hotkeys) if what=="change" else set_key(""),
+                                   back=self.app_hotkeys)
+        self.win.choose_option("Application hotkeys",[(p.id,f"{p.name}  ·  {describe(p.hotkey)}") for p in profiles],None,chosen)
+
+    # ---------------------------------------------------------- TVWCS's own updates
+    def check_updates(self):
+        self.updating=True; self.update_text="Checking…"; self.redraw()
+        def failed(exc): self.updating=False; self.update_text="Check failed"; self.redraw(); self.win.notice("TVWCS updates",f"Could not check for updates: {exc}")
+        in_background(selfupdate.latest_release,self.checked,failed)
+    def checked(self, release):
+        self.updating=False
+        if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
+        self.update_text=f"{release.version} available"; self.redraw()
+        dest=selfupdate.install_dir(Path(selfupdate.__file__).parent)
+        if dest is None:
+            self.win.notice("TVWCS updates",f"TVWCS {release.version} is available. This copy runs from a source checkout: update it with git pull."); return
+        target=selfupdate.update_target(dest); moving=target!=dest
+        move=(f" It also moves TVWCS from {dest} to {target} and updates the include line in your i3 / sway config to match "
+              "(the config is backed up first)." if moving else "")
+        self.win.confirm("Update TVWCS?",f"TVWCS {release.version} is available (you have {__version__}). Download and install it now?{move} "
+                         "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
+                         lambda:self.install(release,target,moving),danger=False)
+    def install(self, release, target, moving):
+        self.updating=True; self.update_text="Installing…"; self.redraw()
+        def done(_out):
+            self.updating=False; self.update_text=f"Installed {release.version}"; self.redraw()
+            restarted=tell_tvwcs(f"restart {target/'bin'/'tvwcs'}")
+            self.win.notice("TVWCS updated",f"TVWCS {release.version} is installed"+(" and has restarted." if restarted else ".")+
+                            " Close Settings and open it again to use the new version.")
+        def failed(exc): self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
+        in_background(lambda:selfupdate.install_release(release,target,migrate=moving),done,failed)
+
+# ====================================================================== Power and sleep
+class PowerPage(Page):
+    """After how long without input the screen turns off, the computer locks and it sleeps (TVWCS keeps these times,
+    see power.py), and what the system does by itself: X's blanking and DPMS, logind's idle action and the lid."""
+    key="power"; title="Power and sleep"; icon="system-shutdown-symbolic"; fallback="⏻"
+    def read(self):
+        store=ConfigStore(); st=store.settings
+        return power.read_state(st,command_for("lock",st) is not None,command_for("sleep",st) is not None)
+    def summary(self): return "swayidle" if self.state and self.state.session=="sway" else ""
+    def draw(self, s):
+        times=s.settings
+        self.section("WHEN NOTHING IS TOUCHED")
+        screen=times["screen_off"]
+        self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
+                 lambda:self.choose("screen_off",screen,system=True),icon="video-display-symbolic",fallback="🖵",ident="idle:screen_off")
+        self.row(power.LABELS["lock"],power.duration_text(times["lock"]),lambda:self.choose("lock",times["lock"]),
+                 detail="" if s.locker else "No screen locker is installed (such as i3lock, or swaylock on sway)",
+                 icon="system-lock-screen-symbolic",fallback="🔒",ident="idle:lock")
+        self.row(power.LABELS["sleep"],power.duration_text(times["sleep"]),lambda:self.choose("sleep",times["sleep"]),
+                 detail="" if s.can_sleep else "Nothing on this computer can make it sleep",
+                 icon="weather-clear-night-symbolic",fallback="☾",ident="idle:sleep")
+        self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
+                  "or while an application keeps the computer awake.")
+        if not s.idle_works and any(times[a] for a in power.ACTIONS):
+            self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
+                      "TVWCS cannot tell how long the computer has been idle: install libxss1 (or xprintidle).","error")
+        self.section("WHAT THE SYSTEM DOES BY ITSELF")
+        if s.session=="X11":
+            x=s.xtimers
+            if not x.available: self.row("X screen saver and power saving","Unknown",None,detail="xset was not found, or there is no display")
+            else:
+                self.row("X blanks the screen after",power.duration_text(x.saver) if x.saver else "Never",None,
+                         detail="X's own screen saver" + (" (switched off while TVWCS turns the screen off)" if screen is not None else ""),ident="sys:saver")
+                self.row("X switches the monitor off after",power.duration_text(x.dpms_off) if x.dpms_off else "Never",None,
+                         detail="DPMS power saving",ident="sys:dpms")
+        l=s.logind
+        if l.available:
+            action={"ignore":"Nothing","suspend":"Sleep","hibernate":"Hibernate","hybrid-sleep":"Hybrid sleep","suspend-then-hibernate":"Sleep, then hibernate",
+                    "poweroff":"Shut down","lock":"Lock"}.get(l.idle_action,l.idle_action)
+            self.row("The system's idle action",action+(f" after {power.duration_text(l.idle_seconds)}" if l.idle_action!="ignore" and l.idle_seconds else ""),None,
+                     detail="logind's IdleAction, set in /etc/systemd/logind.conf",ident="sys:logind")
+            if l.lid: self.row("Closing the lid",{"suspend":"Sleep","ignore":"Nothing","poweroff":"Shut down","lock":"Lock","hibernate":"Hibernate"}.get(l.lid,l.lid),None,
+                               detail="logind's HandleLidSwitch",ident="sys:lid")
+        self.note("Change “Turn off the screen after” to let TVWCS decide instead of X. "
+                  "logind's settings are changed in /etc/systemd/logind.conf, as root.")
+
+    @staticmethod
+    def system_screen_text(s):
+        if s.session=="sway": return "Never (sway)"
+        x=s.xtimers; t=min([v for v in (x.saver,x.dpms_off) if v] or [0])
+        return f"{power.duration_text(t)} (X)" if t else "Never (X)"
+
+    def choose(self, action, current, system=False):
+        options=([("system","Let the system decide")] if system else [])+[(str(v),power.duration_text(v)) for v in power.CHOICES]
+        def picked(key):
+            value=None if key=="system" else int(key)
+            store=ConfigStore(); store.settings["idle"][action]=value; store.save(); tell_tvwcs("reload")
+            if action in ("lock","sleep") and value and not (self.state.locker if action=="lock" else self.state.can_sleep):
+                self.win.notice(power.LABELS[action].replace(" after",""),"Saved, but this computer has nothing to do that with yet.")
+            self.refresh(quiet=True)
+        self.win.choose_option(power.LABELS[action],options,"system" if current is None else str(current),picked)
+
 # ====================================================================== Sound
 class SoundPage(Page):
     key="sound"; title="Sound"; icon="audio-volume-high-symbolic"; fallback="🔊"; poll=3
@@ -164,10 +381,11 @@ class SoundPage(Page):
         if not state.available: self.note(state.message); return
         self.section("OUTPUT")
         current=state.output()
-        if current is None: self.note("No sound output was found.")
+        if current is None: self.note(self.no_output_text(state))
         else:
             self.volume_row(current,"out")
             for d in state.outputs: self.device_row(d,d.name==(current.name if current else ""),"audio-speakers-symbolic","🔈")
+        for o in state.other_outputs: self.card_output_row(o)
         self.section("INPUT")
         current=state.input()
         if current is None: self.note("No microphone or other input is connected.")
@@ -186,6 +404,20 @@ class SoundPage(Page):
                  f"Switching to {d.label}…","Sound")) if not in_use else None,
                  detail=port if len(ports)>1 else "",icon=icon,fallback=fallback,ident=f"{d.kind}:{d.name}",extras=[extra],
                  value_css="state-on")
+
+    @staticmethod
+    def no_output_text(state):
+        if state.alsa_cards==0:
+            return ("The computer has no sound card the system can use: its driver, or the firmware it needs, is missing. On Debian, "
+                    "install firmware-sof-signed (Intel laptops and mini PCs) or firmware-misc-nonfree (from non-free-firmware), then restart.")
+        return "No sound output was found."
+
+    def card_output_row(self, o):
+        """An output of a profile the card is not using now (often its HDMI output): choosing it switches the card over."""
+        detail=f"{o.card_label} · "+("switches the sound card to this output" if o.available else "nothing seems plugged in here, but it can be tried")
+        self.row(o.label,"",lambda o=o:self.act(lambda:_outcome(sound.use_card_output(o),f"Could not switch {o.card_label} to {o.label}."),
+                 f"Switching to {o.label}…","Sound"),detail=detail,icon="video-display-symbolic" if o.hdmi else "audio-speakers-symbolic",
+                 fallback="🖵" if o.hdmi else "🔈",ident=f"card:{o.card}:{o.output}")
 
     def choose_port(self, d, ports):
         def picked(name): self.act(lambda:_outcome(sound.set_port(d,name),"Could not switch the connector."),"Switching…","Sound")
@@ -397,6 +629,7 @@ class UpdatesPage(Page):
     MAX_ROWS=300
     def __init__(self, win):
         super().__init__(win); self.running=None; self.log=None; self.fetched=None
+        self.finished=None; self.outcome=None   # the run that just ended, until the page is read again; then what came of it
     def read(self):
         state=updates.read_state(); state.reboot=updates.reboot_needed()
         if self.fetched and (state.checked or 0)<self.fetched: state.checked=self.fetched   # unchanged lists keep their old date
@@ -410,14 +643,14 @@ class UpdatesPage(Page):
         if not s.available: self.note(s.message); return
         if self.running:
             self.row(self.running,"Working…",None,icon="emblem-synchronizing-symbolic",fallback="⟳",ident="running")
-            self.note("Leave this running until it finishes. The Control Panel can be closed; the update carries on.")
+            self.note("Leave this running until it finishes. Settings can be closed; the update carries on.")
             self.add(self.console()); return
         self.row("Check for updates",f"{s.total} available" if s.total else "Up to date",self.refresh,ident="check",
                  icon="view-refresh-symbolic",fallback="⟳")
         m=s.manager
         if m is not None and m.refresh_argv:
             self.row("Download the latest package lists","",lambda:self.run_steps("Downloading package lists",[(list(m.refresh_argv),True)],fetch=True),
-                     detail="Asks for your password. Then check again.",icon="folder-download-symbolic",fallback="⇩",ident="lists")
+                     detail="Asks for your password, then checks again.",icon="folder-download-symbolic",fallback="⇩",ident="lists")
         if s.total:
             self.row(f"Install {s.total} update{'s' if s.total!=1 else ''}","",self.confirm_install,ident="install",
                      detail="Installs everything listed below." + (" Asks for your password." if s.updates else ""),
@@ -426,6 +659,8 @@ class UpdatesPage(Page):
             self.row("Restart to finish updating","",self.confirm_reboot,detail="Some updates are only used after a restart.",
                      icon="system-reboot-symbolic",fallback="↻",ident="reboot")
         for label,problem in s.problems: self.note(f"{label}: {problem}","error")
+        if self.finished: self.outcome=self.outcome_text(self.finished,s); self.finished=None; self._append(f"\n✓ {self.outcome}")
+        if self.outcome: self.note(self.outcome,"state-on")
         if self.log is not None and self.log.get_buffer().get_char_count():
             self.section("LAST RUN"); self.add(self.console())
         for title,items in ((f"{m.label.upper()} PACKAGES" if m else "PACKAGES",s.updates),("FLATPAK APPS",s.flatpak)):
@@ -448,6 +683,13 @@ class UpdatesPage(Page):
         if buf.get_line_count()>2000: buf.delete(buf.get_start_iter(),buf.get_iter_at_line(buf.get_line_count()-2000)[1])
         GLib.idle_add(lambda:(self.log_scroll.get_vadjustment().set_value(self.log_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
 
+    @staticmethod
+    def outcome_text(label, s):
+        """The line that says a run has finished and what it found, such as: Package lists downloaded at 23:05. Everything is up to date."""
+        done={"Downloading package lists":"Package lists downloaded","Installing updates":"Updates installed"}.get(label,f"{label}: finished")
+        found=f"{s.total} update{'s' if s.total!=1 else ''} available." if s.total else "Everything is up to date."
+        return f"{done} at {time.strftime('%H:%M')}. {found}"
+
     def details(self, u):
         lines=[f"Version {u.new}"]+([f"Installed now: {u.old}"] if u.old else [])+([f"From: {u.source}"] if u.source else [])
         self.win.notice(u.name,"\n".join(lines))
@@ -464,11 +706,12 @@ class UpdatesPage(Page):
 
     def run_steps(self, label, steps, fetch=False):
         """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
-        self.running=label; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
+        self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
         self.win._focus_first(self.groups)
         def finish(problem=""):
             self.running=None; self.set_status(""); self.redraw()
-            if problem: self.win.notice(label,problem)
+            if problem: self._append(f"\n✗ Stopped: {problem}"); self.win.notice(label,problem)
+            else: self.finished=label   # said once the page has been read again, with what it found
             self.refresh()
         def next_step(i):
             if i>=len(steps):
@@ -497,14 +740,64 @@ class UpdatesPage(Page):
 # ====================================================================== System information
 class SystemPage(Page):
     key="system"; title="System information"; icon="computer-symbolic"; fallback="🖥"
-    def read(self): return sysinfo.read_sections()
+    def read(self): return sysinfo.read_sections(),ssh.read_state()
     def summary(self): return ""
-    def draw(self, sections):
+    def draw(self, state):
+        sections,remote=state
         displays=self.displays()
         if displays: sections=sections[:2]+[("DISPLAYS",displays)]+sections[2:]
         for title,rows in sections:
             self.section(title)
             for i,(label,value) in enumerate(rows): self.row(label,value,None,ident=f"{title}:{label}:{i}")
+        self.draw_ssh(remote)
+
+    # ---------------------------------------------------------- SSH: signing in to this computer from another one
+    def draw_ssh(self, s):
+        self.section("REMOTE ACCESS (SSH)")
+        if not s.installed:
+            self.row("SSH server","Not installed",self.install_ssh if ssh.install_argv() else None,
+                     detail="Install it to sign in to this computer from another one",ident="ssh:server"); return
+        self.row("SSH server","On" if s.active else "Off",lambda:self.switch_ssh(s),
+                 detail=("Starts with the computer" if s.enabled else "Stopped at the next restart") if s.active else
+                        ("Starts with the computer" if s.enabled else "Turn it on to sign in from another computer"),
+                 ident="ssh:server",value_css="state-on" if s.active else "setting-value")
+        self.row("Sign in with","Keys only" if not s.passwords else "Password or key",lambda:self.choose_sign_in(s),
+                 detail=f"{s.keys} key{'s' if s.keys!=1 else ''} added for {s.user}",ident="ssh:auth")
+        self.row("Connect with",f"ssh {s.user}@{s.address}",None,ident="ssh:command")
+        self.row("User",s.user,None,ident="ssh:user")
+        self.row("Local name",s.local_name if s.mdns else f"{s.local_name} (not announced)",None,
+                 detail="" if s.mdns else "Install avahi-daemon to reach this computer by name",ident="ssh:name")
+        for i,(iface,address) in enumerate(s.addresses):
+            self.row("IP address" if i==0 else "",address,None,detail=iface,ident=f"ssh:ip:{i}")
+        if not s.addresses: self.row("IP address","Not connected to a network",None,ident="ssh:ip:0")
+
+    def as_root(self, argv, label, status):
+        """Run one of control_ssh's commands as root, then read the page again; its output is shown if it fails."""
+        self.set_status(status); lines=[]
+        def done(code,tail):
+            self.set_status("")
+            if code: self.win.notice("SSH",("\n".join(lines[-6:]) or tail or f"{label} did not work.").strip())
+            self.refresh(quiet=True)
+        self.win.run_as_root(argv,label,lines.append,done)
+    def install_ssh(self):
+        self.win.confirm("Install the SSH server?","This installs OpenSSH's server with the package manager. Turn it on here afterwards.",
+                         "Install",lambda:self.as_root(ssh.install_argv(),"Installing the SSH server","Installing the SSH server…"),danger=False)
+    def switch_ssh(self, s):
+        if not s.unit: self.win.notice("SSH","Without systemd, start and stop the SSH server with your init system's own tools."); return
+        if s.active:
+            self.win.confirm("Turn SSH off?","Nobody can sign in from another computer until it is turned on again. "
+                             "Connections open now stay open.","Turn off",lambda:self.as_root(ssh.service_argv(s,False),"Turning SSH off","Turning SSH off…"))
+        else: self.as_root(ssh.service_argv(s,True),"Turning SSH on","Turning SSH on…")
+    def choose_sign_in(self, s):
+        def picked(key):
+            allow=key=="password"
+            if allow==s.passwords: return
+            if not allow:
+                problem=ssh.key_only_problem(s)
+                if problem: self.win.notice("Keys only",problem); return
+            self.as_root(ssh.passwords_argv(s,allow),"Changing how SSH signs in","Changing how SSH signs in…")
+        self.win.choose_option("Sign in with",[("password","Password or key"),("keys",f"Keys only (safer; {s.keys} key{'s' if s.keys!=1 else ''} added)")],
+                               "password" if s.passwords else "keys",picked)
     def displays(self):
         display=Gdk.Display.get_default(); monitors=display.get_monitors() if display else None; rows=[]
         for i in range(monitors.get_n_items() if monitors is not None else 0):
@@ -516,6 +809,7 @@ class SystemPage(Page):
 # ====================================================================== Terminal
 class TerminalPage(Page):
     key="terminal"; title="Terminal"; icon="utilities-terminal-symbolic"; fallback="▮"; refreshable=False
+    enter_at_top=True   # coming in from the tabs lands on the buttons: once in the terminal, every arrow key is the shell's
     def __init__(self, win):
         super().__init__(win); self.terminal=None; self.child=None; self.process=None
     def summary(self): return os.environ.get("SHELL","/bin/sh") if Vte is not None else "Command console"
@@ -527,8 +821,13 @@ class TerminalPage(Page):
             restart=Gtk.Button(label="New session"); restart.connect("clicked",lambda *_:self.start(restart=True))
             copy=Gtk.Button(label="Copy"); copy.connect("clicked",lambda *_:self.terminal.copy_clipboard_format(Vte.Format.TEXT))
             paste=Gtk.Button(label="Paste"); paste.connect("clicked",lambda *_:self.terminal.paste_clipboard())
-            for b in (restart,copy,paste): bar.append(b)
-            hint=muted_label("Every key goes to the terminal. Back (or Shift+Esc) returns to the tabs. Ctrl+Shift+C and Ctrl+Shift+V copy and paste.")
+            tab=Gtk.Button(label="Tab"); tab.set_tooltip_text("Send the Tab key to the shell (completes what you typed)")
+            tab.connect("clicked",lambda *_:self.send(b"\t"))
+            esc=Gtk.Button(label="Esc"); esc.set_tooltip_text("Send the Esc key to the shell")
+            esc.connect("clicked",lambda *_:self.send(b"\x1b"))
+            for b in (restart,copy,paste,tab,esc): bar.append(b)
+            hint=muted_label("↓ goes into the terminal, where every key goes to the shell. Esc or Back comes back up to these buttons. "
+                             "Ctrl+Shift+C and Ctrl+Shift+V copy and paste.")
             hint.set_hexpand(True); hint.set_margin_start(S(12)); bar.append(hint)
             self.terminal=Vte.Terminal(); self.terminal.set_vexpand(True); self.terminal.set_hexpand(True)
             self.terminal.set_font_scale(max(1.0,self.win.app.scale)); self.terminal.set_scrollback_lines(5000)
@@ -536,7 +835,7 @@ class TerminalPage(Page):
             self.terminal.connect("child-exited",self._exited)
             keys=Gtk.EventControllerKey(); keys.connect("key-pressed",self._terminal_key); self.terminal.add_controller(keys)
             frame=Gtk.Box(); frame.add_css_class("console-frame"); frame.append(self.terminal); box.append(frame)
-            self.groups=[NavGroup([restart,copy,paste]),NavGroup([self.terminal])]
+            self.groups=[NavGroup([restart,copy,paste,tab,esc]),NavGroup([self.terminal])]
         else:
             self.entry=Gtk.Entry(); self.entry.set_hexpand(True); self.entry.set_placeholder_text("Type a command, then Enter")
             self.entry.connect("activate",lambda *_:self.run_command(self.entry.get_text()))
@@ -569,6 +868,10 @@ class TerminalPage(Page):
             self.child=pid
         self.terminal.spawn_async(Vte.PtyFlags.DEFAULT,os.path.expanduser("~"),[shell],None,GLib.SpawnFlags.DEFAULT,None,None,-1,None,spawned)
         if restart: self.terminal.grab_focus()
+    def send(self, data):
+        """Type a key the remote has no button for (Tab, Esc) into the shell. The selection stays on the button, so it
+        can be pressed again (Tab twice lists the completions)."""
+        if self.child is not None: self.terminal.feed_child(list(data))
     def _exited(self, *_):
         self.child=None; self.terminal.feed(b"\r\n[The shell has ended. Choose New session to start another.]\r\n")
     def _terminal_key(self, _controller, keyval, _keycode, state):
@@ -615,9 +918,11 @@ class NetworkPage(Page):
         self.row("Wi-Fi",_on_off(s.wifi_enabled),lambda:self.act(lambda:network.set_wifi(not s.wifi_enabled),
                  "Switching Wi-Fi "+("off…" if s.wifi_enabled else "on…"),"Wi-Fi"),icon="network-wireless-symbolic",fallback="📶",ident="wifi")
         if not s.wifi_enabled: return
-        self.row("Search for networks","Searching…" if self.scanning else "",None if self.scanning else self.scan,icon="edit-find-symbolic",fallback="⌕",ident="scan")
-        if not s.networks: self.note("No networks found yet." if not self.scanning else "Looking…")
         device=wireless[0]
+        if device.connected: self.ip_row(device)
+        self.row("Search for networks","Searching…" if self.scanning else "",None if self.scanning else self.scan,icon="edit-find-symbolic",fallback="⌕",
+                 detail="Looks for Wi-Fi networks nearby. The list is not searched again until you choose this.",ident="scan")
+        if not s.networks: self.note("Looking…" if self.scanning else "No networks listed. Choose Search for networks to look for them.")
         for n in s.networks: self.wifi_row(n,device)
 
     @staticmethod
@@ -636,18 +941,22 @@ class NetworkPage(Page):
                 go=lambda i=i:self.win.confirm(f"Disconnect {i.device}?",f"Disconnect {i.connection or i.device}? Anything using the network will lose it until you connect again.",
                                                "Disconnect",lambda:self.act(lambda:network.disconnect_device(i.device),f"Disconnecting {i.device}…","Ethernet"))
             else: go=lambda i=i:self.act(lambda:network.connect_device(i.device),f"Connecting {i.device}…","Ethernet")
-        if managed and i.connection_uuid:
-            extras.append(self.button("emblem-system-symbolic","⚙",f"IP settings of {i.connection or i.device}",lambda i=i:self.ip_settings(i.connection_uuid,i.connection or i.device)))
         label=("Ethernet" if i.kind=="ethernet" else "Wi-Fi")+f" ({i.device})"
         self.row(label,self._state_text(i),go,detail=self._details(i),icon="network-wired-symbolic" if i.kind=="ethernet" else "network-wireless-symbolic",
                  fallback="⇄",ident=f"if:{i.device}",extras=extras,value_css="state-on" if i.connected else "setting-value")
+        if managed: self.ip_row(i)
+
+    def ip_row(self, i):
+        """IP address, default gateway and DNS servers of the interface's connection: from DHCP, or set by hand."""
+        if not i.connection_uuid: return
+        value="Automatic (DHCP)" if i.method!="manual" else "Fixed"+(f": {i.addresses[0].split('/')[0]}" if i.addresses else "")
+        self.row(f"IP settings ({i.device})",value,lambda i=i:self.ip_settings(i),icon="preferences-system-network-symbolic",fallback="⚙",
+                 detail="IP address, default gateway and DNS servers, or back to automatic (DHCP)",ident=f"ip:{i.device}")
 
     def wifi_row(self, n, device):
         detail=f"{network.signal_bars(n.signal)}  {n.signal} %"+(f" · {n.security}" if n.secured else " · Open")
         if n.in_use and device.addresses: detail+=" · "+self._details(device)
         extras=[]
-        if n.in_use and device.connection_uuid:
-            extras.append(self.button("emblem-system-symbolic","⚙",f"IP settings of {n.ssid}",lambda:self.ip_settings(device.connection_uuid,n.ssid)))
         if n.saved_uuid:
             extras.append(self.button("user-trash-symbolic","✕",f"Forget {n.ssid}",lambda n=n:self.win.confirm(f"Forget {n.ssid}?",
                           f"The saved password and settings for {n.ssid} are removed"+(", and this computer leaves it." if n.in_use else "."),
@@ -681,19 +990,23 @@ class NetworkPage(Page):
             self.redraw()
         self.busy=True; in_background(lambda:network.read_state(scan=True),done,lambda _e:done(None))
 
-    def ip_settings(self, uuid, name):
+    def ip_settings(self, i):
+        uuid,name=i.connection_uuid,i.connection or i.device
         self.set_status("Reading IP settings…")
-        in_background(lambda:network.read_ipv4(uuid),lambda s:(self.set_status(""),self.ip_form(uuid,name,s)))
-    def ip_form(self, uuid, name, s, error=""):
-        again=lambda error="":self.ip_form(uuid,name,s,error)
+        in_background(lambda:network.read_ipv4(uuid),lambda s:(self.set_status(""),self.ip_form(uuid,name,s,iface=i)))
+    def ip_form(self, uuid, name, s, error="", iface=None):
+        again=lambda error="":self.ip_form(uuid,name,s,error,iface)
         def edit(field,title,message):
             def set_value(text): setattr(s,field,text.strip()); again()
             self.win.ask_text(title,message,set_value,getattr(s,field),back=lambda:again())
-        def flip(): s.method="auto" if s.method=="manual" else "manual"; again()
-        rows=[("Addresses","Automatic (DHCP)" if s.automatic else "Manual",flip)]
+        def flip():
+            nonlocal s
+            s=network.Ipv4Settings("auto",s.address,s.gateway,s.dns) if not s.automatic else network.fixed_from(s,iface)
+            again()
+        rows=[("Get the settings automatically (DHCP)","Yes" if s.automatic else "No, set them here",flip)]
         if not s.automatic:
             rows+=[("IP address",s.address,lambda:edit("address","IP address","With its prefix, for example 192.168.1.20/24 (without one, /24 is used).")),
-                   ("Gateway",s.gateway,lambda:edit("gateway","Gateway","The router's address, for example 192.168.1.1. Can be left empty.")),
+                   ("Default gateway",s.gateway,lambda:edit("gateway","Default gateway","The router's address, for example 192.168.1.1. Can be left empty.")),
                    ("DNS servers",s.dns,lambda:edit("dns","DNS servers","One or more, separated by commas, for example 1.1.1.1, 9.9.9.9."))]
         def save():
             problem,_args=network.validate_ipv4(s)
@@ -701,6 +1014,7 @@ class NetworkPage(Page):
             self.win.close_modal()
             self.act(lambda:network.apply_ipv4(uuid,s),f"Applying the IP settings of {name}…","IP settings")
         self.win.form(f"IP settings · {name}",rows,"Save",save,
-                      "Automatic asks the router for an address. Saving reconnects, so the connection drops for a moment.",error)
+                      "Automatic (DHCP) asks the router for the address, gateway and DNS servers; choose the first row to switch. "
+                      "Saving reconnects, so the connection drops for a moment.",error)
 
-PAGES=(SoundPage,DisplaysPage,BluetoothPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)
+PAGES=(OptionsPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)

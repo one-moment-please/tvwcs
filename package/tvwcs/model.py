@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_LABELS, assigned, clean_hotkeys, valid_spec
 from tvwcs.pinlock import valid_hash
+from tvwcs.power import clean_idle
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
 DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"
@@ -46,6 +47,10 @@ DEFAULT_SETTINGS={
     "always_new_workspace":False,   # every app, launched or already open, opens in a workspace of its own
     "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
     "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
+    "quick_settings_button":True,   # the Quick Menu's ⚙ button, which opens the Settings app
+    "quick_close_button":True,      # the Quick Menu's ✕ button (Esc and Back close it too)
+    "quick_lock_button":False,      # a Lock button in the Quick Menu's power menu
+    "idle":{"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":"","show_menu":False},   # show_menu: open the Quick Menu at login
 }
@@ -85,9 +90,11 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints"):
+    for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
+                "quick_settings_button","quick_close_button","quick_lock_button"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
+    s["idle"]=clean_idle(raw.get("idle"))
     st=raw.get("startup")
     if isinstance(st,dict):
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]

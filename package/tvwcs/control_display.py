@@ -1,8 +1,8 @@
-"""Displays for the Control Panel: resolution, refresh rate, arrangement and the primary display, through xrandr
+"""Displays for Settings: resolution, refresh rate, arrangement and the primary display, through xrandr
 (i3 and other X11 sessions) or swaymsg (sway). No GTK dependency.
 
 The arrangement is kept as "this display is right of / left of / above / below / the same as that one", so changing
-one display's resolution moves its neighbours with it instead of leaving a gap or an overlap. What the Control Panel
+one display's resolution moves its neighbours with it instead of leaving a gap or an overlap. What Settings
 applies is saved to ~/.config/tvwcs/displays.json, and TVWCS applies it again when it starts with the same displays
 connected (xrandr forgets everything at log-out; sway forgets runtime changes)."""
 from __future__ import annotations

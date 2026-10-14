@@ -1,4 +1,4 @@
-"""Ethernet and Wi-Fi for the Control Panel. No GTK dependency.
+"""Ethernet and Wi-Fi for Settings. No GTK dependency.
 
 Changes go through NetworkManager's `nmcli`, which polkit lets the user at the screen use without a password.
 Without NetworkManager the panel still shows every interface, its addresses and the gateway (from `ip`), read-only."""
@@ -19,6 +19,7 @@ class Interface:
     addresses: list = field(default_factory=list)   # "192.168.1.20/24"
     gateway: str = ""
     dns: list = field(default_factory=list)
+    method: str = ""          # the connection's IPv4 method: "auto" (DHCP) or "manual"; "" when there is no connection
     @property
     def connected(self): return self.state.startswith("connected")
 
@@ -154,6 +155,14 @@ def validate_ipv4(settings):
         except ValueError: return f"The DNS server “{s}” is not an IP address.",[]
     return "",["ipv4.method","manual","ipv4.addresses",iface.with_prefixlen,"ipv4.gateway",gateway,"ipv4.dns",",".join(servers)]
 
+def fixed_from(settings, iface):
+    """Switching from DHCP to a fixed address: start from the address, gateway and DNS servers in use now."""
+    out=Ipv4Settings("manual",settings.address,settings.gateway,settings.dns)
+    if not out.address and iface is not None and iface.addresses: out.address=iface.addresses[0]
+    if not out.gateway and iface is not None: out.gateway=iface.gateway
+    if not out.dns and iface is not None: out.dns=", ".join(iface.dns)
+    return out
+
 # ------------------------------------------------------------------ reading
 def read_state(scan=False):
     if not have("nmcli") or not run(["nmcli","-t","-f","RUNNING","general"],timeout=5).out.strip()=="running":
@@ -166,10 +175,14 @@ def read_state(scan=False):
     for iface in interfaces:
         parse_device_show(run(["nmcli","-t","-f","GENERAL.HWADDR,GENERAL.STATE,IP4","device","show",iface.device],timeout=8).out,iface)
         iface.connection_uuid=next((u for _n,u,_t,d in connections if d==iface.device),"")
+        if iface.connection_uuid:
+            method=run(["nmcli","-g","ipv4.method","connection","show",iface.connection_uuid],timeout=5).out.strip()
+            iface.method="manual" if method=="manual" else "auto"
     wifi_on=run(["nmcli","-t","radio","wifi"],timeout=5).out.strip()=="enabled"
     networks=[]
     if wifi_on and any(i.kind=="wifi" for i in interfaces):
-        listing=run(["nmcli","-t","-f","IN-USE,SSID,SIGNAL,SECURITY","device","wifi","list","--rescan","yes" if scan else "auto"],timeout=30)
+        # only a search asks the adapter to scan; otherwise this lists what NetworkManager already knows
+        listing=run(["nmcli","-t","-f","IN-USE,SSID,SIGNAL,SECURITY","device","wifi","list","--rescan","yes" if scan else "no"],timeout=30)
         networks=parse_wifi_list(listing.out)
         saved=saved_wifi(connections)
         for n in networks: n.saved_uuid=saved.get(n.ssid,"")

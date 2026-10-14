@@ -10,7 +10,7 @@
 # from the old location: updating the include line and removing the old copy (the in-app updater sets it once you
 # have agreed to the move there).
 # TVWCS_NO_RESTART=1 skips the offer to restart a running TVWCS. TVWCS_WMS="i3 sway" chooses which window managers
-# to set up (default: those installed). TVWCS_ETC overrides /etc (where the standard config templates are), and
+# to set up (default: those installed; with neither installed, it offers to install one). TVWCS_ETC overrides /etc (where the standard config templates are), and
 # TVWCS_RUN and TVWCS_VAR override /run and /var (where the init system is detected).
 set -eu
 RUN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)  # folder holding this script (repo scripts/, or a release root)
@@ -78,12 +78,12 @@ install_files() {
     [ -f "$LAUNCHER" ] && cp "$LAUNCHER" "$DEST/"
 }
 
-# The Control Panel's launcher, so it is listed with the other applications (in the guide's System category). Its
+# The Settings app's launcher, so it is listed with the other applications (in the guide's System category). Its
 # Exec lines (the panel, and an action for each of its pages) run this install's tvwcs by full path, quoted; a path
 # the .desktop format would need escaped is skipped.
 install_launcher() {
     [ -f "$LAUNCHER" ] || return 0
-    case "$DEST" in *'$'*|*'`'*|*'\'*) echo "Skipped the Control Panel's menu entry: $DEST has a character a .desktop file cannot hold. Run: '$DEST/bin/tvwcs' control" >&2; return 0 ;; esac
+    case "$DEST" in *'$'*|*'`'*|*'\'*) echo "Skipped the Settings app's menu entry: $DEST has a character a .desktop file cannot hold. Run: '$DEST/bin/tvwcs' settings" >&2; return 0 ;; esac
     APPS=${XDG_DATA_HOME:-$HOME/.local/share}/applications
     mkdir -p "$APPS"
     P="$DEST/bin/tvwcs" awk '/^Exec=tvwcs / { sub(/^Exec=tvwcs/, "Exec=\"" ENVIRON["P"] "\""); } { print }' "$LAUNCHER" > "$APPS/com.tvwcs.ControlPanel.desktop"
@@ -135,7 +135,7 @@ fi
 # ------------------------------------------------------------------ what else is needed, in this distribution's terms
 # distro -> the family whose package manager and names apply, from /etc/os-release (ID, then ID_LIKE)
 distro() {
-    ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi; for D in ${ID:-} ${ID_LIKE:-}; do
+    ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi; for D in ${ID:-} ${ID_LIKE:-}; do
         case "$D" in
             arch|artix|manjaro|endeavouros) echo arch; exit ;;
             fedora|rhel|centos|rocky|almalinux|nobara) echo fedora; exit ;;
@@ -158,12 +158,22 @@ pkg() {
         gentoo:i3) echo x11-wm/i3 ;;                         gentoo:xdotool) echo x11-misc/xdotool ;;
         arch:xinit) echo xorg-xinit ;;                       fedora:xinit) echo xorg-x11-xinit ;;   gentoo:xinit) echo x11-apps/xinit ;;
         *:gtk) echo "PyGObject GTK4" ;;
-        # the Control Panel's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
+        # the Settings app's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
         debian:pactl|fedora:pactl|suse:pactl|void:pactl|alpine:pactl) echo pulseaudio-utils ;;
         arch:pactl) echo libpulse ;;                         gentoo:pactl) echo media-libs/libpulse ;;
         arch:bluetoothctl) echo bluez-utils ;;               gentoo:bluetoothctl) echo net-wireless/bluez ;;  *:bluetoothctl) echo bluez ;;
         debian:nmcli) echo network-manager ;;                arch:nmcli) echo networkmanager ;;
         alpine:nmcli) echo networkmanager-cli ;;             gentoo:nmcli) echo net-misc/networkmanager ;;   *:nmcli) echo NetworkManager ;;
+        # sound: PipeWire with its PulseAudio layer (the Sound page talks to it with pactl) and its session manager
+        debian:pipewire) echo "pipewire pipewire-pulse wireplumber dbus-user-session" ;;   # WirePlumber needs the session bus
+        arch:pipewire|alpine:pipewire) echo "pipewire pipewire-pulse wireplumber" ;;
+        fedora:pipewire|suse:pipewire) echo "pipewire pipewire-pulseaudio wireplumber" ;;
+        void:pipewire) echo "pipewire wireplumber" ;;   gentoo:pipewire) echo "media-video/pipewire media-video/wireplumber" ;;
+        # hides the mouse pointer while it is still (i3; sway does it itself)
+        debian:unclutter|alpine:unclutter) echo unclutter-xfixes ;;   gentoo:unclutter) echo x11-misc/unclutter-xfixes ;;
+        # Power and sleep: the idle time on X11 (libXss), or swayidle on sway
+        debian:xss) echo libxss1 ;;   arch:xss) echo libxss ;;   suse:xss) echo libXss1 ;;   alpine:xss) echo libxscrnsaver ;;
+        gentoo:xss) echo x11-libs/libXScrnSaver ;;   *:xss) echo libXScrnSaver ;;
         debian:xrandr) echo x11-xserver-utils ;;             arch:xrandr) echo xorg-xrandr ;;               gentoo:xrandr) echo x11-apps/xrandr ;;
         debian:vte) echo gir1.2-vte-3.91 ;;                  arch:vte) echo vte4 ;;                          fedora:vte) echo vte291-gtk4 ;;
         *:vte) echo "VTE-for-GTK-4" ;;
@@ -177,16 +187,102 @@ install_hint() {
         gentoo) echo "sudo emerge $1" ;;        *) echo "install with your package manager: $1" ;;
     esac
 }
-missing=""
-python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="$missing $(pkg gtk)"
-command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || missing="$missing $(pkg i3)"
-command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || missing="$missing $(pkg xdotool)"
-[ -z "$missing" ] || echo "Missing packages:  $(install_hint "${missing# }")"
-optional=""
-for TOOL in pactl bluetoothctl nmcli; do command -v "$TOOL" >/dev/null 2>&1 || optional="$optional $(pkg "$TOOL")"; done
-command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1 && optional="$optional $(pkg xrandr)"   # sway has its own
-python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || optional="$optional $(pkg vte)"
-[ -z "$optional" ] || echo "Optional, for the Control Panel's sound, displays, Bluetooth, network and terminal pages:  $(install_hint "${optional# }")"
+as_root() {   # run a command as root, asking for the password on this terminal
+    if [ "$(id -u)" = 0 ]; then "$@"
+    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+    elif command -v doas >/dev/null 2>&1; then doas "$@"
+    else echo "Neither sudo nor doas is installed; cannot change the system's settings." >&2; return 1; fi
+}
+
+# ------------------------------------------------------------------ a window manager, when there is none (optional)
+# TVWCS runs in i3 or sway. With neither installed, offer to install one with the package manager: i3 (recommended:
+# TVWCS places its window best there) together with Xorg, startx, xdotool and xrandr, or sway. Afterwards the rest of
+# the installer sets it up, and can set the computer to log in and start it at boot. Only offered on a terminal, and
+# not when TVWCS_WMS names the window managers to set up.
+wm_packages() {   # wm_packages <i3|sway>: what to install for it here, or "" when this distribution is not known
+    case "$(distro):$1" in
+        debian:i3) echo "i3 xserver-xorg xinit xdotool x11-xserver-utils" ;;
+        arch:i3) echo "i3-wm xorg-server xorg-xinit xdotool xorg-xrandr" ;;
+        fedora:i3) echo "i3 xorg-x11-server-Xorg xorg-x11-xinit xdotool xrandr" ;;
+        suse:i3) echo "i3 xorg-x11-server xinit xdotool xrandr" ;;
+        void:i3) echo "i3 xorg-minimal xinit xdotool xrandr" ;;
+        alpine:i3) echo "i3wm xorg-server xinit xdotool xrandr xf86-input-libinput" ;;
+        gentoo:i3) echo "x11-wm/i3 x11-base/xorg-server x11-apps/xinit x11-misc/xdotool x11-apps/xrandr" ;;
+        gentoo:sway) echo gui-wm/sway ;;
+        unknown:*) echo "" ;;
+        *:sway) echo sway ;;
+    esac
+}
+pkg_install() {   # pkg_install <packages>: install them with this distribution's package manager, as root
+    case "$(distro)" in
+        debian) as_root apt-get update -q && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+        arch) as_root pacman -S --needed --noconfirm "$@" ;;
+        fedora) as_root dnf install -y "$@" ;;
+        suse) as_root zypper --non-interactive install "$@" ;;
+        void) as_root xbps-install -Sy "$@" ;;
+        alpine) as_root apk add "$@" ;;
+        gentoo) as_root emerge --noreplace "$@" ;;
+        *) return 1 ;;
+    esac
+}
+offer_wm_install() {
+    if command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1; then return 0; fi
+    [ -t 0 ] && [ -z "${TVWCS_WMS:-}" ] && [ -n "$(wm_packages i3)" ] || return 0
+    echo; echo "Neither i3 nor sway is installed, and TVWCS runs in one of them."
+    printf "Install one now? 1) i3 with Xorg (recommended)  2) sway  3) neither [1]: "
+    read -r ANSWER || ANSWER=3
+    case "$ANSWER" in ""|1*|[Ii]*) WM=i3 ;; 2*|[Ss]*) WM=sway ;; *) echo "Nothing was installed."; return 0 ;; esac
+    PKGS=$(wm_packages "$WM")
+    echo "Installing $WM with: $PKGS (your password may be asked for)"
+    # shellcheck disable=SC2086   # one word per package
+    if pkg_install $PKGS; then echo "Installed $WM."
+    else echo "Could not install $WM. Install it yourself with:  $(install_hint "$PKGS")" >&2; fi
+}
+offer_wm_install
+
+# ------------------------------------------------------------------ the other packages TVWCS uses
+# Listed with what each is for, and offered for installing (on a terminal, on a known distribution); else the
+# command to install them is printed.
+NEEDS=""   # one line per need: "packages<TAB>what for"
+need() { NEEDS="$NEEDS$1	$2
+"; }
+python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || need "$(pkg gtk)" "GTK 4 for Python: TVWCS's windows (required)"
+command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg i3)" "i3: the window manager TVWCS runs in (required)"
+command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
+command -v pipewire >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1 || need "$(pkg pipewire)" "PipeWire: sound, with its PulseAudio layer (no sound server is installed)"
+command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Settings: sound"
+if command -v i3 >/dev/null 2>&1 && ! command -v xprintidle >/dev/null 2>&1 && ! { command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q 'libXss\.so\.1'; }; then
+    need "$(pkg xss)" "Settings: Power and sleep (how long the computer has been idle, in i3)"; fi
+if command -v sway >/dev/null 2>&1 && ! command -v swayidle >/dev/null 2>&1; then need swayidle "Settings: Power and sleep (in sway)"; fi
+if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then need "$(pkg unclutter)" "hides the mouse pointer after 3 seconds without moving (i3)"; fi
+if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Settings: displays (sway has its own)"; fi
+command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth"
+command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)"
+python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page"
+start_pipewire() {   # PipeWire just installed: start it in a session that runs now (systemd starts it by itself from the next log-in)
+    command -v pipewire >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1 || return 0
+    if systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1; then
+        echo "Started PipeWire for $(id -un)."
+    fi
+}
+ask_yes() {   # like ask, but only on a terminal (TVWCS_ASSUME_YES never installs packages). Enter means yes.
+    [ -t 0 ] || return 1
+    printf "%s [Y/n] " "$1"
+    read -r ANSWER || return 1
+    case "$ANSWER" in [Nn]*) return 1 ;; *) return 0 ;; esac
+}
+if [ -n "$NEEDS" ]; then
+    echo; echo "Missing packages:"
+    printf '%s' "$NEEDS" | while IFS='	' read -r P W; do printf '  %-36s %s\n' "$P" "$W"; done
+    ALL=$(printf '%s' "$NEEDS" | cut -f1 | tr '\n' ' '); ALL=${ALL% }
+    if [ "$(distro)" != unknown ] && ask_yes "Install them now?"; then
+        # shellcheck disable=SC2086   # one word per package
+        if pkg_install $ALL; then echo "Installed them."; start_pipewire
+        else echo "Not everything could be installed. Install what is missing with:  $(install_hint "$ALL")" >&2; fi
+    else
+        echo "To install them:  $(install_hint "$ALL")"
+    fi
+fi
 
 # ------------------------------------------------------------------ window manager configs
 # The include line, written with ~ when the install is in your home folder (i3 and sway both expand it).
@@ -474,12 +570,6 @@ init_system() {   # systemd, runit or other
     if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd
     elif [ -d "$ETC/sv/agetty-tty1" ] && command -v sv >/dev/null 2>&1; then echo runit
     else echo other; fi
-}
-as_root() {   # run a command as root, asking for the password on this terminal
-    if [ "$(id -u)" = 0 ]; then "$@"
-    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
-    elif command -v doas >/dev/null 2>&1; then doas "$@"
-    else echo "Neither sudo nor doas is installed; cannot change the system's settings." >&2; return 1; fi
 }
 GETTY_OVERRIDE=$ETC/systemd/system/getty@tty1.service.d/autologin.conf
 console_login_set() {   # the first console already logs someone in by itself

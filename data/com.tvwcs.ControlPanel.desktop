@@ -1,40 +1,48 @@
 [Desktop Entry]
 Type=Application
-Name=Control Panel
+Name=Settings
 GenericName=System settings
-Comment=Sound, displays, Bluetooth, software updates, system information, a terminal and the network, made for a remote
-Exec=tvwcs control
+Comment=TVWCS's options, sound, displays, Bluetooth, software updates, system information, a terminal and the network, made for a remote
+Exec=tvwcs settings
 Icon=preferences-system
 Terminal=false
 Categories=Settings;System;
-Keywords=sound;volume;audio;display;monitor;resolution;refresh;bluetooth;updates;system;terminal;network;wifi;ethernet;
+Keywords=options;power;sleep;screensaver;lock;settings;control panel;hotkeys;sound;volume;audio;display;monitor;resolution;refresh;bluetooth;updates;system;terminal;network;wifi;ethernet;
 StartupWMClass=com.tvwcs.ControlPanel
-Actions=sound;displays;bluetooth;updates;system;terminal;network;
+Actions=options;sound;displays;power;bluetooth;updates;system;terminal;network;
+
+[Desktop Action options]
+Name=Options
+Exec=tvwcs settings options
 
 [Desktop Action sound]
 Name=Sound
-Exec=tvwcs control sound
+Exec=tvwcs settings sound
 
 [Desktop Action displays]
 Name=Displays
-Exec=tvwcs control displays
+Exec=tvwcs settings displays
+
+[Desktop Action power]
+Name=Power and sleep
+Exec=tvwcs settings power
 
 [Desktop Action bluetooth]
 Name=Bluetooth
-Exec=tvwcs control bluetooth
+Exec=tvwcs settings bluetooth
 
 [Desktop Action updates]
 Name=Software updates
-Exec=tvwcs control updates
+Exec=tvwcs settings updates
 
 [Desktop Action system]
 Name=System information
-Exec=tvwcs control system
+Exec=tvwcs settings system
 
 [Desktop Action terminal]
 Name=Terminal
-Exec=tvwcs control terminal
+Exec=tvwcs settings terminal
 
 [Desktop Action network]
 Name=Network
-Exec=tvwcs control network
+Exec=tvwcs settings network

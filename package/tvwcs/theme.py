@@ -56,7 +56,7 @@ dropdown > button, dropdown button { border-radius: 0; }
 """
 
 def render_css(accent, scale=1.0, extra=""):
-    """The theme (plus `extra` rules, such as the Control Panel's) with the accent colour filled in and every pixel
+    """The theme (plus `extra` rules, such as the Settings app's) with the accent colour filled in and every pixel
     measure multiplied by `scale`."""
     css=(CSS+extra).replace("@ACCENT@",accent)
     if scale!=1.0:

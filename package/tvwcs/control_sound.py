@@ -1,9 +1,13 @@
-"""Sound for the Control Panel: outputs, inputs and their volume, through `pactl`. No GTK dependency.
+"""Sound for Settings: outputs, inputs and their volume, through `pactl`. No GTK dependency.
 
 `pactl` talks to PulseAudio and to PipeWire (through pipewire-pulse), so this covers every mainstream distribution.
-Inputs leave out the "Monitor of …" sources PulseAudio makes for every output: they are not microphones."""
+Inputs leave out the "Monitor of …" sources PulseAudio makes for every output: they are not microphones.
+
+A sound card only has outputs for its active profile: a computer whose card is on "Analog Stereo" has no HDMI output
+at all until the card is switched to an HDMI profile (and a graphics card's HDMI sound often starts switched off).
+So the outputs of every card's other profiles are listed too, and choosing one switches the card to it."""
 from __future__ import annotations
-import re
+import re, time
 from dataclasses import dataclass, field
 
 from tvwcs.control_cmd import have, key_values, run
@@ -33,6 +37,25 @@ class Device:
     def label(self): return self.description or self.name
 
 @dataclass
+class CardOutput:
+    """An output a sound card has in a profile that is not active now, such as its HDMI output."""
+    card: str            # the card's name (alsa_card.…)
+    card_label: str
+    output: str          # the output part of the profile: "output:hdmi-stereo"
+    label: str           # "Digital Stereo (HDMI) Output"
+    available: bool      # False: the card says nothing is plugged in there (it can still be tried)
+    profile: str = ""    # the profile to switch the card to
+    @property
+    def hdmi(self): return "hdmi" in self.output or "HDMI" in self.label or "DisplayPort" in self.label
+
+@dataclass
+class Card:
+    name: str
+    description: str = ""
+    active: str = ""
+    profiles: list = field(default_factory=list)   # [(name, label, available)]
+
+@dataclass
 class SoundState:
     available: bool
     message: str = ""
@@ -41,6 +64,8 @@ class SoundState:
     inputs: list = field(default_factory=list)
     default_output: str = ""
     default_input: str = ""
+    other_outputs: list = field(default_factory=list)   # [CardOutput]
+    alsa_cards: int = -1  # sound cards the kernel has (-1: unknown); none means a driver or its firmware is missing
     def output(self): return next((d for d in self.outputs if d.name==self.default_output),self.outputs[0] if self.outputs else None)
     def input(self): return next((d for d in self.inputs if d.name==self.default_input),self.inputs[0] if self.inputs else None)
 
@@ -79,6 +104,56 @@ def parse_devices(text, kind):
                 cur.ports.append(Port(name,label or rest,"not available" not in details))
     return devices
 
+_CARD=re.compile(r"^Card #(\d+)\s*$")
+_PROFILE=re.compile(r"^(\S+): (.*?)(?: \(([^()]*)\))?$")   # the last (…) holds sinks, sources, priority, available
+
+def parse_cards(text):
+    """`pactl list cards` (C locale) -> [Card]."""
+    cards=[]; cur=None; section=""
+    for line in text.splitlines():
+        if _CARD.match(line): cur=Card(""); cards.append(cur); section=""; continue
+        if cur is None or not line.strip(): continue
+        depth=len(line)-len(line.lstrip("\t")); stripped=line.strip()
+        if depth==1:
+            key,_,value=stripped.partition(":"); value=value.strip(); section=key
+            if key=="Name": cur.name=value
+            elif key=="Active Profile": cur.active=value
+        elif depth==2 and section=="Properties":
+            key,_,value=stripped.partition("=")
+            if key.strip()=="device.description": cur.description=value.strip().strip('"')
+        elif depth==2 and section=="Profiles":
+            m=_PROFILE.match(stripped)
+            if m: cur.profiles.append((m.group(1),m.group(2),"available: no" not in (m.group(3) or "")))
+    return cards
+
+def other_outputs(cards):
+    """The outputs each card has in profiles other than its active one: [CardOutput], one per output."""
+    found=[]
+    for card in cards:
+        active=set(card.active.split("+")); names={name for name,_l,_a in card.profiles}
+        keep_input=next((part for part in card.active.split("+") if part.startswith("input:")),"")
+        seen=set()
+        for name,label,available in card.profiles:
+            parts=name.split("+")
+            out=next((p for p in parts if p.startswith("output:")),"")
+            if not out or out in active or out in seen: continue
+            seen.add(out)
+            plain=next(((l,a) for n,l,a in card.profiles if n==out),None)   # the output alone names it best
+            out_label,out_available=plain if plain else (label.split(" + ")[0],available)
+            profile=f"{out}+{keep_input}" if keep_input and f"{out}+{keep_input}" in names else out if out in names else name
+            found.append(CardOutput(card.name,card.description or card.name,out,out_label,out_available,profile))
+    return sorted(found,key=lambda o:(not o.hdmi,not o.available,o.card_label,o.label))
+
+def sink_for(card_name, output):
+    """The sink PipeWire and PulseAudio make for a card's output: alsa_card.X + output:hdmi-stereo -> alsa_output.X.hdmi-stereo."""
+    base=card_name.split(".",1)[1] if card_name.startswith("alsa_card.") else card_name
+    return f"alsa_output.{base}.{output.split(':',1)[1]}"
+
+def count_alsa_cards(path="/proc/asound/cards"):
+    try: text=open(path,encoding="utf-8",errors="replace").read()
+    except OSError: return -1
+    return sum(1 for line in text.splitlines() if re.match(r"^\s*\d+ \[",line))
+
 def parse_info(text):
     """`pactl info` -> (default sink, default source, server name)."""
     info=key_values(text)
@@ -99,7 +174,9 @@ def read_state():
     sinks=run(["pactl","list","sinks"],timeout=5); sources=run(["pactl","list","sources"],timeout=5)
     default_sink,default_source,server=parse_info(info.out)
     inputs=[d for d in parse_devices(sources.out,"source") if not d.is_monitor]
-    return SoundState(True,"",server_label(server),parse_devices(sinks.out,"sink"),inputs,default_sink,default_source)
+    cards=run(["pactl","list","cards"],timeout=5)
+    return SoundState(True,"",server_label(server),parse_devices(sinks.out,"sink"),inputs,default_sink,default_source,
+                      other_outputs(parse_cards(cards.out)),count_alsa_cards())
 
 def stepped(volume, step):
     """The next volume a − / + press lands on: a multiple of VOLUME_STEP, within 0..MAX_VOLUME."""
@@ -114,6 +191,18 @@ def set_muted(device, muted):
 
 def set_port(device, port):
     return run(["pactl",f"set-{device.kind}-port",device.name,port],timeout=5)
+
+def use_card_output(o):
+    """Switch the card to the profile with this output, then make that output the one in use (moving what plays)."""
+    result=run(["pactl","set-card-profile",o.card,o.profile],timeout=10)
+    if not result.ok: return result
+    wanted=sink_for(o.card,o.output)
+    for _ in range(20):   # the new output appears a moment after the switch
+        sinks=parse_devices(run(["pactl","list","sinks"],timeout=5).out,"sink")
+        sink=next((d for d in sinks if d.name==wanted),None) or next((d for d in sinks if d.name.startswith(wanted)),None)
+        if sink is not None: return make_default(sink)
+        time.sleep(0.25)
+    return result
 
 def parse_short_streams(text):
     """`pactl list short sink-inputs` -> [stream index]."""
