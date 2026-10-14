@@ -10,7 +10,7 @@
 # from the old location: updating the include line and removing the old copy (the in-app updater sets it once you
 # have agreed to the move there).
 # TVWCS_NO_RESTART=1 skips the offer to restart a running TVWCS. TVWCS_WMS="i3 sway" chooses which window managers
-# to set up (default: those installed). TVWCS_ETC overrides /etc (where the standard config templates are), and
+# to set up (default: those installed; with neither installed, it offers to install one). TVWCS_ETC overrides /etc (where the standard config templates are), and
 # TVWCS_RUN and TVWCS_VAR override /run and /var (where the init system is detected).
 set -eu
 RUN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)  # folder holding this script (repo scripts/, or a release root)
@@ -177,6 +177,60 @@ install_hint() {
         gentoo) echo "sudo emerge $1" ;;        *) echo "install with your package manager: $1" ;;
     esac
 }
+as_root() {   # run a command as root, asking for the password on this terminal
+    if [ "$(id -u)" = 0 ]; then "$@"
+    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+    elif command -v doas >/dev/null 2>&1; then doas "$@"
+    else echo "Neither sudo nor doas is installed; cannot change the system's settings." >&2; return 1; fi
+}
+
+# ------------------------------------------------------------------ a window manager, when there is none (optional)
+# TVWCS runs in i3 or sway. With neither installed, offer to install one with the package manager: i3 (recommended:
+# TVWCS places its window best there) together with Xorg, startx, xdotool and xrandr, or sway. Afterwards the rest of
+# the installer sets it up, and can set the computer to log in and start it at boot. Only offered on a terminal, and
+# not when TVWCS_WMS names the window managers to set up.
+wm_packages() {   # wm_packages <i3|sway>: what to install for it here, or "" when this distribution is not known
+    case "$(distro):$1" in
+        debian:i3) echo "i3 xserver-xorg xinit xdotool x11-xserver-utils" ;;
+        arch:i3) echo "i3-wm xorg-server xorg-xinit xdotool xorg-xrandr" ;;
+        fedora:i3) echo "i3 xorg-x11-server-Xorg xorg-x11-xinit xdotool xrandr" ;;
+        suse:i3) echo "i3 xorg-x11-server xinit xdotool xrandr" ;;
+        void:i3) echo "i3 xorg-minimal xinit xdotool xrandr" ;;
+        alpine:i3) echo "i3wm xorg-server xinit xdotool xrandr xf86-input-libinput" ;;
+        gentoo:i3) echo "x11-wm/i3 x11-base/xorg-server x11-apps/xinit x11-misc/xdotool x11-apps/xrandr" ;;
+        gentoo:sway) echo gui-wm/sway ;;
+        unknown:*) echo "" ;;
+        *:sway) echo sway ;;
+    esac
+}
+pkg_install() {   # pkg_install <packages>: install them with this distribution's package manager, as root
+    case "$(distro)" in
+        debian) as_root apt-get update -q && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+        arch) as_root pacman -S --needed --noconfirm "$@" ;;
+        fedora) as_root dnf install -y "$@" ;;
+        suse) as_root zypper --non-interactive install "$@" ;;
+        void) as_root xbps-install -Sy "$@" ;;
+        alpine) as_root apk add "$@" ;;
+        gentoo) as_root emerge --noreplace "$@" ;;
+        *) return 1 ;;
+    esac
+}
+offer_wm_install() {
+    if command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1; then return 0; fi
+    [ -t 0 ] && [ -z "${TVWCS_WMS:-}" ] && [ -n "$(wm_packages i3)" ] || return 0
+    echo; echo "Neither i3 nor sway is installed, and TVWCS runs in one of them."
+    printf "Install one now? 1) i3 with Xorg (recommended)  2) sway  3) neither [1]: "
+    read -r ANSWER || ANSWER=3
+    case "$ANSWER" in ""|1*|[Ii]*) WM=i3 ;; 2*|[Ss]*) WM=sway ;; *) echo "Nothing was installed."; return 0 ;; esac
+    PKGS=$(wm_packages "$WM")
+    python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || PKGS="$PKGS $(pkg gtk)"   # what TVWCS itself needs
+    echo "Installing $WM with: $PKGS (your password may be asked for)"
+    # shellcheck disable=SC2086   # one word per package
+    if pkg_install $PKGS; then echo "Installed $WM."
+    else echo "Could not install $WM. Install it yourself with:  $(install_hint "$PKGS")" >&2; fi
+}
+offer_wm_install
+
 missing=""
 python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="$missing $(pkg gtk)"
 command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || missing="$missing $(pkg i3)"
@@ -474,12 +528,6 @@ init_system() {   # systemd, runit or other
     if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd
     elif [ -d "$ETC/sv/agetty-tty1" ] && command -v sv >/dev/null 2>&1; then echo runit
     else echo other; fi
-}
-as_root() {   # run a command as root, asking for the password on this terminal
-    if [ "$(id -u)" = 0 ]; then "$@"
-    elif command -v sudo >/dev/null 2>&1; then sudo "$@"
-    elif command -v doas >/dev/null 2>&1; then doas "$@"
-    else echo "Neither sudo nor doas is installed; cannot change the system's settings." >&2; return 1; fi
 }
 GETTY_OVERRIDE=$ETC/systemd/system/getty@tty1.service.d/autologin.conf
 console_login_set() {   # the first console already logs someone in by itself

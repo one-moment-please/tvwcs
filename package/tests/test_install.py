@@ -198,4 +198,25 @@ class InstallTests(unittest.TestCase):
         self.assertIn(f"-s {sock_dir}/ipc-socket.42 -q reload",(bin_/"i3-msg.log").read_text())
     def test_says_how_to_be_asked_over_ssh_without_a_terminal(self):
         self.assertIn("ssh -t",self.run_install(SSH_CONNECTION="10.0.0.2 50000 10.0.0.3 22"))
+    def test_offers_to_install_i3_then_to_start_it_at_boot(self):
+        """Neither i3 nor sway: Enter installs the recommended i3 (with Xorg and startx), then the automatic login is offered."""
+        env,override=self.autologin_tools()
+        bin_=Path(env["PATH"].split(":")[0]); etc=Path(self.env["TVWCS_ETC"])
+        (etc/"os-release").write_text("ID=debian\n")
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'
+            f'case "$*" in *install*) for p in i3 startx; do printf "#!/bin/sh\\n" > "{bin_}/$p"; chmod +x "{bin_}/$p"; done ;; esac\n')
+        (bin_/"apt-get").chmod(0o755)
+        out=self.converse(["","n","n","y"],TVWCS_WMS="",**env)   # Enter: i3; no i3 config; no power rule; yes to the automatic login
+        apt=(bin_/"apt").read_text()
+        self.assertIn("apt-get update -q\n",apt); self.assertIn("install -y i3 xserver-xorg xinit xdotool x11-xserver-utils",apt)
+        self.assertIn("1) i3 with Xorg (recommended)",out); self.assertIn("Installed i3.",out)
+        self.assertTrue(override.exists(),out); self.assertIn("exec startx",(self.home/".profile").read_text())
+    def test_install_offer_can_be_declined_and_sway_chosen(self):
+        env,_override=self.autologin_tools()
+        bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=arch\n")
+        (bin_/"pacman").write_text(f'#!/bin/sh\necho "pacman $*" >> "{bin_}/pacman.log"\n'); (bin_/"pacman").chmod(0o755)
+        self.assertIn("Nothing was installed.",self.converse(["3","n","n"],TVWCS_WMS="",**env))
+        self.assertFalse((bin_/"pacman.log").exists())
+        self.converse(["2","n","n"],TVWCS_WMS="",**env)
+        self.assertEqual((bin_/"pacman.log").read_text().split("\n")[0].split()[:5],["pacman","-S","--needed","--noconfirm","sway"])
 if __name__=="__main__": unittest.main()
