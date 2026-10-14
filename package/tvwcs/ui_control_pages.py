@@ -164,10 +164,11 @@ class SoundPage(Page):
         if not state.available: self.note(state.message); return
         self.section("OUTPUT")
         current=state.output()
-        if current is None: self.note("No sound output was found.")
+        if current is None: self.note(self.no_output_text(state))
         else:
             self.volume_row(current,"out")
             for d in state.outputs: self.device_row(d,d.name==(current.name if current else ""),"audio-speakers-symbolic","🔈")
+        for o in state.other_outputs: self.card_output_row(o)
         self.section("INPUT")
         current=state.input()
         if current is None: self.note("No microphone or other input is connected.")
@@ -186,6 +187,20 @@ class SoundPage(Page):
                  f"Switching to {d.label}…","Sound")) if not in_use else None,
                  detail=port if len(ports)>1 else "",icon=icon,fallback=fallback,ident=f"{d.kind}:{d.name}",extras=[extra],
                  value_css="state-on")
+
+    @staticmethod
+    def no_output_text(state):
+        if state.alsa_cards==0:
+            return ("The computer has no sound card the system can use: its driver, or the firmware it needs, is missing. On Debian, "
+                    "install firmware-sof-signed (Intel laptops and mini PCs) or firmware-misc-nonfree (from non-free-firmware), then restart.")
+        return "No sound output was found."
+
+    def card_output_row(self, o):
+        """An output of a profile the card is not using now (often its HDMI output): choosing it switches the card over."""
+        detail=f"{o.card_label} · "+("switches the sound card to this output" if o.available else "nothing seems plugged in here, but it can be tried")
+        self.row(o.label,"",lambda o=o:self.act(lambda:_outcome(sound.use_card_output(o),f"Could not switch {o.card_label} to {o.label}."),
+                 f"Switching to {o.label}…","Sound"),detail=detail,icon="video-display-symbolic" if o.hdmi else "audio-speakers-symbolic",
+                 fallback="🖵" if o.hdmi else "🔈",ident=f"card:{o.card}:{o.output}")
 
     def choose_port(self, d, ports):
         def picked(name): self.act(lambda:_outcome(sound.set_port(d,name),"Could not switch the connector."),"Switching…","Sound")

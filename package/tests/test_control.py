@@ -1,6 +1,6 @@
 """The Control Panel's readers: the output of pactl, bluetoothctl, nmcli, ip, the package managers and /proc, parsed
 from saved samples. No display, sound server, adapter or network needed."""
-import tempfile, unittest
+import os, tempfile, unittest
 from pathlib import Path
 
 from tvwcs import control_bluetooth as bt, control_network as net, control_sound as sound, control_sysinfo as info, control_updates as upd
@@ -54,7 +54,47 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(key_values("\tName: tv\n\tPowered: yes\n")["Powered"],"yes")
         self.assertEqual(Result(False,1,"","first\nError: the reason\n").message,"Error: the reason")
 
+CARDS="""Card #42
+\tName: alsa_card.pci-0000_00_1f.3
+\tDriver: alsa
+\tProperties:
+\t\tdevice.description = "Built-in Audio"
+\tProfiles:
+\t\toff: Off (sinks: 0, sources: 0, priority: 0, available: yes)
+\t\toutput:analog-stereo: Analog Stereo Output (sinks: 1, sources: 0, priority: 6500, available: yes)
+\t\toutput:analog-stereo+input:analog-stereo: Analog Stereo Duplex (sinks: 1, sources: 1, priority: 6565, available: yes)
+\t\toutput:hdmi-stereo: Digital Stereo (HDMI) Output (sinks: 1, sources: 0, priority: 5900, available: yes)
+\t\toutput:hdmi-stereo+input:analog-stereo: Digital Stereo (HDMI) Output + Analog Stereo Input (sinks: 1, sources: 1, priority: 5965, available: yes)
+\t\toutput:hdmi-stereo-extra1: Digital Stereo (HDMI 2) Output (sinks: 1, sources: 0, priority: 5700, available: no)
+\tActive Profile: output:analog-stereo+input:analog-stereo
+\tPorts:
+\t\thdmi-output-0: HDMI / DisplayPort (type: HDMI, priority: 5900, availability unknown)
+Card #43
+\tName: alsa_card.pci-0000_01_00.1
+\tProperties:
+\t\tdevice.description = "GA104 High Definition Audio Controller"
+\tProfiles:
+\t\toff: Off (sinks: 0, sources: 0, priority: 0, available: yes)
+\t\toutput:hdmi-stereo: Digital Stereo (HDMI) Output (sinks: 1, sources: 0, priority: 5900, available: yes)
+\tActive Profile: off
+"""
+
 class SoundTests(unittest.TestCase):
+    def test_outputs_of_other_card_profiles_hdmi_first(self):
+        cards=sound.parse_cards(CARDS)
+        self.assertEqual([(c.name,c.description,c.active) for c in cards],[("alsa_card.pci-0000_00_1f.3","Built-in Audio","output:analog-stereo+input:analog-stereo"),
+                         ("alsa_card.pci-0000_01_00.1","GA104 High Definition Audio Controller","off")])
+        found=[(o.card_label,o.label,o.available,o.profile) for o in sound.other_outputs(cards)]
+        self.assertEqual(found,[("Built-in Audio","Digital Stereo (HDMI) Output",True,"output:hdmi-stereo+input:analog-stereo"),   # keeps the microphone
+                                ("GA104 High Definition Audio Controller","Digital Stereo (HDMI) Output",True,"output:hdmi-stereo"),     # a card that was off
+                                ("Built-in Audio","Digital Stereo (HDMI 2) Output",False,"output:hdmi-stereo-extra1")])
+        self.assertEqual(sound.sink_for("alsa_card.pci-0000_00_1f.3","output:hdmi-stereo"),"alsa_output.pci-0000_00_1f.3.hdmi-stereo")
+    def test_counts_the_kernels_sound_cards(self):
+        with tempfile.NamedTemporaryFile("w",suffix="cards",delete=False) as f:
+            f.write(" 0 [PCH            ]: HDA-Intel - HDA Intel PCH\n                      HDA Intel PCH at 0x6001120000 irq 147\n 1 [NVidia         ]: HDA-Intel - HDA NVidia\n")
+        self.addCleanup(os.unlink,f.name)
+        self.assertEqual(sound.count_alsa_cards(f.name),2); self.assertEqual(sound.count_alsa_cards("/nonexistent"),-1)
+
     def test_outputs_with_ports_volume_and_mute(self):
         a,b=sound.parse_devices(SINKS,"sink")
         self.assertEqual((a.index,a.label,a.volume,a.muted,a.active_port),(52,"Built-in Audio Analog Stereo",45,False,"analog-output-speaker"))
