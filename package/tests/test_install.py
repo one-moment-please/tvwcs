@@ -198,6 +198,17 @@ class InstallTests(unittest.TestCase):
         self.assertIn(f"-s {sock_dir}/ipc-socket.42 -q reload",(bin_/"i3-msg.log").read_text())
     def test_says_how_to_be_asked_over_ssh_without_a_terminal(self):
         self.assertIn("ssh -t",self.run_install(SSH_CONNECTION="10.0.0.2 50000 10.0.0.3 22"))
+    def test_offers_pipewire_when_there_is_no_sound_server(self):
+        env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        sysbin=Path(self.tmp.name)/"sysbin"; sysbin.mkdir()   # the system's programs, less any sound server it has
+        for d in os.environ["PATH"].split(":"):
+            for prog in (Path(d).iterdir() if Path(d).is_dir() else ()):
+                if prog.name not in ("pipewire","pulseaudio") and not (sysbin/prog.name).exists() and prog.is_file() and os.access(prog,os.X_OK): (sysbin/prog.name).symlink_to(prog)
+        env["PATH"]=f"{bin_}:{sysbin}"
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
+        out=self.converse(["y","n","n","n","n"],**env)
+        self.assertRegex(out,r"pipewire pipewire-pulse wireplumber +PipeWire: sound")
+        self.assertIn("pipewire pipewire-pulse wireplumber",(bin_/"apt").read_text(),out)
     def without_gtk(self,bin_):
         """These tests need neither window manager here, and GTK missing (so the package list is always asked about)."""
         if shutil.which("i3") or shutil.which("sway"): self.skipTest("i3 or sway is installed here")
@@ -225,7 +236,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual((bin_/"pacman.log").read_text().split("\n")[0].split()[:5],["pacman","-S","--needed","--noconfirm","sway"])
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xdotool"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xdotool","pipewire"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
         (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
         out=self.converse(["y","n","n"],**env)   # install; no i3 config; no power rule

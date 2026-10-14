@@ -164,6 +164,10 @@ pkg() {
         arch:bluetoothctl) echo bluez-utils ;;               gentoo:bluetoothctl) echo net-wireless/bluez ;;  *:bluetoothctl) echo bluez ;;
         debian:nmcli) echo network-manager ;;                arch:nmcli) echo networkmanager ;;
         alpine:nmcli) echo networkmanager-cli ;;             gentoo:nmcli) echo net-misc/networkmanager ;;   *:nmcli) echo NetworkManager ;;
+        # sound: PipeWire with its PulseAudio layer (the Sound page talks to it with pactl) and its session manager
+        debian:pipewire|arch:pipewire|alpine:pipewire) echo "pipewire pipewire-pulse wireplumber" ;;
+        fedora:pipewire|suse:pipewire) echo "pipewire pipewire-pulseaudio wireplumber" ;;
+        void:pipewire) echo "pipewire wireplumber" ;;   gentoo:pipewire) echo "media-video/pipewire media-video/wireplumber" ;;
         debian:xrandr) echo x11-xserver-utils ;;             arch:xrandr) echo xorg-xrandr ;;               gentoo:xrandr) echo x11-apps/xrandr ;;
         debian:vte) echo gir1.2-vte-3.91 ;;                  arch:vte) echo vte4 ;;                          fedora:vte) echo vte291-gtk4 ;;
         *:vte) echo "VTE-for-GTK-4" ;;
@@ -239,6 +243,7 @@ need() { NEEDS="$NEEDS$1	$2
 python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || need "$(pkg gtk)" "GTK 4 for Python: TVWCS's windows (required)"
 command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg i3)" "i3: the window manager TVWCS runs in (required)"
 command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
+command -v pipewire >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1 || need "$(pkg pipewire)" "PipeWire: sound, with its PulseAudio layer (no sound server is installed)"
 command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Control Panel: sound"
 if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Control Panel: displays (sway has its own)"; fi
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Control Panel: Bluetooth"
@@ -252,7 +257,7 @@ ask_yes() {   # like ask, but only on a terminal (TVWCS_ASSUME_YES never install
 }
 if [ -n "$NEEDS" ]; then
     echo; echo "Missing packages:"
-    printf '%s' "$NEEDS" | while IFS='	' read -r P W; do printf '  %-34s %s\n' "$P" "$W"; done
+    printf '%s' "$NEEDS" | while IFS='	' read -r P W; do printf '  %-36s %s\n' "$P" "$W"; done
     ALL=$(printf '%s' "$NEEDS" | cut -f1 | tr '\n' ' '); ALL=${ALL% }
     if [ "$(distro)" != unknown ] && ask_yes "Install them now?"; then
         # shellcheck disable=SC2086   # one word per package

@@ -15,7 +15,7 @@
 - `install.sh` installs the Control Panel's launcher (with an action for each page) and lists the optional tools its pages use.
 
 **Installer**
-- `install.sh` lists every missing package with what it is for and offers to install them all with the package manager (on a terminal, on a known distribution).
+- `install.sh` lists every missing package with what it is for (including PipeWire, with `pipewire-pulse` and WirePlumber, when no sound server is installed) and offers to install them all with the package manager (on a terminal, on a known distribution).
 - With neither i3 nor sway installed, `install.sh` offers to install one with the package manager (i3 with Xorg, `startx`, `xdotool` and `xrandr`, recommended; or sway), then sets it up and offers the automatic login.
 - On a computer with no login screen, `install.sh` offers (default no) to log the user in automatically at boot and start i3 (through `startx`) or sway, through systemd's or runit's console login and the login shell's profile. When set up, TVWCS opens its Quick Menu at log-in, and the session starts on the screen as soon as the install is done.
 - `install.sh` works over SSH: it reaches the running i3 or sway through its socket (no DISPLAY needed) to reload it and restart TVWCS, never starts TVWCS where there is no display, and says to use `ssh -t` when it has no terminal to ask on.
