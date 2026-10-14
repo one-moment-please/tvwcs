@@ -107,7 +107,7 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 - **Application hotkeys:** any launch profile can have a hotkey that launches it, set in its editor. Settings counts them, and lists them to change or remove each one. A modifier tapped on its own (such as Super) can be used; it is bound by its keycode and triggers when the key is released, so Super+Enter and every other Super shortcut keep working.
 - **At login:** open a chosen app (favorites listed first, then apps with channel numbers), or reopen the last app used, once per login. It can also open the Quick Menu at login (after that app, if one is chosen).
 - **Check for updates:** asks GitHub for the latest published release; if it is newer, offers to download it, install it over the current copy (keeping the user's data), remove the download and restart TVWCS.
-- **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.
+- **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. Sleep, Reboot and Shut down use systemd, else elogind's `loginctl`, else the plain `zzz` / `reboot` / `poweroff` commands. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.
 
 ## What TVWCS is, and is not
 
@@ -128,7 +128,7 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 
 ## Technical direction
 
-The target is Linux Mint/Debian/Ubuntu with i3 or sway. GTK 4 supplies the interface and the Metro theme (one CSS block). The application catalogue comes from XDG desktop entries. i3's IPC, exposed by `i3-msg` (and spoken by sway through `swaymsg`), enumerates windows and workspaces, reports each monitor's usable rectangle, switches and moves workspaces, and positions the TVWCS panel. TVWCS does not read raw evdev devices; a remote that behaves like a keyboard works through the normal Linux input path.
+The target is any Linux distribution with i3 or sway, tested on Debian/Ubuntu/Mint, Arch, Fedora, Void and Alpine, with or without systemd. GTK 4 supplies the interface and the Metro theme (one CSS block). The application catalogue comes from XDG desktop entries. i3's IPC, exposed by `i3-msg` (and spoken by sway through `swaymsg`), enumerates windows and workspaces, reports each monitor's usable rectangle, switches and moves workspaces, and positions the TVWCS panel. TVWCS does not read raw evdev devices; a remote that behaves like a keyboard works through the normal Linux input path.
 
 The code is divided into small modules so the logic can be tested without a display: `model` (profiles, settings, layout maths, badges, search), `applications` (discovery, window-to-app matching), `workspaces` (workspace entries and names), `hotkeys` (hotkey specs and the i3 config they produce), `pinlock` (PIN hashing and try limits), `ownership` (which profile launched which window), `window_manager` (the i3 / sway adapter) and `system_actions`; and, for the GTK interface, `widgets`, `theme`, `ui_window`, `ui_settings`, `ui_editors` and `main`.
 

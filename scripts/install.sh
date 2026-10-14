@@ -50,6 +50,9 @@ ask() {
 }
 
 # ------------------------------------------------------------------ copy the program
+same_file() {   # cmp comes with diffutils, which a minimal system may lack
+    if command -v cmp >/dev/null 2>&1; then cmp -s "$1" "$2"; else [ "$(cksum < "$1")" = "$(cksum < "$2")" ]; fi
+}
 install_files() {
     # Upgrade in place: replace the program files, but never touch user data (~/.config/tvwcs) and
     # keep any hand-edited tvwcs.conf as a .bak. Old modules removed between versions are cleaned up.
@@ -59,7 +62,7 @@ install_files() {
     # The fragment starts TVWCS by its full path: point its exec line at this install.
     NEWCONF=$(mktemp); trap 'rm -f "$NEWCONF"' EXIT
     P="$DEST/bin/tvwcs" awk '/^exec --no-startup-id .*\/bin\/tvwcs\047?$/ { print "exec --no-startup-id \047" ENVIRON["P"] "\047"; next } { print }' "$CONF" > "$NEWCONF"
-    if [ -f "$DEST/tvwcs.conf" ] && ! cmp -s "$NEWCONF" "$DEST/tvwcs.conf"; then
+    if [ -f "$DEST/tvwcs.conf" ] && ! same_file "$NEWCONF" "$DEST/tvwcs.conf"; then
         cp "$DEST/tvwcs.conf" "$DEST/tvwcs.conf.bak"; echo "Existing tvwcs.conf saved as tvwcs.conf.bak"
     fi
     cp "$PKG"/*.py "$DEST/tvwcs/"
@@ -110,11 +113,45 @@ elif [ -n "$MIGRATING" ] && grep -qF "$LEGACY/bin/tvwcs" "$HK"; then
     echo "Pointed your hotkeys at the new location ($HK)."
 fi
 
+# ------------------------------------------------------------------ what else is needed, in this distribution's terms
+# distro -> the family whose package manager and names apply, from /etc/os-release (ID, then ID_LIKE)
+distro() {
+    ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi; for D in ${ID:-} ${ID_LIKE:-}; do
+        case "$D" in
+            arch|artix|manjaro|endeavouros) echo arch; exit ;;
+            fedora|rhel|centos|rocky|almalinux|nobara) echo fedora; exit ;;
+            opensuse*|suse|sles) echo suse; exit ;;
+            void) echo void; exit ;;
+            alpine) echo alpine; exit ;;
+            gentoo) echo gentoo; exit ;;
+            debian|ubuntu|linuxmint|devuan|pop|raspbian) echo debian; exit ;;
+        esac
+    done; echo unknown )
+}
+# pkg <need>: that need's package name here (gtk = GTK 4 and PyGObject)
+pkg() {
+    case "$(distro):$1" in
+        debian:gtk) echo "python3-gi gir1.2-gtk-4.0" ;;      debian:i3) echo i3 ;;
+        arch:gtk) echo "python-gobject gtk4" ;;              arch:i3) echo i3-wm ;;
+        fedora:gtk|suse:gtk) echo "python3-gobject gtk4" ;;  void:gtk) echo "python3-gobject gtk4" ;;
+        alpine:gtk) echo "py3-gobject3 gtk4.0" ;;            alpine:i3) echo i3wm ;;
+        gentoo:gtk) echo "dev-python/pygobject gui-libs/gtk" ;;
+        gentoo:i3) echo x11-wm/i3 ;;                         gentoo:xdotool) echo x11-misc/xdotool ;;
+        *:gtk) echo "PyGObject GTK4" ;;                      *) echo "$1" ;;
+    esac
+}
+install_hint() {
+    case "$(distro)" in
+        debian) echo "sudo apt install $1" ;;   arch) echo "sudo pacman -S $1" ;;   fedora) echo "sudo dnf install $1" ;;
+        suse) echo "sudo zypper install $1" ;;  void) echo "sudo xbps-install $1" ;; alpine) echo "doas apk add $1" ;;
+        gentoo) echo "sudo emerge $1" ;;        *) echo "install with your package manager: $1" ;;
+    esac
+}
 missing=""
-python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="$missing python3-gi gir1.2-gtk-4.0"
-command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || missing="$missing i3"
-command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || missing="$missing xdotool"
-[ -z "$missing" ] || echo "Missing packages:  sudo apt install$missing"
+python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="$missing $(pkg gtk)"
+command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || missing="$missing $(pkg i3)"
+command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || missing="$missing $(pkg xdotool)"
+[ -z "$missing" ] || echo "Missing packages:  $(install_hint "${missing# }")"
 
 # ------------------------------------------------------------------ window manager configs
 # The include line, written with ~ when the install is in your home folder (i3 and sway both expand it).
@@ -181,8 +218,16 @@ current_layout() {   # "layout variant" of the keyboard in use now, best guess; 
         Q=$(localectl status 2>/dev/null || true)
         L=$(echo "$Q" | awk -F': *' '/X11 Layout/ {print $2}'); V=$(echo "$Q" | awk -F': *' '/X11 Variant/ {print $2}')
     fi
-    if [ -z "$L" ] && [ -f "$ETC/default/keyboard" ]; then
+    if [ -z "$L" ] && [ -f "$ETC/default/keyboard" ]; then   # Debian and its family
         L=$(sed -n 's/^XKBLAYOUT="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ETC/default/keyboard"); V=$(sed -n 's/^XKBVARIANT="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ETC/default/keyboard")
+    fi
+    if [ -z "$L" ]; then   # Arch, Fedora and the rest write the X keyboard settings here (localectl too, without systemd by hand)
+        for F in "$ETC"/X11/xorg.conf.d/*keyboard*.conf; do
+            [ -f "$F" ] || continue
+            L=$(awk 'tolower($0) ~ /option[ \t]+"xkblayout"/ { gsub(/"/, ""); print $3; exit }' "$F")
+            V=$(awk 'tolower($0) ~ /option[ \t]+"xkbvariant"/ { gsub(/"/, ""); print $3; exit }' "$F")
+            [ -n "$L" ] && break
+        done
     fi
     echo "${L:-us} $V"
 }
@@ -285,7 +330,7 @@ done
 # ------------------------------------------------------------------ restart a running TVWCS
 # A running TVWCS keeps using the old program until it is restarted. Offer to do that now. The in-app updater sets
 # TVWCS_NO_RESTART because it restarts TVWCS itself; without a terminal to ask in, only say what to do.
-PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/tvwcs.pid"
+PIDFILE="${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/tvwcs}/tvwcs.pid"   # the same rule as tvwcs/session.py
 PID=$(cat "$PIDFILE" 2>/dev/null || true)
 running() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && { [ ! -r "/proc/$1/cmdline" ] || grep -q tvwcs "/proc/$1/cmdline"; }; }
 start_tvwcs() {

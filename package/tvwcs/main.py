@@ -13,7 +13,8 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs.system_actions import command_for
+from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
+from tvwcs.system_actions import command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfilesWindow, ProfileEditor
 from tvwcs.ui_window import TVWCSWindow
 from tvwcs.widgets import app_icon, has_icon, set_scale
@@ -21,9 +22,9 @@ from tvwcs.window_manager import I3WindowManager
 from tvwcs.workspaces import build_entries
 
 APP_ID="com.tvwcs.TVWCS"
-RUNTIME=Path(os.environ.get("XDG_RUNTIME_DIR","/tmp"))
+RUNTIME=runtime_dir()                            # XDG_RUNTIME_DIR, or ~/.cache/tvwcs without one (see session.py)
 PID_FILE=RUNTIME/"tvwcs.pid"
-STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # lives in the runtime dir, so it disappears at logout
+STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # records the login the start-up action last ran in
 STARTUP_MENU_DELAY=2500                           # ms between opening the login app and showing the Quick Menu over it
 REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a line here, then signals the running TVWCS
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
@@ -76,10 +77,10 @@ class TVWCSApp(Gtk.Application):
         try:
             PID_FILE.parent.mkdir(parents=True,exist_ok=True)
             if PID_FILE.exists():
-                try:
-                    pid=int(PID_FILE.read_text().strip()); os.kill(pid,0)
+                try: pid=int(PID_FILE.read_text().strip())
+                except ValueError: pid=None
+                if pid is not None and pid!=os.getpid() and is_tvwcs_process(pid):
                     print("TVWCS is already running.",file=sys.stderr); return False
-                except (ValueError,ProcessLookupError,PermissionError): pass
             PID_FILE.write_text(str(os.getpid())); self._owns_pid=True; return True
         except OSError as exc: print(f"Cannot create PID file {PID_FILE}: {exc}",file=sys.stderr); return False
     def _release_pid(self):
@@ -314,10 +315,18 @@ class TVWCSApp(Gtk.Application):
         self.hide_window(); self.quit()
     def run_system_action(self,action_id):
         command=command_for(action_id,self.store.settings)
-        if not command: return
+        if not command:
+            self.notify_message(unavailable_message(action_id)); return
         self.hide_window()
-        try: subprocess.Popen(command,start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        except OSError as exc: self.notify_message(f"Could not run {command[0]}: {exc}")
+        try: proc=subprocess.Popen(command,start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+        except OSError as exc: self.notify_message(f"Could not run {command[0]}: {exc}"); return
+        def finished(_pid,status):
+            # Without systemd or elogind, reboot and poweroff need root: say so instead of failing silently.
+            try: err=proc.stderr.read().decode(errors="replace").strip()[-300:]; proc.stderr.close()
+            except (OSError,ValueError): err=""
+            proc.returncode=code=os.waitstatus_to_exitcode(status)   # GLib reaped it; tell Popen
+            if code!=0: self.notify_message(f"{' '.join(command)} did not work{': '+err if err else '.'}")
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT,proc.pid,finished)
 
     # ---------------------------------------------------------- hotkeys and start-up
     def set_hotkey(self,device,name,spec):
@@ -361,9 +370,7 @@ class TVWCSApp(Gtk.Application):
         self.launch_profile(profile)
     def _run_startup_action(self):
         """Once per login: open the chosen app, or whichever app was used last, and/or the Quick Menu."""
-        if STARTUP_MARKER.exists(): return GLib.SOURCE_REMOVE
-        try: STARTUP_MARKER.write_text(str(os.getpid()))
-        except OSError: pass
+        if not first_time_this_login(STARTUP_MARKER): return GLib.SOURCE_REMOVE   # TVWCS was restarted during this login
         st=self.store.settings["startup"]
         profile=self.store.get(st["profile_id"]) if st["mode"]=="app" else self.store.get(st["last_profile_id"]) if st["mode"]=="last" else None
         if profile: self.launch_profile(profile,bypass_pin=True)   # chosen by the owner in Settings, so no PIN at login

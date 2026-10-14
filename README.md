@@ -28,11 +28,17 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
 
 ## Requirements
 
-Debian, Ubuntu or Linux Mint with i3 (4.20 or newer) or sway, Python 3, GTK 4 and PyGObject. On i3, TVWCS uses `xdotool` to find the monitor under the pointer; sway reports it directly.
+Linux with i3 (4.20 or newer) or sway, Python 3.9 or newer, GTK 4 and PyGObject. On i3, TVWCS uses `xdotool` to find the monitor under the pointer; sway reports it directly. systemd is not needed (see below). `install.sh` lists anything missing in your distribution's terms; for i3 (swap the window manager for `sway` and drop `xdotool` on sway):
 
 ```bash
-sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool   # or, for sway: python3-gi gir1.2-gtk-4.0 sway
+sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool        # Debian, Ubuntu, Linux Mint, Devuan
+sudo pacman -S python-gobject gtk4 i3-wm xdotool              # Arch, Manjaro, EndeavourOS, Artix
+sudo dnf install python3-gobject gtk4 i3 xdotool              # Fedora
+sudo xbps-install python3-gobject gtk4 i3 xdotool             # Void
+doas apk add python3 py3-gobject3 gtk4.0 i3wm xdotool          # Alpine
 ```
+
+**Without systemd** (Artix, Devuan, Gentoo with OpenRC, Void, Alpine): everything works. Sleep, Reboot and Shut down use elogind's `loginctl` when it is installed, otherwise `zzz` / `reboot` / `poweroff`, which normally need root: TVWCS shows the error if they are refused. Lock uses the first screen locker it finds (or `lock_command` in `config.json`). Without an `XDG_RUNTIME_DIR` (no elogind), TVWCS keeps its running files in `~/.cache/tvwcs`.
 
 ## Install
 
