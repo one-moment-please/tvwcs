@@ -397,6 +397,7 @@ class UpdatesPage(Page):
     MAX_ROWS=300
     def __init__(self, win):
         super().__init__(win); self.running=None; self.log=None; self.fetched=None
+        self.finished=None; self.outcome=None   # the run that just ended, until the page is read again; then what came of it
     def read(self):
         state=updates.read_state(); state.reboot=updates.reboot_needed()
         if self.fetched and (state.checked or 0)<self.fetched: state.checked=self.fetched   # unchanged lists keep their old date
@@ -417,7 +418,7 @@ class UpdatesPage(Page):
         m=s.manager
         if m is not None and m.refresh_argv:
             self.row("Download the latest package lists","",lambda:self.run_steps("Downloading package lists",[(list(m.refresh_argv),True)],fetch=True),
-                     detail="Asks for your password. Then check again.",icon="folder-download-symbolic",fallback="⇩",ident="lists")
+                     detail="Asks for your password, then checks again.",icon="folder-download-symbolic",fallback="⇩",ident="lists")
         if s.total:
             self.row(f"Install {s.total} update{'s' if s.total!=1 else ''}","",self.confirm_install,ident="install",
                      detail="Installs everything listed below." + (" Asks for your password." if s.updates else ""),
@@ -426,6 +427,8 @@ class UpdatesPage(Page):
             self.row("Restart to finish updating","",self.confirm_reboot,detail="Some updates are only used after a restart.",
                      icon="system-reboot-symbolic",fallback="↻",ident="reboot")
         for label,problem in s.problems: self.note(f"{label}: {problem}","error")
+        if self.finished: self.outcome=self.outcome_text(self.finished,s); self.finished=None; self._append(f"\n✓ {self.outcome}")
+        if self.outcome: self.note(self.outcome,"state-on")
         if self.log is not None and self.log.get_buffer().get_char_count():
             self.section("LAST RUN"); self.add(self.console())
         for title,items in ((f"{m.label.upper()} PACKAGES" if m else "PACKAGES",s.updates),("FLATPAK APPS",s.flatpak)):
@@ -448,6 +451,13 @@ class UpdatesPage(Page):
         if buf.get_line_count()>2000: buf.delete(buf.get_start_iter(),buf.get_iter_at_line(buf.get_line_count()-2000)[1])
         GLib.idle_add(lambda:(self.log_scroll.get_vadjustment().set_value(self.log_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
 
+    @staticmethod
+    def outcome_text(label, s):
+        """The line that says a run has finished and what it found, such as: Package lists downloaded at 23:05. Everything is up to date."""
+        done={"Downloading package lists":"Package lists downloaded","Installing updates":"Updates installed"}.get(label,f"{label}: finished")
+        found=f"{s.total} update{'s' if s.total!=1 else ''} available." if s.total else "Everything is up to date."
+        return f"{done} at {time.strftime('%H:%M')}. {found}"
+
     def details(self, u):
         lines=[f"Version {u.new}"]+([f"Installed now: {u.old}"] if u.old else [])+([f"From: {u.source}"] if u.source else [])
         self.win.notice(u.name,"\n".join(lines))
@@ -464,11 +474,12 @@ class UpdatesPage(Page):
 
     def run_steps(self, label, steps, fetch=False):
         """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
-        self.running=label; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
+        self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
         self.win._focus_first(self.groups)
         def finish(problem=""):
             self.running=None; self.set_status(""); self.redraw()
-            if problem: self.win.notice(label,problem)
+            if problem: self._append(f"\n✗ Stopped: {problem}"); self.win.notice(label,problem)
+            else: self.finished=label   # said once the page has been read again, with what it found
             self.refresh()
         def next_step(i):
             if i>=len(steps):
