@@ -7,9 +7,9 @@ Exec=tvwcs settings
 Icon=preferences-system
 Terminal=false
 Categories=Settings;System;
-Keywords=options;settings;control panel;hotkeys;sound;volume;audio;display;monitor;resolution;refresh;bluetooth;updates;system;terminal;network;wifi;ethernet;
+Keywords=options;power;sleep;screensaver;lock;settings;control panel;hotkeys;sound;volume;audio;display;monitor;resolution;refresh;bluetooth;updates;system;terminal;network;wifi;ethernet;
 StartupWMClass=com.tvwcs.ControlPanel
-Actions=options;sound;displays;bluetooth;updates;system;terminal;network;
+Actions=options;sound;displays;power;bluetooth;updates;system;terminal;network;
 
 [Desktop Action options]
 Name=Options
@@ -22,6 +22,10 @@ Exec=tvwcs settings sound
 [Desktop Action displays]
 Name=Displays
 Exec=tvwcs settings displays
+
+[Desktop Action power]
+Name=Power and sleep
+Exec=tvwcs settings power
 
 [Desktop Action bluetooth]
 Name=Bluetooth

@@ -13,7 +13,7 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs import privilege
+from tvwcs import power, privilege
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfilesWindow, ProfileEditor
@@ -40,6 +40,57 @@ def _find_launcher():
 
 LAUNCHER=_find_launcher()
 
+class IdleWatcher:
+    """The Power and sleep times (Settings > Power and sleep): after so long without input, turn the screen off, lock,
+    sleep. On X11 TVWCS watches the idle time itself; on sway it runs swayidle, which calls `tvwcs idle …` back.
+    Nothing happens while sound plays or an application keeps the computer awake (see power.py)."""
+    TICK=5   # seconds between looks at the idle time
+    def __init__(self, app):
+        self.app=app; self.source=0; self.xidle=None; self.done=set(); self.last=0; self.checking=False; self.swayidle=power.SwayIdle()
+    def apply(self):
+        times=self.app.store.settings["idle"]
+        if power.sway():
+            problem=self.swayidle.apply(times,LAUNCHER)
+            if problem: print(problem,file=sys.stderr)
+            return
+        power.x_take_over(times["screen_off"])
+        active=any(times[a] for a in power.ACTIONS)
+        if active and not self.source:
+            if self.xidle is None: self.xidle=power.XIdle()
+            self.done=set(); self.source=GLib.timeout_add_seconds(self.TICK,self._tick)
+        elif not active and self.source: GLib.source_remove(self.source); self.source=0
+    def _tick(self):
+        ms=self.xidle.ms() if self.xidle is not None else None
+        if ms is None or self.checking: return GLib.SOURCE_CONTINUE
+        idle=ms//1000
+        if idle<self.last: self.done=set()   # someone touched something: a new idle period
+        self.last=idle
+        actions=power.due(self.app.store.settings["idle"],idle,self.done)
+        if actions:
+            self.checking=True   # pactl and systemd-inhibit run on a worker thread, so the menu never stalls
+            def check():
+                why=power.keep_awake()
+                GLib.idle_add(lambda:(self._act(actions,why),GLib.SOURCE_REMOVE)[1])
+            threading.Thread(target=check,daemon=True).start()
+        return GLib.SOURCE_CONTINUE
+    def _act(self, actions, why):
+        self.checking=False
+        if why: return   # tried again on the next tick
+        for a in actions:
+            self.done.add(a)
+            if a=="screen_off": power.screen_off()
+            else: self.app.run_system_action(a)
+    def stop(self): self.swayidle.stop()
+
+def idle_action(action):
+    """`tvwcs idle screen_off|lock|sleep|resume`: what swayidle runs when a Power and sleep time is reached on sway."""
+    if action=="resume": power.screen_on(); return 0
+    if power.keep_awake(): return 0
+    if action=="screen_off": return 0 if power.screen_off().ok else 1
+    command=command_for(action,ConfigStore().settings)
+    if not command: print(unavailable_message(action),file=sys.stderr); return 1
+    return subprocess.call(command,env=privilege.c_locale_env())
+
 class TVWCSApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.NON_UNIQUE)
@@ -47,6 +98,7 @@ class TVWCSApp(Gtk.Application):
         self.layout=None; self._owns_pid=False
         self.pin_gate=PinGate(); self.owners=WindowOwners()
         self._fullscreen=set()   # windows that were fullscreen when TVWCS was shown; they are made fullscreen again when it hides
+        self.idle=IdleWatcher(self)
 
     @property
     def scale_factor(self): return SCALE_PRESETS[self.store.settings["scale"]]
@@ -78,10 +130,10 @@ class TVWCSApp(Gtk.Application):
         self.refresh_data(rebuild=False)
         if first:
             self._update_layout(False,False,focus_output=False); self.window=TVWCSWindow(self)
-            self.apply_hotkeys(); GLib.timeout_add(1500,self._run_startup_action)
+            self.apply_hotkeys(); self.idle.apply(); GLib.timeout_add(1500,self._run_startup_action)
         self.window.set_visible(False)
     def do_shutdown(self):
-        self._release_pid(); Gtk.Application.do_shutdown(self)
+        self.idle.stop(); self._release_pid(); Gtk.Application.do_shutdown(self)
     def _claim_pid(self):
         try:
             PID_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -425,7 +477,7 @@ class TVWCSApp(Gtk.Application):
         """The Settings app changed TVWCS's options (the Options page): read them again, and apply the interface size
         and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
         old=self.store.settings["scale"]; self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
-        self.apply_hotkeys()
+        self.apply_hotkeys(); self.idle.apply()
         if self.window is None: return
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
         if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
@@ -474,6 +526,7 @@ def main():
     if args==["toggle"]: return send_signal(signal.SIGUSR1)
     if args==["guide"]: return send_signal(signal.SIGUSR2)
     if args==["stop"]: return send_signal(signal.SIGTERM)
+    if len(args)==2 and args[0]=="idle" and args[1] in (*power.ACTIONS,"resume"): return idle_action(args[1])
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app

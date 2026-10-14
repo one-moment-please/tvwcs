@@ -236,7 +236,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual((bin_/"pacman.log").read_text().split("\n")[0].split()[:5],["pacman","-S","--needed","--noconfirm","sway"])
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xdotool","pipewire","unclutter"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xdotool","pipewire","unclutter","xprintidle"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
         (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
         out=self.converse(["y","n","n"],**env)   # install; no i3 config; no power rule

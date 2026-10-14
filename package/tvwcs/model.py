@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_LABELS, assigned, clean_hotkeys, valid_spec
 from tvwcs.pinlock import valid_hash
+from tvwcs.power import clean_idle
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
 DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"
@@ -49,6 +50,7 @@ DEFAULT_SETTINGS={
     "quick_settings_button":True,   # the Quick Menu's ⚙ button, which opens the Settings app
     "quick_close_button":True,      # the Quick Menu's ✕ button (Esc and Back close it too)
     "quick_lock_button":False,      # a Lock button in the Quick Menu's power menu
+    "idle":{"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":"","show_menu":False},   # show_menu: open the Quick Menu at login
 }
@@ -92,6 +94,7 @@ def _clean_settings(raw) -> dict:
                 "quick_settings_button","quick_close_button","quick_lock_button"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
+    s["idle"]=clean_idle(raw.get("idle"))
     st=raw.get("startup")
     if isinstance(st,dict):
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]
