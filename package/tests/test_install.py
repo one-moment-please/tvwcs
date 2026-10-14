@@ -93,4 +93,35 @@ class InstallTests(unittest.TestCase):
         self.assertIn("not a keyboard layout",out)
         text=(self.home/".config"/"sway"/"config").read_text()
         self.assertIn("set $mod Mod4",text); self.assertIn("input type:keyboard {\n    xkb_layout fr\n}",text); self.assertIn("tvwcs.conf",text)
+    def fake_tools(self,listing=""):
+        """A fake sudo / visudo / id in front of PATH: a user called tv (uid 1000) whom sudo lets do what it is asked."""
+        bin_=Path(self.tmp.name)/"fakebin"; bin_.mkdir(exist_ok=True)
+        (bin_/"id").write_text('#!/bin/sh\ncase "$1" in -un) echo tv ;; -u) echo 1000 ;; *) exec /usr/bin/id "$@" ;; esac\n')
+        (bin_/"sudo").write_text('#!/bin/sh\n'
+            f'case "$1" in -k) exit 0 ;; -n) [ "$2" = -l ] && [ -f "{bin_}/listing" ] && {{ cat "{bin_}/listing"; exit 0; }}; exit 1 ;; esac\n'
+            f'[ "$1" = visudo ] && {{ echo "visudo $*" >> "{bin_}/log"; exit 0; }}\nexec "$@"\n')
+        for f in ("id","sudo"): (bin_/f).chmod(0o755)
+        if listing: (bin_/"listing").write_text(listing)
+        return {"PATH":f"{bin_}:{self.env['PATH']}"},bin_
+    def test_offers_a_narrow_no_password_sudo_rule_only_on_yes(self):
+        env,bin_=self.fake_tools(); rules=Path(self.env["TVWCS_ETC"])/"sudoers.d"
+        self.converse(["n","n"],**env)   # no i3 config; no rule
+        self.assertFalse(rules.exists())
+        out=self.converse(["n","y"],**env)
+        rule=rules/"zz-tvwcs-power-tv"   # "zz-": read after the user's other rules, since the last match wins
+        self.assertTrue(rule.is_file(),out); self.assertEqual(rule.stat().st_mode & 0o777,0o440)
+        text=rule.read_text(); self.assertIn("visudo -cf",(bin_/"log").read_text())
+        self.assertIn("tv ALL=(root) NOPASSWD: TVWCS_POWER_TV\n",text)
+        alias=next(l for l in text.splitlines() if l.startswith("Cmnd_Alias TVWCS_POWER_TV = "))
+        for entry in alias.split(" = ",1)[1].split(", "):   # only these programs, each with exactly its arguments
+            prog,_,args=entry.partition(" ")
+            self.assertIn(Path(prog).name,{"systemctl","loginctl","reboot","poweroff","zzz"},entry)
+            self.assertIn(args,{"suspend","reboot","poweroff",'""'},entry)
+    def test_says_when_the_rule_is_already_in_effect(self):
+        first=next((f"{d}/systemctl suspend" for d in ("/usr/bin","/bin","/usr/sbin","/sbin","/usr/local/bin","/usr/local/sbin") if Path(d,"systemctl").exists()),None)
+        if first is None: self.skipTest("no systemctl here")
+        env,_=self.fake_tools("User tv may run the following commands on box:\n    (ALL) ALL\n    (root) NOPASSWD: "+first+", /usr/sbin/reboot \"\"\n")
+        self.assertIn("already work without a password",self.converse(["n"],**env))
+        env,_=self.fake_tools("User tv may run the following commands on box:\n    (root) NOPASSWD: "+first+"\n    (ALL) ALL\n")   # a later rule wins
+        self.assertIn("without asking for your password?",self.converse(["n","n"],**env))
 if __name__=="__main__": unittest.main()

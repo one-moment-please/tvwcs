@@ -41,7 +41,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _reset_nav(self):
         self._groups={"quick":[],"guide":[],"options":[]}; self._header_group=[]
         self._search_results=[]; self._selected_result=0; self._result_groups=[]; self._result_mains=[]; self._stars={}
-        self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None
+        self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None; self._password=None
         self._all_guide_groups=None; self._open_row=None
 
     # ================================================================== construction
@@ -612,6 +612,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         focused=self.get_focus(); editable=isinstance(focused,Gtk.Editable); typing=self._in_search(focused)
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self._escape(); return True   # the remote's Back key (XF86Back) is Esc
         if self._pin is not None and self._pin_key(keyval): return True
+        if self._password is not None and not editable and self._password_key(keyval): return True
         # Typing anywhere starts a search (not while a dialog is up, in another text field, or with a shortcut modifier held).
         if not self._modal_groups and not editable and not (state & _TYPING_BLOCKED):
             ch=Gdk.keyval_to_unicode(keyval)
@@ -678,6 +679,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         clear_box(self.modal_card); self.modal_layer.set_visible(True)
     def close_modal(self):
         self._modal_groups=[]; self._modal_back=None; self.modal_layer.set_visible(False); self._capture=None; self._pin=None
+        if self._password is not None: self._password["entry"].set_text(""); self._password=None   # never left in the widget
         back=self._return_focus
         if back is not None and usable(back): back.grab_focus()
         else: self.focus_pane("quick")
@@ -743,6 +745,50 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         status,wait=self.app.pin_gate.attempt(profile.id,st["digits"],profile.pin_hash)
         if status=="ok": on_ok=st["on_ok"]; self.close_modal(); on_ok(); return
         self.ask_pin(profile,st["on_ok"],"Wrong PIN." if status=="wrong" else f"Too many wrong tries. Try again in {wait} seconds.")
+
+    def ask_password(self,action_label,on_ok,message=""):
+        """The administrator (sudo) password for a power action. It is typed on a keyboard (such as the one on the back
+        of a remote) into a hidden field, or, for a password of digits, on the keypad with the D-pad.
+        on_ok(password) runs on Enter or OK; the field is emptied as soon as the dialog closes."""
+        self._begin_modal(); self._title(f"Password for {action_label}")
+        text=muted_label(f"{action_label} needs administrator rights. Enter your password (the one sudo asks for). It is used once and never stored.")
+        text.set_margin_bottom(S(8)); self.modal_card.append(text)
+        if message:
+            e=Gtk.Label(label=message); e.add_css_class("error"); e.set_wrap(True); e.set_margin_bottom(S(8)); self.modal_card.append(e)
+        entry=Gtk.PasswordEntry(); entry.set_show_peek_icon(True); entry.add_css_class("pin-display"); entry.set_margin_bottom(S(8)); self.modal_card.append(entry)
+        def submit(*_):
+            password=entry.get_text()
+            if not password: return
+            self.close_modal(); on_ok(password)
+        entry.connect("activate",submit)
+        self._password={"entry":entry,"submit":submit}
+        groups=[NavGroup([entry])]
+        def key(text,handler,css=None):
+            b=Gtk.Button(label=text); b.add_css_class("pin-key")
+            if css: b.add_css_class(css)
+            b.connect("clicked",lambda *_:handler()); return b
+        for digits in (("1","2","3"),("4","5","6"),("7","8","9"),(None,"0",None)):
+            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); line.set_margin_bottom(S(4)); row=[]
+            for d in digits:
+                if d is not None: b=key(d,lambda d=d:self._password_type(d))
+                elif not row: b=key("⌫",self._password_back)
+                else: b=key("OK",submit,"active")
+                line.append(b); row.append(b)
+            self.modal_card.append(line); g=NavGroup(row); g.column=True; groups.append(g)
+        cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(6)); cancel.connect("clicked",lambda *_:self.close_modal()); self.modal_card.append(cancel); groups.append(NavGroup([cancel]))
+        self._modal_groups=groups; self._modal_back=self.close_modal
+        entry.grab_focus(); GLib.timeout_add(150,lambda:(self._password is not None and self._password["entry"] is entry and entry.grab_focus(),GLib.SOURCE_REMOVE)[1])   # after a just-shown window settles its own focus
+    def _password_type(self,text):
+        e=self._password["entry"]; e.set_text(e.get_text()+text)
+    def _password_back(self):
+        e=self._password["entry"]; e.set_text(e.get_text()[:-1])
+    def _password_key(self,keyval):
+        """With a keypad button selected, typed characters and Backspace still go into the password."""
+        if keyval==Gdk.KEY_BackSpace: self._password_back(); return True
+        if keyval in (Gdk.KEY_Return,Gdk.KEY_KP_Enter): return False   # activates the selected button
+        ch=Gdk.keyval_to_unicode(keyval)
+        if ch>=32 and chr(ch).isprintable(): self._password_type(chr(ch)); return True
+        return False
 
     def choose_option(self,title,options,current,callback):
         """A small pop-up listing the choices for a setting, with the current one ticked."""

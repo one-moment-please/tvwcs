@@ -25,6 +25,10 @@
 - Sleep, Reboot and Shut down use systemd when it runs the system, else elogind's `loginctl`, else `zzz` / `reboot` / `poweroff`; a refused command now shows its error instead of failing silently. Lock says so when no screen locker is installed.
 - Without `XDG_RUNTIME_DIR`, TVWCS keeps its PID file and hotkey requests in `~/.cache/tvwcs` (it used the shared `/tmp`). *Open at login* now records which login it ran in, so it still runs once per login where nothing empties that folder at logout. A PID file left from before a reboot no longer blocks TVWCS from starting.
 
+**Power actions that need a password**
+- When Sleep, Reboot or Shut down needs root (no systemd or elogind, or polkit refuses because no agent can ask), TVWCS tries a no-password `doas` or `sudo` rule, then asks for your sudo password in its own dialog: a hidden field for a keyboard (such as the one on the back of a remote) and a keypad for numeric passwords. The password goes to `sudo -S` through a pipe and is never stored; a wrong one asks again, up to 3 times. A user sudo refuses, or a sudo that demands a terminal, gets a clear message.
+- `install.sh` offers (on a terminal, default no) a no-password rule for exactly those commands: `/etc/sudoers.d/zz-tvwcs-power-<user>`, checked with `visudo` first and named to come after the user's other sudo rules (the last match wins), or lines in `/etc/doas.conf`, checked with `doas -C`. It says when such a rule is already in effect.
+
 **sway**
 - TVWCS runs on sway: it uses `swaymsg`, lists native Wayland windows (by app_id), and takes the monitor from sway's focus instead of xdotool.
 - Opening TVWCS over a fullscreen app takes the app out of fullscreen while TVWCS is open (sway would otherwise keep TVWCS hidden behind it); it is made fullscreen again when TVWCS closes.

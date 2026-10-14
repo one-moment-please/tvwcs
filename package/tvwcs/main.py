@@ -13,8 +13,9 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
+from tvwcs import privilege
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
-from tvwcs.system_actions import command_for, unavailable_message
+from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfilesWindow, ProfileEditor
 from tvwcs.ui_window import TVWCSWindow
 from tvwcs.widgets import app_icon, has_icon, set_scale
@@ -25,6 +26,7 @@ APP_ID="com.tvwcs.TVWCS"
 RUNTIME=runtime_dir()                            # XDG_RUNTIME_DIR, or ~/.cache/tvwcs without one (see session.py)
 PID_FILE=RUNTIME/"tvwcs.pid"
 STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # records the login the start-up action last ran in
+PASSWORD_TRIES=3                                  # wrong administrator passwords before TVWCS gives up
 STARTUP_MENU_DELAY=2500                           # ms between opening the login app and showing the Quick Menu over it
 REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a line here, then signals the running TVWCS
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
@@ -318,15 +320,62 @@ class TVWCSApp(Gtk.Application):
         if not command:
             self.notify_message(unavailable_message(action_id)); return
         self.hide_window()
-        try: proc=subprocess.Popen(command,start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+        power=action_id in POWER_VERBS; label=next((a.label for a in SYSTEM_ACTIONS if a.id==action_id),action_id)
+        if power and privilege.needs_root(command): self._run_as_root(command,label); return
+        def done(code,err):
+            if code==0: return
+            if power and privilege.polkit_refused(err): self._run_as_root(command,label); return   # no polkit agent to ask for a password
+            self._failed(command,err)
+        self._spawn(command,done,env=privilege.c_locale_env() if power else None)
+    def _spawn(self,command,done,password=None,env=None):
+        """Run a command without waiting for it; done(exit code, stderr) once it ends. `password` is written to its stdin."""
+        try: proc=subprocess.Popen(command,start_new_session=True,env=env,stdin=subprocess.PIPE if password is not None else subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         except OSError as exc: self.notify_message(f"Could not run {command[0]}: {exc}"); return
+        if password is not None:
+            try: proc.stdin.write((password+"\n").encode()); proc.stdin.close()
+            except OSError: pass   # it ended without reading it; its exit says why
         def finished(_pid,status):
-            # Without systemd or elogind, reboot and poweroff need root: say so instead of failing silently.
             try: err=proc.stderr.read().decode(errors="replace").strip()[-300:]; proc.stderr.close()
             except (OSError,ValueError): err=""
             proc.returncode=code=os.waitstatus_to_exitcode(status)   # GLib reaped it; tell Popen
-            if code!=0: self.notify_message(f"{' '.join(command)} did not work{': '+err if err else '.'}")
+            done(code,err)
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT,proc.pid,finished)
+    def _failed(self,command,err):
+        self.notify_message(f"{' '.join(command)} did not work{': '+err if err else '.'}")
+
+    # Power actions that need root: a no-password doas or sudo rule (install.sh offers one), else the user's password.
+    def _run_as_root(self,command,label):
+        if os.geteuid()==0: self._spawn(command,lambda code,err:code and self._failed(command,err),env=privilege.c_locale_env()); return
+        doas=privilege.doas_command(command)
+        if doas: self._spawn(doas,lambda code,err:None if code==0 else self._sudo(command,label),env=privilege.c_locale_env())
+        else: self._sudo(command,label)
+    def _sudo(self,command,label):
+        sudo=privilege.sudo_command(command)
+        if sudo is None:
+            self.notify_message(f"{label} needs administrator rights, and neither sudo nor a doas rule for it is available. "
+                                "Install sudo, or run TVWCS's install.sh to set up a rule for it."); return
+        def done(code,err):
+            outcome=privilege.sudo_outcome(code,err)
+            if outcome=="password": self._ask_root_password(command,label)
+            elif outcome!="ok": self._sudo_failed(command,label,outcome,err)
+        self._spawn(sudo,done,env=privilege.c_locale_env())
+    def _ask_root_password(self,command,label,message="",tries=0):
+        if self.window is None: return
+        if not self.window.is_visible(): self.show_mode("toggle")   # the dialog is drawn in the TVWCS window
+        self.window.ask_password(label,lambda password:self._sudo_with_password(command,label,password,tries),message)
+    def _sudo_with_password(self,command,label,password,tries):
+        self.hide_window()
+        def done(code,err):
+            outcome=privilege.sudo_outcome(code,err)
+            if outcome=="wrong" and tries+1<PASSWORD_TRIES: self._ask_root_password(command,label,"Wrong password. Try again.",tries+1)
+            elif outcome=="wrong": self.notify_message(f"{label}: the password was wrong {PASSWORD_TRIES} times.")
+            elif outcome!="ok": self._sudo_failed(command,label,outcome,err)
+        self._spawn(privilege.sudo_command(command,with_password=True),done,password=password,env=privilege.c_locale_env())
+    def _sudo_failed(self,command,label,outcome,err):
+        if outcome=="denied": self.notify_message(f"{label} needs administrator rights, and your user may not use sudo for it.")
+        elif outcome=="tty": self.notify_message(f"{label}: sudo is set up to work only in a terminal (requiretty), so TVWCS cannot pass it a password.")
+        else: self._failed(command,err)
 
     # ---------------------------------------------------------- hotkeys and start-up
     def set_hotkey(self,device,name,spec):

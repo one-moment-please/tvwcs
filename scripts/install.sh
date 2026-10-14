@@ -327,6 +327,79 @@ for WM in $CHANGED_WMS; do
     fi
 done
 
+# ------------------------------------------------------------------ power actions without a password (optional)
+# Sleep, Reboot and Shut down need root when polkit cannot allow them (no systemd or elogind, or another user is
+# logged in). TVWCS then asks for your sudo password on screen; this optional rule lets your user run exactly those
+# commands, with exactly those arguments, without one. Only offered on a terminal, and only on a clear yes.
+ask_no() {   # like ask, but Enter means no
+    [ -t 0 ] || return 1
+    printf "%s [y/N] " "$1"
+    read -r ANSWER || return 1
+    case "$ANSWER" in [Yy]*) return 0 ;; *) return 1 ;; esac
+}
+program_paths() {   # every installed path of a program (sudo and doas rules match the path TVWCS runs it by)
+    for DIR in /usr/bin /bin /usr/sbin /sbin /usr/local/bin /usr/local/sbin; do [ -x "$DIR/$1" ] && echo "$DIR/$1"; done; return 0
+}
+power_commands() {   # "path arguments" for each power command here, one per line ("path" alone = no arguments)
+    for P in $(program_paths systemctl) $(program_paths loginctl); do for V in suspend reboot poweroff; do echo "$P $V"; done; done
+    for C in reboot poweroff zzz; do for P in $(program_paths $C); do echo "$P"; done; done
+}
+sudo_rule() {   # sudo_rule <user>: the sudoers drop-in. Its alias is named after the user, so every user can have one.
+    ALIAS=TVWCS_POWER_$(echo "$1" | tr 'a-z.-' 'A-Z__')
+    echo "# Written by TVWCS's install.sh: lets $1 sleep, reboot and shut down from TVWCS without a password."
+    echo "# Delete this file to undo it."
+    LIST=$(power_commands | awk '{ if (NF == 1) $0 = $0 " \"\""; printf "%s%s", (NR > 1 ? ", " : ""), $0 }')
+    echo "Cmnd_Alias $ALIAS = $LIST"
+    echo "$1 ALL=(root) NOPASSWD: $ALIAS"
+}
+sudo_nopasswd_for() {   # sudo already lets this user run "$1" without a password
+    # sudo -l <command> cannot tell: once any NOPASSWD rule exists it also reports commands that need a password.
+    # So read the full listing, in sudo's order: the last rule that matches the command decides, as it does in sudo.
+    sudo -n -l 2>/dev/null | awk -v want="$1" '
+        /^[ \t]*\(/ { line = $0; sub(/^[ \t]*\([^)]*\)[ \t]*/, "", line); nopw = 0
+            while (match(line, /^[A-Z_]+:[ \t]*/)) { if (substr(line, 1, RLENGTH) ~ /^NOPASSWD:/) nopw = 1; line = substr(line, RLENGTH + 1) }
+            n = split(line, c, /, */)
+            for (i = 1; i <= n; i++) if (c[i] == "ALL" || c[i] == want || index(c[i], want " ") == 1) last = nopw }
+        END { exit !last }'
+}
+doas_rule() {   # doas_rule <user>: lines for doas.conf ("args" alone = no arguments)
+    echo "# TVWCS: lets $1 sleep, reboot and shut down without a password (added by install.sh)"
+    power_commands | while read -r P V; do echo "permit nopass $1 as root cmd $P args${V:+ $V}"; done
+}
+setup_power_rule() {
+    [ -t 0 ] || return 0
+    ME=$(id -un); [ "$(id -u)" = 0 ] && return 0   # root needs no rule
+    case "$ME" in [a-z_]*) ;; *) return 0 ;; esac
+    case "$ME" in *[!a-zA-Z0-9_.-]*) return 0 ;; esac
+    FIRST=$(power_commands | sed -n 1p); [ -n "$FIRST" ] || return 0   # (head would close the pipe early)
+    if command -v sudo >/dev/null 2>&1; then
+        # sudo reads drop-ins in name order and the last matching rule wins: "zz-" puts this after a user's general
+        # "may do anything, with a password" rule. sudo skips drop-ins whose names contain a dot.
+        RULE="$ETC/sudoers.d/zz-tvwcs-power-$(echo "$ME" | tr '.' '_')"
+        if sudo_nopasswd_for "$FIRST"; then echo "Sleep, Reboot and Shut down already work without a password (sudo)."; return 0; fi
+        echo
+        ask_no "Let TVWCS sleep, reboot and shut down without asking for your password? This adds a sudo rule ($RULE) that allows only those commands; sudo asks for your password once now." || return 0
+        TMP=$(mktemp); sudo_rule "$ME" > "$TMP"
+        # sudo asks for the password on the terminal itself, so only its messages are captured here
+        if ! OUT=$(sudo visudo -cf "$TMP" 2>&1); then echo "Could not add the rule, nothing was changed: $(echo "$OUT" | tail -n 1)" >&2; rm -f "$TMP"; return 0; fi
+        if sudo sh -c 'mkdir -p "$(dirname "$1")" && cat > "$1" && chmod 0440 "$1"' sh "$RULE" < "$TMP"; then
+            echo "Added $RULE (delete it to undo this)."
+            sudo -k; sudo_nopasswd_for "$FIRST" || echo "Note: sudo does not seem to read $ETC/sudoers.d (check for an includedir line in $ETC/sudoers)."
+        fi
+        rm -f "$TMP"
+    elif command -v doas >/dev/null 2>&1; then
+        echo
+        ask_no "Let TVWCS sleep, reboot and shut down without asking for your password? This adds rules to $ETC/doas.conf that allow only those commands; doas asks for your password once now." || return 0
+        TMP=$(mktemp); doas_rule "$ME" > "$TMP"
+        # check the whole file as it would be, then append
+        if doas sh -c 'cat "$1" "$2" > "$2.all" && doas -C "$2.all" && cat "$2" >> "$1"; R=$?; rm -f "$2.all"; exit $R' sh "$ETC/doas.conf" "$TMP"; then
+            echo "Added the rules to $ETC/doas.conf."
+        else echo "The rules did not pass doas's check; nothing was changed." >&2; fi
+        rm -f "$TMP"
+    fi
+}
+setup_power_rule
+
 # ------------------------------------------------------------------ restart a running TVWCS
 # A running TVWCS keeps using the old program until it is restarted. Offer to do that now. The in-app updater sets
 # TVWCS_NO_RESTART because it restarts TVWCS itself; without a terminal to ask in, only say what to do.

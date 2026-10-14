@@ -38,7 +38,9 @@ sudo xbps-install python3-gobject gtk4 i3 xdotool             # Void
 doas apk add python3 py3-gobject3 gtk4.0 i3wm xdotool          # Alpine
 ```
 
-**Without systemd** (Artix, Devuan, Gentoo with OpenRC, Void, Alpine): everything works. Sleep, Reboot and Shut down use elogind's `loginctl` when it is installed, otherwise `zzz` / `reboot` / `poweroff`, which normally need root: TVWCS shows the error if they are refused. Lock uses the first screen locker it finds (or `lock_command` in `config.json`). Without an `XDG_RUNTIME_DIR` (no elogind), TVWCS keeps its running files in `~/.cache/tvwcs`.
+**Without systemd** (Artix, Devuan, Gentoo with OpenRC, Void, Alpine): everything works. Sleep, Reboot and Shut down use elogind's `loginctl` when it is installed, otherwise `zzz` / `reboot` / `poweroff`, which need root. Lock uses the first screen locker it finds (or `lock_command` in `config.json`). Without an `XDG_RUNTIME_DIR` (no elogind), TVWCS keeps its running files in `~/.cache/tvwcs`.
+
+**When Sleep, Reboot or Shut down needs your password** (no systemd or elogind, or polkit refuses because another user is logged in): TVWCS asks for your sudo password in its own dialog. Type it on a keyboard, such as the one on the back of a remote, or, if it is all digits, on the on-screen keypad with the arrow keys. It goes straight to `sudo` and is never stored; a wrong one asks again (3 tries). With a no-password `doas` or `sudo` rule, nothing is asked. `install.sh` offers to add one (off unless you say yes): a sudoers file, `/etc/sudoers.d/zz-tvwcs-power-<you>`, or lines in `/etc/doas.conf`, allowing only `systemctl` / `loginctl` `suspend`, `reboot` and `poweroff`, and `reboot`, `poweroff` and `zzz` with no arguments. Delete that file to undo it.
 
 ## Install
 
