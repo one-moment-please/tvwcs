@@ -8,13 +8,14 @@
 - Sound: volume and mute of the output and the input, and which output and microphone to use (sound already playing follows), through `pactl` (PipeWire or PulseAudio).
 - Bluetooth: on and off, search, pair, connect, disconnect and forget devices, with battery levels, through `bluetoothctl`.
 - Software updates: waiting updates from apt, dnf, pacman, zypper, xbps or apk and from Flatpak; installs them with the output on screen, asking for the sudo password in an on-screen dialog when needed; offers a restart when one is needed.
-- System information: computer, processor, memory, graphics, displays, disks, battery and versions.
+- System information: computer, processor, memory, graphics (named from the kernel driver without `lspci`), displays, every drive in use, battery and versions; and remote access: the SSH server on or off (or installed), passwords or keys only (refused while the user has no key), and the command, user, local name and IP addresses to connect with.
 - Terminal: your shell in a full terminal (VTE for GTK 4), or a one-command-at-a-time console without VTE.
 - Network: Ethernet and Wi-Fi status, connect and disconnect, Wi-Fi on and off, join (with a password) and forget networks, and IP settings, through NetworkManager's `nmcli`; shown read-only from `ip` without it.
 - Text is typed on a keyboard or on an on-screen keyboard driven by the D-pad.
 - `install.sh` installs the Control Panel's launcher (with an action for each page) and lists the optional tools its pages use.
 
 **Installer**
+- New guide, `docs/INSTALL-DEBIAN.md`: Debian's network installer with no desktop, SSH and Avahi, then TVWCS installed over SSH from another computer.
 - `install.sh` lists every missing package with what it is for (including PipeWire, with `pipewire-pulse` and WirePlumber, when no sound server is installed) and offers to install them all with the package manager (on a terminal, on a known distribution).
 - With neither i3 nor sway installed, `install.sh` offers to install one with the package manager (i3 with Xorg, `startx`, `xdotool` and `xrandr`, recommended; or sway), then sets it up and offers the automatic login.
 - On a computer with no login screen, `install.sh` offers (default no) to log the user in automatically at boot and start i3 (through `startx`) or sway, through systemd's or runit's console login and the login shell's profile. When set up, TVWCS opens its Quick Menu at log-in, and the session starts on the screen as soon as the install is done.

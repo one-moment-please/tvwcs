@@ -29,6 +29,10 @@ class SshConfigTests(unittest.TestCase):
         home=self.dir/"home"; (home/".ssh").mkdir(parents=True)
         (home/".ssh"/"authorized_keys").write_text("# mine\nssh-ed25519 AAAA laptop\nfrom=\"10.0.0.0/8\" ecdsa-sha2-nistp256 AAAA phone\n\nnonsense\n")
         self.assertEqual(ssh.count_keys(home),2); self.assertEqual(ssh.count_keys(self.dir/"nobody"),0)
+    def test_addresses_of_the_network_cards(self):
+        text=('[{"ifname":"lo","link_type":"loopback","flags":["UP"],"addr_info":[{"family":"inet","local":"127.0.0.1","prefixlen":8}]},'
+              '{"ifname":"enp3s0","link_type":"ether","flags":["UP","LOWER_UP"],"addr_info":[{"family":"inet","local":"192.168.1.20","prefixlen":24}]}]')
+        self.assertEqual(ssh.parse_addresses(text,physical=lambda _n:True),[("enp3s0","192.168.1.20")])
     def test_unit_state(self):
         self.assertEqual(ssh.parse_unit("LoadState=loaded\nUnitFileState=enabled\nActiveState=active\n"),(True,True,True))
         self.assertEqual(ssh.parse_unit("LoadState=not-found\nUnitFileState=\nActiveState=inactive\n"),(False,False,False))

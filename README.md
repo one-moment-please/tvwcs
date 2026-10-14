@@ -46,6 +46,8 @@ doas apk add python3 py3-gobject3 gtk4.0 i3wm xdotool          # Alpine
 
 ## Install
 
+**Starting from an empty computer?** [Setting up a TV computer with Debian and TVWCS](docs/INSTALL-DEBIAN.md) walks through installing Debian from its network installer with no desktop, turning on SSH and Avahi, and installing TVWCS from another computer on your home network.
+
 Each method below installs TVWCS into `~/.local/share/tvwcs`. Your own data (channels, favorites, settings, hotkeys) is kept apart from the program, in `~/.config/tvwcs/`.
 
 **From a release zip** (from the repository's [Releases](https://github.com/one-moment-please/tvwcs/releases) page). Extract the zip in a temporary folder and run its installer. You can delete the extracted folder afterwards.
@@ -138,7 +140,7 @@ Its pages are tabs down the left: **↑ ↓** on the tabs changes page, **→** 
 | **Displays** | Resolution and refresh rate of each display. With several: which are on, where each one is (right of, left of, above, below, or the same picture as another; the others move along when one changes size) and, on X11, the primary display. A new resolution, refresh rate or display switched on or off goes back after 15 seconds unless you keep it. What you keep is applied again when TVWCS starts with the same displays connected (saved in `~/.config/tvwcs/displays.json`). | `xrandr` (i3 and other X11 sessions), `swaymsg` (sway) |
 | **Bluetooth** | Switch Bluetooth on or off, search, pair (devices that need no code: headphones, speakers, game controllers, remotes), connect, disconnect and forget. Shows battery levels. | `bluetoothctl` (BlueZ) |
 | **Software updates** | Lists waiting updates from the system's package manager and Flatpak, installs them all (asking for your sudo password, like the power actions) with their output on screen, and offers a restart when one is needed. | apt, dnf, pacman (`checkupdates` when installed), zypper, xbps or apk; `flatpak` |
-| **System information** | This computer, its processor, memory, graphics, displays, disks, battery, and the TVWCS, Python and GTK versions. | `/proc`, `/sys`, `lspci` |
+| **System information** | This computer, its processor, memory, graphics, displays, every drive in use, battery, and the TVWCS, Python and GTK versions. **Remote access (SSH):** turn the SSH server on or off (or install it), allow passwords or keys only (refused while your user has no key, so you cannot lock yourself out), and see the command to connect with, the user, the local name and the IP addresses. | `/proc`, `/sys`, `lspci`; `systemctl` and OpenSSH's `sshd` |
 | **Terminal** | A full terminal running your shell. Every key goes to it; **Back** (or **Shift+Esc**) leaves it. Without VTE, a console that runs one command at a time. | VTE for GTK 4 |
 | **Network** | Ethernet and Wi-Fi: status and addresses, connect and disconnect, Wi-Fi on or off, join a network (with its password), forget one, and IP settings (automatic or manual address, gateway and DNS). | `nmcli` (NetworkManager); read-only from `ip` without it |
 

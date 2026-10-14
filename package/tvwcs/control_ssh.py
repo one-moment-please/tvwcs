@@ -91,12 +91,14 @@ def avahi_running():
     if have("systemctl") and run(["systemctl","is-active","--quiet","avahi-daemon"],timeout=5).ok: return True
     return os.path.exists("/run/avahi-daemon/pid")
 
+def parse_addresses(ip_json, physical=None):
+    """`ip -j -4 addr` -> [(interface, address)] of the network cards (no loopback, bridges or containers)."""
+    ifaces=parse_ip_json(ip_json,"[]") if physical is None else parse_ip_json(ip_json,"[]",physical)
+    return [(i.device,a.split("/")[0]) for i in ifaces for a in i.addresses]
+
 def addresses():
     r=run(["ip","-j","-4","addr","show"],timeout=5) if have("ip") else None
-    found=[]
-    for iface in parse_ip_json(r.out if r and r.ok else "","[]"):
-        found+=[(iface.name,a.split("/")[0]) for a in iface.addresses]
-    return found
+    return parse_addresses(r.out if r and r.ok else "")
 
 def sshd_path():
     return shutil.which("sshd") or next((p for p in ("/usr/sbin/sshd","/usr/bin/sshd","/sbin/sshd") if os.path.exists(p)),"")
@@ -144,5 +146,6 @@ def passwords_argv(s, allow, ssh_dir=SSH_DIR):
           f"PasswordAuthentication {value}\nKbdInteractiveAuthentication {value}\n")
     reload=f"systemctl reload-or-restart {s.unit}.service 2>/dev/null || true" if s.unit and s.active else "true"
     script=('set -e; d="$1"; f="$d/$2"; mkdir -p "$d"; printf "%s" "$3" > "$f.new"; mv "$f.new" "$f"; chmod 644 "$f"; '
+            'mkdir -p -m 0755 /run/sshd 2>/dev/null || true; '   # sshd -t wants its privilege separation folder, which only exists while it runs
             'if ! "$4" -t; then rm -f "$f"; echo "sshd rejected the change, so it was undone." >&2; exit 1; fi; '+reload)
     return ["sh","-c",script,"sh",str(Path(ssh_dir)/"sshd_config.d"),DROPIN_NAME,text,sshd_path() or "sshd"]
