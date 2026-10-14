@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TVWCS — Metro-style TV launcher and workspace switcher for i3. Application controller and command line."""
+"""TVWCS — Metro-style TV launcher and workspace switcher for i3 and sway. Application controller and command line."""
 from __future__ import annotations
 import os, shlex, signal, subprocess, sys
 from pathlib import Path
@@ -29,7 +29,7 @@ REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a 
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
 def _find_launcher():
     """Locate the tvwcs launcher script next to the package (works in the repo layout, the
-    install.sh layout ~/.config/i3/tvwcs, and a zip extracted anywhere)."""
+    install.sh layout ~/.local/share/tvwcs, and a zip extracted anywhere)."""
     here=Path(__file__).resolve().parent          # .../tvwcs (the package)
     for cand in (here.parent/"bin"/"tvwcs", here/"tvwcs", here.parent.parent/"bin"/"tvwcs"):
         if cand.exists(): return cand
@@ -144,8 +144,8 @@ class TVWCSApp(Gtk.Application):
         if mode=="toggle" and visible: self.hide_window(); return False
         guide=(mode=="guide") and not (visible and w.guide_open)
         if visible: self.show_panels(guide,False,focus="guide" if guide else "quick"); return False
-        self._fullscreen=self.wm.fullscreen_windows()   # TVWCS taking the focus ends a fullscreen app's fullscreen
-        self.wm.focus_output_under_mouse(); self.wm.move_tvwcs_to_current_workspace(); self.refresh_data(rebuild=False)
+        self._fullscreen=self.wm.fullscreen_windows()   # restored when TVWCS hides (see hide_window)
+        self.wm.focus_output_under_mouse(); self.wm.leave_fullscreen(); self.wm.move_tvwcs_to_current_workspace(); self.refresh_data(rebuild=False)
         w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False; w.apps_view="applications"   # always opens on the guide
         self._update_layout(guide,False,focus_output=True)
         w.set_default_size(self.layout.width,self.layout.height); w._build(); w.present(); self.apply_geometry()
@@ -305,10 +305,11 @@ class TVWCSApp(Gtk.Application):
             except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}")
         # An action starts the application, so the main profile's PIN applies to it too.
         self._with_pins([profile] if profile and profile.pin_hash else [],go)
-    def restart(self):
-        """Start a fresh TVWCS once this process has exited (after an update replaced the program files), then quit."""
+    def restart(self,launcher=None):
+        """Start a fresh TVWCS once this process has exited (after an update replaced the program files), then quit.
+        `launcher`: the new install's launcher, when the update moved TVWCS to another folder."""
         wait='while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2"'
-        try: subprocess.Popen(["sh","-c",wait,"sh",str(os.getpid()),str(LAUNCHER)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try: subprocess.Popen(["sh","-c",wait,"sh",str(os.getpid()),str(launcher or LAUNCHER)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or i3) to use the new version."); return
         self.hide_window(); self.quit()
     def run_system_action(self,action_id):

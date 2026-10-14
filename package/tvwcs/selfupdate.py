@@ -54,6 +54,20 @@ def latest_release():
         raise UpdateError(f"Could not reach GitHub: {getattr(exc,'reason',exc)}") from exc
     return release_from_json(data)
 
+def default_dir():
+    """Where install.sh puts TVWCS: ~/.local/share/tvwcs (XDG_DATA_HOME)."""
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home()/".local"/"share")/"tvwcs"
+
+def legacy_dir():
+    """Where TVWCS 2.6 and older were installed: ~/.config/i3/tvwcs."""
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home()/".config")/"i3"/"tvwcs"
+
+def update_target(current):
+    """Where an update of the install in `current` goes: the same folder, except that one in the old location
+    moves to the new default."""
+    if current is not None and Path(current).resolve()==legacy_dir().resolve(): return default_dir()
+    return current
+
 def install_dir(package_dir):
     """The folder install.sh put TVWCS in (it holds tvwcs.conf and bin/tvwcs next to the package), or None when
     running from a source checkout, which is updated with git instead."""
@@ -71,9 +85,10 @@ def _download(url,target):
     except (urllib.error.URLError,OSError) as exc:
         raise UpdateError(f"Download failed: {getattr(exc,'reason',exc)}") from exc
 
-def install_release(release,dest):
+def install_release(release,dest,migrate=False):
     """Download the release zip into a temporary folder, run its install.sh into `dest`, and delete the
-    temporary folder whatever happens. Returns install.sh's output."""
+    temporary folder whatever happens. `migrate`: the user agreed to move TVWCS from its old location, so install.sh
+    updates the include line in the window manager config and deletes the old copy. Returns install.sh's output."""
     with tempfile.TemporaryDirectory(prefix="tvwcs-update-") as tmp:
         tmp=Path(tmp); archive=tmp/"release.zip"; unpacked=tmp/"unpacked"
         _download(release.zip_url,archive)
@@ -84,6 +99,7 @@ def install_release(release,dest):
         if not script.is_file() or not (unpacked/"tvwcs"/"tvwcs"/"main.py").is_file():
             raise UpdateError("The downloaded zip does not look like a TVWCS release.")
         env={**os.environ,"TVWCS_DEST":str(dest),"TVWCS_NO_RESTART":"1"}   # TVWCS restarts itself afterwards
+        if migrate: env["TVWCS_MIGRATE"]="1"
         try:
             done=subprocess.run(["sh",str(script)],cwd=str(unpacked/"tvwcs"),env=env,stdin=subprocess.DEVNULL,
                                 capture_output=True,text=True,timeout=120)

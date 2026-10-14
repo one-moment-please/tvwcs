@@ -114,16 +114,20 @@ def build_settings_panel(win, embedded=False):
         def failed(exc):
             busy[0]=False; update_value.set_text(prefix); app.notify_message(f"{prefix}: {exc}")
         return failed
+    target=selfupdate.update_target(dest); moving=dest is not None and target!=dest   # an install in the old ~/.config/i3/tvwcs moves
     def install(release):
         busy[0]=True; update_value.set_text("Installing…")
-        _in_background(lambda:selfupdate.install_release(release,dest),lambda _out:app.restart(),update_failed("Update failed"))
+        _in_background(lambda:selfupdate.install_release(release,target,migrate=moving),
+                       lambda _out:app.restart(target/"bin"/"tvwcs"),update_failed("Update failed"))
     def checked(release):
         busy[0]=False
         if not selfupdate.is_newer(release.version,__version__): update_value.set_text(f"Up to date ({__version__})"); return
         update_value.set_text(f"{release.version} available")
         if dest is None:
             app.notify_message(f"TVWCS {release.version} is available. This copy runs from a source checkout: update it with git pull."); return
-        win.confirm("Update TVWCS?",f"TVWCS {release.version} is available (you have {__version__}). Download and install it now? "
+        move=(f" It also moves TVWCS from {dest} to {target} and updates the include line in your i3 / sway config to match "
+              "(the config is backed up first)." if moving else "")
+        win.confirm("Update TVWCS?",f"TVWCS {release.version} is available (you have {__version__}). Download and install it now?{move} "
                     "TVWCS restarts afterwards; your channels, favorites, settings and hotkeys are kept.","Install update",lambda:install(release))
     def check_updates():
         if busy[0]: return None

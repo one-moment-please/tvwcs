@@ -1,6 +1,6 @@
 # TVWCS
 
-TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and window switcher for ordinary Linux desktop applications on i3. It is not a media center and needs no app-specific plugins. See `PROJECT_OVERVIEW.md` for the goals behind it.
+TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and window switcher for ordinary Linux desktop applications on i3 or sway. It is not a media center and needs no app-specific plugins. See `PROJECT_OVERVIEW.md` for the goals behind it.
 
 <table>
   <tr>
@@ -28,15 +28,15 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
 
 ## Requirements
 
-Debian, Ubuntu or Linux Mint with i3 (4.20 or newer), Python 3, GTK 4 and PyGObject. TVWCS uses `xdotool` to find the monitor under the pointer.
+Debian, Ubuntu or Linux Mint with i3 (4.20 or newer) or sway, Python 3, GTK 4 and PyGObject. On i3, TVWCS uses `xdotool` to find the monitor under the pointer; sway reports it directly.
 
 ```bash
-sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool
+sudo apt install python3-gi gir1.2-gtk-4.0 i3 xdotool   # or, for sway: python3-gi gir1.2-gtk-4.0 sway
 ```
 
 ## Install
 
-Each method below installs TVWCS into `~/.config/i3/tvwcs`. Your own data (channels, favorites, settings, hotkeys) is kept apart from the program, in `~/.config/tvwcs/`.
+Each method below installs TVWCS into `~/.local/share/tvwcs`. Your own data (channels, favorites, settings, hotkeys) is kept apart from the program, in `~/.config/tvwcs/`.
 
 **From a release zip.** Extract the zip in a temporary folder and run its installer. You can delete the extracted folder afterwards.
 
@@ -53,15 +53,18 @@ git clone https://github.com/one-moment-please/tvwcs && cd tvwcs
 ./scripts/install.sh
 ```
 
-Next, add this line to `~/.config/i3/config` and reload i3 (`Mod+Shift+R`). `install.sh` prints the line for you if your config doesn't already have it.
+The installer then sets up i3 and/or sway (whichever is installed). It asks before changing anything, and backs a config up as `config.tvwcs-backup` before it edits it:
 
-```i3
-include ~/.config/i3/tvwcs/tvwcs.conf
-```
+- **You have a config:** it offers to add one line to it, and reloads the window manager if it is running:
+  ```i3
+  include ~/.local/share/tvwcs/tvwcs.conf
+  ```
+- **You have no config yet:** it offers to create one from the standard template (i3's own, as `i3-config-wizard` makes it, or sway's). It asks which key to use as `$mod` (Super or Alt) and whether to keep your current keyboard layout or use another (such as `de` or `us dvorak`).
+- **TVWCS was installed in `~/.config/i3/tvwcs` before (2.6 and older):** it moves it to `~/.local/share/tvwcs`, offers to change your config's include line to the new place, points your hotkeys there, and offers to delete the old copy once nothing uses it.
 
-`tvwcs.conf` starts TVWCS, loads your hotkeys and sets up its window rules. To install somewhere else, run `TVWCS_DEST=/some/path install.sh` and change the `exec` path in `tvwcs.conf` to match.
+Without a terminal to ask in, it changes no config and prints the line to add. `tvwcs.conf` starts TVWCS, loads your hotkeys and sets up its window rules. To install somewhere else, run `TVWCS_DEST=/some/path install.sh`; the installer points `tvwcs.conf` at that folder. `TVWCS_WMS=sway install.sh` sets up only sway (or only i3).
 
-**Upgrading:** use **Settings › Check for updates**, or run the installer again from a newer zip or a fresh `git pull`. The installer replaces the program files but never changes your data. If TVWCS is running, it asks whether to restart it on the new version. If you edited `tvwcs.conf` by hand, your copy is saved as `tvwcs.conf.bak`.
+**Upgrading:** use **Settings › Check for updates**, or run the installer again from a newer zip or a fresh `git pull`. The installer replaces the program files but never changes your data. An install still in `~/.config/i3/tvwcs` is moved by either, the in-app update after it asks you. If TVWCS is running, it asks whether to restart it on the new version. If you edited `tvwcs.conf` by hand, your copy is saved as `tvwcs.conf.bak`.
 
 ## Using it
 
@@ -92,7 +95,7 @@ From a terminal you can run `tvwcs toggle`, `tvwcs guide`, `tvwcs stop` and `tvw
 
 ## Troubleshooting
 
-- **The hotkey does nothing:** start TVWCS once with `~/.config/i3/tvwcs/bin/tvwcs`, then check `i3-msg -t get_config | grep -i tvwcs`. If you see nothing, check your i3 version (4.20 or newer) and that `~/.config/tvwcs/hotkeys.conf` exists. Running `install.sh` creates it.
+- **The hotkey does nothing:** start TVWCS once with `~/.local/share/tvwcs/bin/tvwcs`, then check `i3-msg -t get_config | grep -i tvwcs` (`swaymsg` on sway). If you see nothing, check your i3 version (4.20 or newer) and that `~/.config/tvwcs/hotkeys.conf` exists. Running `install.sh` creates it.
 - **Tapping Super does nothing:** TVWCS binds it as `bindcode --release <keycode>` using your keyboard's keycode for the left Super key (usually 133). Check the line in `~/.config/tvwcs/hotkeys.conf`, and `xev` shows the keycode your key really sends. Some desktop tools (such as xcape, or a launcher bound to Super) can grab the key first.
 - **"TVWCS is already running":** a stale `${XDG_RUNTIME_DIR:-/tmp}/tvwcs.pid` is left over. Stop that process or delete the file.
 - **Wrong monitor or the menu covers your bar:** install `xdotool`, or raise `settings.margin` in `~/.config/tvwcs/config.json`. Stop TVWCS before editing that file.

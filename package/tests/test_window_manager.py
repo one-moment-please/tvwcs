@@ -98,7 +98,22 @@ class WindowManagerTests(unittest.TestCase):
             tree[1]["nodes"][0]["fullscreen_mode"]=1   # 13 still is: nothing to do
             wm=FakeWM(workspaces=[{"name":"1: main","focused":True}]); self.assertEqual(wm.fullscreen_windows(),{13})
             wm.restore_fullscreen({13}); self.assertEqual(wm.sent,[])
-        finally: tree[0]["nodes"][0].pop("focused",None); tree[1]["nodes"][0].pop("fullscreen_mode",None)
+            tree[0]["nodes"][0]["fullscreen_mode"]=1   # 10, on the current workspace, and 13 elsewhere are both fullscreen
+            wm=FakeWM(workspaces=[{"name":"1: main","focused":True}]); wm.leave_fullscreen()
+            self.assertEqual(wm.sent,["[con_id=10] fullscreen disable"])   # only the one TVWCS opens over
+        finally: tree[0]["nodes"][0].pop("focused",None); tree[0]["nodes"][0].pop("fullscreen_mode",None); tree[1]["nodes"][0].pop("fullscreen_mode",None)
+    def test_sway_uses_swaymsg_and_lists_wayland_windows(self):
+        from unittest import mock
+        with mock.patch("tvwcs.window_manager.shutil.which",lambda name:f"/usr/bin/{name}"):
+            sway=I3WindowManager(env={"SWAYSOCK":"/run/sway.sock"}); i3=I3WindowManager(env={})
+        self.assertEqual((sway.binary,sway.xdotool),("/usr/bin/swaymsg",None))   # the pointer comes from sway's focus
+        self.assertEqual((i3.binary,i3.xdotool),("/usr/bin/i3-msg","/usr/bin/xdotool"))
+        tree=TREE["nodes"][0]["nodes"][1]["nodes"]
+        tree.append({"type":"con","id":40,"window":None,"app_id":"org.gnome.Nautilus","name":"Files","nodes":[],"floating_nodes":[]})
+        tree.append({"type":"con","id":41,"window":None,"app_id":None,"name":"split container","nodes":[],"floating_nodes":[]})
+        try: found={w["con_id"]:w for w in FakeWM().windows()}
+        finally: del tree[-2:]
+        self.assertEqual((found[40]["class"],found[40]["title"]),("org.gnome.Nautilus","Files")); self.assertNotIn(41,found)
     def test_workspace_name_is_quoted(self):
         wm=FakeWM(workspaces=[{"name":'we"ird',"output":"A","num":-1,"focused":True}],outputs=[{"name":"A"}]); wm.focus_output_under_mouse=lambda:"A"
         wm.focus_workspace('we"ird'); self.assertEqual(wm.sent[0],'workspace "we\\"ird"')
