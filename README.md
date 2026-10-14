@@ -95,13 +95,30 @@ Hotkeys come in three sets, one each for the keyboard, the remote and a gamepad,
 
 Any launch profile can also have a hotkey that launches it, set in its editor. **Settings › Application hotkeys** counts them and lists them to change or remove. A key does one thing: choosing one that is already in use warns you and asks before moving it.
 
-From a terminal you can run `~/.local/share/tvwcs/bin/tvwcs` with `toggle`, `guide`, `stop` or `launch <profile id>`.
+From a terminal you can run `~/.local/share/tvwcs/bin/tvwcs` with `toggle`, `guide`, `stop`, `launch <profile id>` or `control [page]`.
 
 **Quick Menu:** search, then your open applications grouped by workspace, then your favorites. A row's options can open an app the other way (tiled here, or in its own workspace), run its `.desktop` actions, move a workspace to another monitor, expand a workspace into its apps, or close it.
 
 **Applications:** the pane always opens on the applications guide. Categories fold with Enter. **Channel Guide** at the top lists every profile with a channel number. ☆ adds an app to your favorites, and ✎ (edit) manages its launch profiles. A profile can have a channel number, a launch mode (tiled or in its own workspace), a custom command or `.desktop` action, a description, a hotkey, and an optional PIN. Clicking the TVWCS window while an editor is open closes the editor without saving. The PIN is a convenience lock for a shared TV, not real security. The button at the top right switches between the guide and **Settings**.
 
 **Settings** (two columns, with the system actions in a grid below): interface size (Desktop, TV Mode, and 4K TV Mode when a 4K display is connected), closing when you click outside, always opening apps in a new workspace, how running apps open, hiding the options buttons, button hints, keyboard / remote / gamepad hotkeys, an app to open at login, opening the Quick Menu at login, **Check for updates**, and system actions (Lock, Sleep, Log out, Reboot, Shut down). Log out, Reboot and Shut down ask you to confirm first.
+
+## Control Panel
+
+The Control Panel is a separate application in the same Metro style, sized by TVWCS's **Interface size**. `install.sh` adds it to your applications, so it is in the guide under **System**, where it can have a channel number or be a favorite like any other app; its `.desktop` actions open a single page (a "Wi-Fi" channel, for instance, is a profile using the *Network* action). From a terminal: `tvwcs control`, or `tvwcs control sound|bluetooth|updates|system|terminal|network`.
+
+Its pages are tabs down the left: **↑ ↓** on the tabs changes page, **→** goes into the page, **←** from a page's left edge or **Esc** / **Back** comes back to the tabs, and **Esc** on the tabs closes it. Text (a Wi-Fi password, an IP address) is typed on a keyboard or picked on the on-screen keyboard with the D-pad.
+
+| Page | What it does | It uses |
+|---|---|---|
+| **Sound** | Volume and mute for the output and the input; choose the output (speakers, HDMI, headphones…) and the microphone, and a device's connector. Sound already playing moves to the new output. | `pactl` (PipeWire or PulseAudio) |
+| **Bluetooth** | Switch Bluetooth on or off, search, pair (devices that need no code: headphones, speakers, game controllers, remotes), connect, disconnect and forget. Shows battery levels. | `bluetoothctl` (BlueZ) |
+| **Software updates** | Lists waiting updates from the system's package manager and Flatpak, installs them all (asking for your sudo password, like the power actions) with their output on screen, and offers a restart when one is needed. | apt, dnf, pacman (`checkupdates` when installed), zypper, xbps or apk; `flatpak` |
+| **System information** | This computer, its processor, memory, graphics, displays, disks, battery, and the TVWCS, Python and GTK versions. | `/proc`, `/sys`, `lspci` |
+| **Terminal** | A full terminal running your shell. Every key goes to it; **Back** (or **Shift+Esc**) leaves it. Without VTE, a console that runs one command at a time. | VTE for GTK 4 |
+| **Network** | Ethernet and Wi-Fi: status and addresses, connect and disconnect, Wi-Fi on or off, join a network (with its password), forget one, and IP settings (automatic or manual address, gateway and DNS). | `nmcli` (NetworkManager); read-only from `ip` without it |
+
+A page whose tool is missing says what to install; `install.sh` lists them too (`pulseaudio-utils`, `bluez`, `network-manager` and `gir1.2-vte-3.91` on Debian and Ubuntu).
 
 ## Troubleshooting
 
@@ -117,6 +134,7 @@ From a terminal you can run `~/.local/share/tvwcs/bin/tvwcs` with `toggle`, `gui
 ```
 package/tvwcs/   application modules        package/tests/   unit tests (no display needed)
 package/bin/     the tvwcs launcher         data/tvwcs.conf  the i3 config fragment
+                                            data/com.tvwcs.ControlPanel.desktop  the Control Panel's launcher
 scripts/         install, tests, release    docs/RELEASES.md the beta → publish workflow
 ```
 

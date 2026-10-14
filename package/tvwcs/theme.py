@@ -55,9 +55,10 @@ checkbutton check:checked { background: @ACCENT@; border-color: @ACCENT@; -gtk-i
 dropdown > button, dropdown button { border-radius: 0; }
 """
 
-def render_css(accent, scale=1.0):
-    """The theme with the accent colour filled in and every pixel measure multiplied by `scale`."""
-    css=CSS.replace("@ACCENT@",accent)
+def render_css(accent, scale=1.0, extra=""):
+    """The theme (plus `extra` rules, such as the Control Panel's) with the accent colour filled in and every pixel
+    measure multiplied by `scale`."""
+    css=(CSS+extra).replace("@ACCENT@",accent)
     if scale!=1.0:
         css=re.sub(r"(?<![\w.#-])(\d+)px",lambda m:f"{0 if m.group(1)=='0' else max(1,round(int(m.group(1))*scale))}px",css)
     tiles="\n".join(f".tile-{i} {{ background: {c}; }}" for i,c in enumerate(METRO_COLORS))

@@ -17,10 +17,10 @@ RUN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)  # folder holding this scri
 # Work out the source layout: repository (script lives in scripts/) vs. release/installed (script at the root).
 if [ -d "$RUN_DIR/../package/tvwcs" ]; then
     SRC=$(CDPATH= cd -- "$RUN_DIR/.." && pwd)          # repository root
-    PKG=$SRC/package/tvwcs; BIN=$SRC/package/bin/tvwcs; CONF=$SRC/data/tvwcs.conf; DOCS=$SRC
+    PKG=$SRC/package/tvwcs; BIN=$SRC/package/bin/tvwcs; CONF=$SRC/data/tvwcs.conf; DOCS=$SRC; LAUNCHER=$SRC/data/com.tvwcs.ControlPanel.desktop
 elif [ -d "$RUN_DIR/tvwcs" ]; then
     SRC=$RUN_DIR                                        # release zip or already-installed folder
-    PKG=$SRC/tvwcs; BIN=$SRC/bin/tvwcs; CONF=$SRC/tvwcs.conf; DOCS=$SRC
+    PKG=$SRC/tvwcs; BIN=$SRC/bin/tvwcs; CONF=$SRC/tvwcs.conf; DOCS=$SRC; LAUNCHER=$SRC/com.tvwcs.ControlPanel.desktop
 else
     echo "install.sh: cannot find the TVWCS files next to this script (expected package/tvwcs/ or tvwcs/)." >&2
     exit 1
@@ -74,6 +74,19 @@ install_files() {
     cp "$NEWCONF" "$DEST/tvwcs.conf"; cp "$SRC/VERSION" "$DEST/"
     for MD in README.md CHANGELOG.md PROJECT_OVERVIEW.md LICENSE; do [ -f "$DOCS/$MD" ] && cp "$DOCS/$MD" "$DEST/"; done
     chmod +x "$DEST/bin/tvwcs"
+    [ -f "$LAUNCHER" ] && cp "$LAUNCHER" "$DEST/"
+}
+
+# The Control Panel's launcher, so it is listed with the other applications (in the guide's System category). Its
+# Exec lines (the panel, and an action for each of its pages) run this install's tvwcs by full path, quoted; a path
+# the .desktop format would need escaped is skipped.
+install_launcher() {
+    [ -f "$LAUNCHER" ] || return 0
+    case "$DEST" in *'$'*|*'`'*|*'\'*) echo "Skipped the Control Panel's menu entry: $DEST has a character a .desktop file cannot hold. Run: '$DEST/bin/tvwcs' control" >&2; return 0 ;; esac
+    APPS=${XDG_DATA_HOME:-$HOME/.local/share}/applications
+    mkdir -p "$APPS"
+    P="$DEST/bin/tvwcs" awk '/^Exec=tvwcs / { sub(/^Exec=tvwcs/, "Exec=\"" ENVIRON["P"] "\""); } { print }' "$LAUNCHER" > "$APPS/com.tvwcs.ControlPanel.desktop"
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$APPS" 2>/dev/null || true
 }
 
 if [ "$SRC" = "$DEST" ]; then
@@ -81,6 +94,7 @@ if [ "$SRC" = "$DEST" ]; then
 else
     install_files
 fi
+install_launcher
 VERSION=$(cat "$SRC/VERSION" 2>/dev/null || echo "?")
 echo "TVWCS $VERSION installed in $DEST"
 
@@ -137,7 +151,16 @@ pkg() {
         alpine:gtk) echo "py3-gobject3 gtk4.0" ;;            alpine:i3) echo i3wm ;;
         gentoo:gtk) echo "dev-python/pygobject gui-libs/gtk" ;;
         gentoo:i3) echo x11-wm/i3 ;;                         gentoo:xdotool) echo x11-misc/xdotool ;;
-        *:gtk) echo "PyGObject GTK4" ;;                      *) echo "$1" ;;
+        *:gtk) echo "PyGObject GTK4" ;;
+        # the Control Panel's tools (optional): pactl, bluetoothctl, nmcli, and VTE for its terminal
+        debian:pactl|fedora:pactl|suse:pactl|void:pactl|alpine:pactl) echo pulseaudio-utils ;;
+        arch:pactl) echo libpulse ;;                         gentoo:pactl) echo media-libs/libpulse ;;
+        arch:bluetoothctl) echo bluez-utils ;;               gentoo:bluetoothctl) echo net-wireless/bluez ;;  *:bluetoothctl) echo bluez ;;
+        debian:nmcli) echo network-manager ;;                arch:nmcli) echo networkmanager ;;
+        alpine:nmcli) echo networkmanager-cli ;;             gentoo:nmcli) echo net-misc/networkmanager ;;   *:nmcli) echo NetworkManager ;;
+        debian:vte) echo gir1.2-vte-3.91 ;;                  arch:vte) echo vte4 ;;                          fedora:vte) echo vte291-gtk4 ;;
+        *:vte) echo "VTE-for-GTK-4" ;;
+        *) echo "$1" ;;
     esac
 }
 install_hint() {
@@ -152,6 +175,10 @@ python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || missing="
 command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || missing="$missing $(pkg i3)"
 command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || missing="$missing $(pkg xdotool)"
 [ -z "$missing" ] || echo "Missing packages:  $(install_hint "${missing# }")"
+optional=""
+for TOOL in pactl bluetoothctl nmcli; do command -v "$TOOL" >/dev/null 2>&1 || optional="$optional $(pkg "$TOOL")"; done
+python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || optional="$optional $(pkg vte)"
+[ -z "$optional" ] || echo "Optional, for the Control Panel's sound, Bluetooth, network and terminal pages:  $(install_hint "${optional# }")"
 
 # ------------------------------------------------------------------ window manager configs
 # The include line, written with ~ when the install is in your home folder (i3 and sway both expand it).

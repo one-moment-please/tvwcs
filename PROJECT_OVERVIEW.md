@@ -109,6 +109,12 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 - **Check for updates:** asks GitHub for the latest published release; if it is newer, offers to download it, install it over the current copy (keeping the user's data), remove the download and restart TVWCS.
 - **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. When a power action needs root (no systemd or elogind, or polkit refuses), TVWCS uses a no-password doas or sudo rule if there is one (install.sh offers a narrow one), else asks for the sudo password in a remote-friendly dialog (keyboard, or keypad for a numeric password) and passes it to `sudo -S`, never storing it. Sleep, Reboot and Shut down use systemd, else elogind's `loginctl`, else the plain `zzz` / `reboot` / `poweroff` commands. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.
 
+## The Control Panel
+
+A separate application in the same style, for the settings a couch needs without a desktop environment: **Sound** (outputs, inputs, volume), **Bluetooth**, **Software updates**, **System information**, a **Terminal** and **Network** (Ethernet and Wi-Fi). Its pages are vertical tabs at the left with the chosen page beside them; moving along the tabs shows each page at once, → enters it and ← or Back leaves it. Like TVWCS, every control is a button reachable with the D-pad, dialogs are drawn inside the window, and text can be entered on an on-screen keyboard. It is launched like any other app (from the guide, a channel, a favorite or a hotkey), and each page is a `.desktop` action of its own.
+
+It drives the standard command-line tools rather than linking to services: `pactl` (PipeWire and PulseAudio), `bluetoothctl` (BlueZ), `nmcli` (NetworkManager, with a read-only fallback to `ip`), the distribution's package manager and Flatpak, and VTE for the terminal. A page whose tool is missing says what to install. Updates that need root use the same route as the power actions: a no-password doas or sudo rule, else the sudo password asked for in the window.
+
 ## What TVWCS is, and is not
 
 **It is:**
@@ -130,7 +136,7 @@ Application identity is imperfect across Linux apps. Matching uses the window cl
 
 The target is any Linux distribution with i3 or sway, tested on Debian/Ubuntu/Mint, Arch, Fedora, Void and Alpine, with or without systemd. GTK 4 supplies the interface and the Metro theme (one CSS block). The application catalogue comes from XDG desktop entries. i3's IPC, exposed by `i3-msg` (and spoken by sway through `swaymsg`), enumerates windows and workspaces, reports each monitor's usable rectangle, switches and moves workspaces, and positions the TVWCS panel. TVWCS does not read raw evdev devices; a remote that behaves like a keyboard works through the normal Linux input path.
 
-The code is divided into small modules so the logic can be tested without a display: `model` (profiles, settings, layout maths, badges, search), `applications` (discovery, window-to-app matching), `workspaces` (workspace entries and names), `hotkeys` (hotkey specs and the i3 config they produce), `pinlock` (PIN hashing and try limits), `ownership` (which profile launched which window), `window_manager` (the i3 / sway adapter) and `system_actions`; and, for the GTK interface, `widgets`, `theme`, `ui_window`, `ui_settings`, `ui_editors` and `main`.
+The code is divided into small modules so the logic can be tested without a display: `model` (profiles, settings, layout maths, badges, search), `applications` (discovery, window-to-app matching), `workspaces` (workspace entries and names), `hotkeys` (hotkey specs and the i3 config they produce), `pinlock` (PIN hashing and try limits), `ownership` (which profile launched which window), `window_manager` (the i3 / sway adapter) and `system_actions`; and, for the GTK interface, `widgets`, `theme`, `ui_window`, `ui_settings`, `ui_editors` and `main`. The Control Panel reads and changes the system in `control_cmd`, `control_sound`, `control_bluetooth`, `control_network`, `control_updates` and `control_sysinfo` (no GTK), and draws it in `ui_control` (window, navigation, dialogs, on-screen keyboard) and `ui_control_pages`.
 
 ### Where things live
 
