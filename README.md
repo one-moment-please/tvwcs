@@ -2,6 +2,8 @@
 
 TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and window switcher for ordinary Linux desktop applications on i3 or sway. It is not a media center and needs no app-specific plugins. See `PROJECT_OVERVIEW.md` for the goals behind it.
 
+**New in 2.10:** a Settings app (TVWCS's options, sound with HDMI, displays, power and sleep timers, Bluetooth, updates, system information with SSH, a terminal and the network), opened from the Quick Menu's ⚙, and a ⏻ power menu; an installer that installs i3 or sway, PipeWire and every missing package, and can log in and start i3 at boot; a guide to setting up a TV computer with Debian.
+
 **New in 2.7:** sway support; installs into `~/.local/share/tvwcs` and sets up your i3 / sway config for you (or creates one); a hotkey for any application; a remote key for fullscreen, and fullscreen apps stay fullscreen; Arch, Fedora and systems without systemd; an on-screen password prompt when Reboot or Shut down needs one. See `CHANGELOG.md` for everything.
 
 <table>

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.10.0 — 2026-10-14
 
 **Settings app**
 - New application, `tvwcs settings` (opened by the Quick Menu's ⚙ and listed under System in the applications guide; `tvwcs control` still works): Options, Sound, Displays, Bluetooth, Software updates, System information, Terminal and Network as vertical tabs on the left, in the TVWCS Metro style and at its interface size, and usable with a D-pad alone.
