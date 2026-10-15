@@ -793,9 +793,15 @@ class AppsPage(_Console, Page):
         if s.problem: self.note(s.problem,"error")
         if self.outcome: self.note(self.outcome,"state-on")
         if s.catalog is None:   # nothing to browse yet: setting Flathub up comes first; installed apps can still be removed
-            self.row("Set up Flathub","",self.setup,detail="Adds Flathub for you (no password needed) and downloads its list of apps.",
-                     icon="folder-download-symbolic",fallback="⇩",ident="setup")
-            self.note("Flathub is where most Linux apps are published, from Kodi and VLC to Steam and web browsers.")
+            if "system" in s.remote:
+                self.row("Download Flathub's list of apps","",self.setup,detail="Flathub is set up on this computer, but its list of apps has not been downloaded.",
+                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
+                self.note("This also adds Flathub for you, so apps install for you without a password. Flathub is where most Linux apps are "
+                          "published, from Kodi and VLC to Steam and web browsers.")
+            else:
+                self.row("Set up Flathub","",self.setup,detail="Adds Flathub for you (no password needed) and downloads its list of apps.",
+                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
+                self.note("Flathub is where most Linux apps are published, from Kodi and VLC to Steam and web browsers.")
             if s.installed: self.draw_apps(s,"installed")
         else: self.draw_apps(s,self.view)
         if s.catalog is not None and self.view!="installed":
@@ -851,8 +857,9 @@ class AppsPage(_Console, Page):
 
     def app_icon(self, a, size):
         paths=[a.icon] if a.icon else []
-        for base in (flatpak.user_dir(),flatpak.SYSTEM_DIR):   # an installed app's own icon
-            paths+=[str(base/f"exports/share/icons/hicolor/{d}/apps/{a.id}.png") for d in ("128x128","64x64")]
+        for base in (flatpak.user_dir(),flatpak.SYSTEM_DIR):   # an installed app's own icon, in whichever size it brought
+            paths+=[str(base/f"exports/share/icons/hicolor/{d}/apps/{a.id}.{ext}") for d,ext in
+                    (("128x128","png"),("256x256","png"),("scalable","svg"),("512x512","png"),("96x96","png"),("64x64","png"),("48x48","png"))]
         path=next((p for p in paths if os.path.isfile(p)),None)
         if path is None: return glyph("application-x-executable-symbolic","▦",size)
         img=Gtk.Image.new_from_file(path); img.set_pixel_size(S(size)); return img
@@ -863,7 +870,7 @@ class AppsPage(_Console, Page):
         icon=self.app_icon(a,64); icon.set_margin_bottom(S(4)); box.append(icon)
         name=Gtk.Label(label=a.name); name.add_css_class("app-name"); name.set_ellipsize(Pango.EllipsizeMode.END); name.set_max_width_chars(1); name.set_hexpand(True)
         box.append(name)
-        summary=Gtk.Label(label=a.summary or a.id); summary.add_css_class("row-detail"); summary.set_wrap(True); summary.set_lines(2)
+        summary=Gtk.Label(label=a.summary or (f"Version {a.version}" if a.version else a.id)); summary.add_css_class("row-detail"); summary.set_wrap(True); summary.set_wrap_mode(Pango.WrapMode.WORD_CHAR); summary.set_lines(2)
         summary.set_ellipsize(Pango.EllipsizeMode.END); summary.set_max_width_chars(1); summary.set_justify(Gtk.Justification.CENTER); box.append(summary)
         if installed: badge=Gtk.Label(label="Installed"); badge.add_css_class("state-on"); box.append(badge)
         b.set_child(box); b.set_tooltip_text(a.name); b.connect("clicked",lambda *_:self.details(a)); return b

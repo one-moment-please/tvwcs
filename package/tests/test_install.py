@@ -71,8 +71,9 @@ class InstallTests(unittest.TestCase):
         self.assertIn(f'include "{dest}/tvwcs.conf"' if " " in str(dest) else f"include {dest}/tvwcs.conf",self.i3.read_text())
         self.assertIn(f"exec --no-startup-id '{dest}/bin/tvwcs'",(dest/"tvwcs.conf").read_text())
 
-    def converse(self,answers,**env):
-        """Run install.sh on a terminal, answering each prompt in turn."""
+    def converse(self,answers,prompts=None,**env):
+        """Run install.sh on a terminal, answering each prompt in turn; a prompt containing a key of `prompts` gets
+        that answer instead, wherever it comes (the prompts before it depend on the computer)."""
         pid,fd=pty.fork()
         if pid==0:
             os.chdir(self.tmp.name); os.execvpe("sh",["sh",str(SCRIPT)],{**self.env,**env})
@@ -85,16 +86,20 @@ class InstallTests(unittest.TestCase):
                 if not chunk: break
                 out+=chunk
                 if out.rstrip().endswith((b"]",b"]:",b"):")):   # a prompt: the next answer (or "n" when none is left)
-                    os.write(fd,((pending.pop(0) if pending else "n")+"\n").encode()); out+=b"\n"
+                    last=out.rstrip().rsplit(b"\n",1)[-1].decode(errors="replace")
+                    fixed=next((a for k,a in (prompts or {}).items() if k in last),None)
+                    answer=fixed if fixed is not None else (pending.pop(0) if pending else "n")
+                    os.write(fd,(answer+"\n").encode()); out+=b"\n"
         os.waitpid(pid,0); return out.decode(errors="replace")
     def test_asks_once_whether_it_is_used_on_a_tv_or_a_desktop(self):
         config=self.home/".config"/"tvwcs"/"config.json"
-        out=self.converse(["n","2"])   # no i3 config / a desktop monitor
+        use=lambda answer:{"1 (TV) or 2 (desktop)":answer}   # every other prompt: no
+        out=self.converse([],use("2"))   # a desktop monitor
         self.assertIn("Will TVWCS be used on a TV or on a desktop monitor?",out)
         s=json.loads(config.read_text())["settings"]
         self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("desktop","desktop",False,False))
-        out=self.converse(["n"]); self.assertNotIn("Will TVWCS be used",out)   # answered: not asked again
-        config.unlink(); self.converse(["n",""])   # Enter: a TV
+        out=self.converse([]); self.assertNotIn("Will TVWCS be used",out)   # answered: not asked again
+        config.unlink(); self.converse([],use(""))   # Enter: a TV
         s=json.loads(config.read_text())["settings"]
         self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("tv","tenfoot",True,True))
         config.unlink(); out=self.run_install(); self.assertNotIn("Will TVWCS be used",out); self.assertFalse(config.exists())   # no terminal
@@ -256,7 +261,8 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn("Settings: sound",out); self.assertNotIn("xdotool",out)   # installed here, so not listed
         self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91\n",(bin_/"apt").read_text())
         (bin_/"unclutter").unlink()
-        self.assertRegex(self.converse(["n","n","n"],**env),r"unclutter-xfixes +hides the mouse pointer after 3 seconds")
+        if not shutil.which("unclutter",path=self.env["PATH"]):   # a computer with unclutter installed has it anyway
+            self.assertRegex(self.converse(["n","n","n"],**env),r"unclutter-xfixes +hides the mouse pointer after 3 seconds")
         (bin_/"unclutter").write_text("#!/bin/sh\n"); (bin_/"unclutter").chmod(0o755)
         out=self.converse(["n","n","n"],**env)
         self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91",out)
