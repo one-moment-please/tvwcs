@@ -99,7 +99,7 @@ class StatusWatcher:
     UPDATES_EVERY=3*3600   # seconds between update checks (the package lists, Flathub)
     def __init__(self, app):
         self.app=app; self.source=0; self.reading=False; self.last_read=0.0; self.last_bar=0.0; self.updates=0
-        self.updates_due=time.monotonic()+90; self.checking_updates=False; self.bar_hidden=False; self.kept_open=False
+        self.updates_due=time.monotonic()+90; self.checking_updates=False; self.bar_hidden=False; self.kept_open=False; self.had_windows=False
     def start(self):
         if not self.source: self.source=GLib.timeout_add_seconds(self.TICK,self._tick)
         self.apply_bar(); self.read_now()
@@ -117,6 +117,9 @@ class StatusWatcher:
             # "No application open" means nothing on screen: an app left on a workspace out of sight (Settings closed
             # over it, say) still leaves an empty screen to come back to
             has_windows=app.wm.screen_has_windows()
+            if visible and self.had_windows and not has_windows and not w._modal_groups:
+                w.focus_pane_soon("search")   # the last app on screen closed (from the ⋯ menu, say): back to the search field
+            self.had_windows=has_windows
             if not visible:
                 self.kept_open=False
                 if has_windows: app.grace_until=0.0   # an app is open: whatever was launched has arrived
@@ -270,7 +273,9 @@ class TVWCSApp(Gtk.Application):
         if launched: self.grace_until=time.monotonic()+tv_mode.LAUNCH_GRACE
         elif self.window.is_visible() and self.tv_option("tv_keep_menu_open") and time.monotonic()>=self.grace_until and not self.wm.screen_has_windows():
             # TV mode with nothing open: there is nothing to go back to, so the Quick Menu stays (the Guide still closes)
-            if self.window.guide_open: self.show_panels(False,False,focus="quick")
+            # The menu key or Back then goes back to the search field, ready for a channel number
+            if self.window.guide_open: self.show_panels(False,False,focus="search")
+            else: self.window.focus_pane_soon("search")
             return
         shown=self.window.is_visible(); self.window.set_visible(False); self.window.note_shown()
         if shown and self._fullscreen:

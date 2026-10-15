@@ -10,6 +10,7 @@
 - A slow app shows "Starting…" instead of a blank screen, and the Quick Menu can still be opened meanwhile. An app that is already running and only asks for attention when started again is brought to the front.
 - With "Keep the Quick Menu open" on, the Quick Menu now comes back when Settings (or the last app on screen) closes, even when apps are open on other workspaces.
 - A hidden mouse pointer no longer highlights what it was resting on.
+- Search results no longer repeat an app's name when its profile has the same name.
 - Password dialogs can show a number pad, with a key to switch to the full keyboard and back.
 
 **Settings**
@@ -25,7 +26,7 @@
 - Apps no longer take up to half a minute to start when TVWCS is started from `startx`: the session's display is now passed to systemd and D-Bus, so the desktop portal that Flatpak apps wait for can start. Run the installer again (or log in again after updating) to get it.
 - Updating TVWCS from Settings now checks first whether the new version needs packages that are not installed, lists them with what each is for, and installs them (asking for your password) before updating. This works from 3.1.0 on: the update to 3.1.0 itself still only lists them on the pages that need them.
 - `install.sh --help` explains the installer's options, and `install.sh --missing` lists what is missing without installing anything. An unknown option no longer runs a full install.
-- The installer offers udisks2, gvfs-backends, xdg-desktop-portal-gtk, python3-gi-cairo and x11-xserver-utils for the new features.
+- The installer offers udisks2, gvfs-backends, libglib2.0-bin, xdg-desktop-portal-gtk, python3-gi-cairo and x11-xserver-utils for the new features.
 - The README lists what does not work on systems that are not Debian-based.
 
 ## 3.0.3 — 2026-10-15

@@ -288,6 +288,15 @@ class BadgeTests(unittest.TestCase):
         r=search_items("inbox",[],{},[{"con_id":5,"title":"(2) Inbox","class":"mail","instance":"mail"}])[0]
         self.assertEqual((r["label"],r["badge"]),("Inbox","2"))
 
+class SearchDetailTests(unittest.TestCase):
+    def test_a_profile_named_like_its_app_does_not_repeat_the_name(self):
+        app=Application("s.desktop","TVWCS Settings","Settings",None,None,("Settings",),"/x","s")
+        apps={"s.desktop":app}
+        same=LaunchProfile("p","s.desktop","TVWCS Settings",channel=0); other=LaunchProfile("q","s.desktop","Network",channel=5)
+        for q in ("0","000"): self.assertEqual(search_items(q,[same],apps,[])[0]["detail"],"Settings")
+        self.assertEqual(search_items("5",[other],apps,[])[0]["detail"],"TVWCS Settings")
+        self.assertEqual(search_items("tvwcs",[other],apps,[])[0]["id"],"q")   # still found by its app's name
+
 class ChannelZeroTests(unittest.TestCase):
     def test_channel_000_is_allowed_and_1000_is_not(self):
         with tempfile.TemporaryDirectory() as d:

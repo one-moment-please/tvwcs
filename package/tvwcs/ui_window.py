@@ -288,8 +288,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _profile_items(self,p,app):
         """A favorite's (or search result's) menu: where it opens (kept), its shortcuts, and Close when it is open."""
         new=p.launch_mode==LAUNCH_NEW_WORKSPACE
-        items=[("view-dual-symbolic","◫","Opens full screen: change to tiled beside other apps",lambda:self._toggle_mode(p.id),False) if new else
-               ("view-fullscreen-symbolic","▣","Opens tiled: change to full screen in its own workspace",lambda:self._toggle_mode(p.id),False)]
+        items=[("view-dual-symbolic","◫","Open it tiled from now on",lambda:self._toggle_mode(p.id),False) if new else
+               ("view-fullscreen-symbolic","▣","Open it full screen from now on",lambda:self._toggle_mode(p.id),False)]
         items+=self._action_items(app)
         if not p.command.strip() and not p.desktop_action:
             w=self.app.wm.find_matching(p,app)
@@ -315,7 +315,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         pop.popup(); return pop
     def _close_open_window(self,con_id):
         if not self.app.wm.close_window(con_id): self.app.notify_message("Could not close that application window.")
-        GLib.timeout_add(250,lambda:(self.app.refresh_data(rebuild=True),GLib.SOURCE_REMOVE)[1])
+        # its row is gone once the list is rebuilt: the selection goes back to the search field, not to the header
+        GLib.timeout_add(250,lambda:(self.app.refresh_data(rebuild=True),self.focus_pane_soon("search"),GLib.SOURCE_REMOVE)[2])
 
     # ---------------------------------------------------------- Applications pane
     def _build_guide_pane(self):
@@ -714,7 +715,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def dialog_button(self,icon,fallback,text):
         b=Gtk.Button(); b.add_css_class("dialog-button"); row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14))
         g=glyph(icon,fallback,24) if icon else Gtk.Label(); g.set_size_request(S(28),-1); row.append(g)
-        l=Gtk.Label(label=text); l.set_xalign(0); l.set_hexpand(True); row.append(l); b.set_child(row); return b
+        l=Gtk.Label(label=text); l.set_xalign(0); l.set_hexpand(True); l.set_wrap(True); l.set_max_width_chars(34)   # long labels wrap inside the Quick Menu
+        row.append(l); b.set_child(row); return b
 
     def show_message(self,message,title="Something went wrong",done=None):
         """A message with an OK button, drawn in the window (no separate dialog window to lose behind TVWCS)."""
@@ -839,6 +841,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             for d in row:
                 b=key(d,self._chan_back) if d=="⌫" else key("OK",submit,"active") if d=="OK" else key(d,lambda d=d:self._chan_press(d))
                 line.append(b); made.append(b)
+                if d=="OK": self._chan["ok"]=b
             self.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
         bottom=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bottom.set_homogeneous(True); bottom.set_margin_top(S(6))
         clear=Gtk.Button(label="No channel"); clear.connect("clicked",lambda *_:none()); bottom.append(clear)
@@ -852,6 +855,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             (c.add_css_class if i==len(digits) else c.remove_css_class)("current")
     def _chan_press(self,digit):
         if len(self._chan["digits"])<3: self._chan["digits"]+=digit; self._chan_refresh()
+        if len(self._chan["digits"])==3 and self._chan.get("ok") is not None: self._chan["ok"].grab_focus()   # complete: OK is next
     def _chan_back(self):
         self._chan["digits"]=self._chan["digits"][:-1]; self._chan_refresh()
     def _chan_key(self,keyval):

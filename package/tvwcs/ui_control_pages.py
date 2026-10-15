@@ -1477,8 +1477,9 @@ class StoragePage(Page):
         if not s.udisks: self.note("Install udisks2 to open and close drives here.","error")
         self.note("Close a drive before unplugging it. A drive's files are in the folder shown under it once it is open.")
         self.section("NETWORK SHARES")
-        if not s.gio or not s.smb:
-            self.note("Connecting to network shares needs GVfs's network support: install gvfs-backends"+("" if s.gio else " and libglib2.0-bin")+".","error")
+        missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
+        if missing: self.note("Connecting to network shares needs "+" and ".join(missing)+". Install it with sudo apt install "
+                              +" ".join(m.split()[0] for m in missing)+".","error")
         for sh in s.shares: self.share_row(sh,s)
         if not s.shares: self.note("No network shares yet.")
         self.row("Add a network share","",self.add_share if s.gio else None,icon="list-add-symbolic",fallback="+",ident="share:add",

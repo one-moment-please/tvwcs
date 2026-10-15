@@ -305,7 +305,7 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn("icons for apps",self.run_install(**env))
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","xdotool","pipewire","unclutter","xprintidle"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","unclutter","xprintidle"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
         for helper in ("gvfsd-smb","xdg-desktop-portal-gtk"): (bin_/helper).write_text("")
         env["TVWCS_LIBEXEC"]=str(bin_)
         (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE

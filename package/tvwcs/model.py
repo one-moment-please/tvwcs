@@ -404,18 +404,21 @@ def search_items(query, profiles, applications, windows):
     def window_result(w):
         title,badge=extract_badge(w.get("title",""),w.get("urgent",False))
         return {"kind":"window","id":str(w.get('con_id')),"label":title or w.get("class") or "Untitled window","detail":"Open window","window":w,"badge":badge}
+    def detail_of(p, a):   # the application's name when the profile has another, else what the application is
+        if not a: return p.desktop_id
+        return a.name if a.name!=p.name else (a.generic_name or a.comment or "")
     if q.isdigit():
         number=int(q)
         for p in profiles:
             if p.channel==number:
                 a=applications.get(p.desktop_id)
-                results.append({"kind":"profile","id":p.id,"label":f"{p.channel:03d}  {p.name}","detail":a.name if a else p.desktop_id,"profile":p})
+                results.append({"kind":"profile","id":p.id,"label":f"{p.channel:03d}  {p.name}","detail":detail_of(p,a),"profile":p})
     else:
         for p in profiles:
             a=applications.get(p.desktop_id)
             label=p.name
-            detail=(a.name if a else p.desktop_id)
-            hay=" ".join([label,detail,p.desktop_id,p.command]).casefold()
+            detail=detail_of(p,a)
+            hay=" ".join([label,a.name if a else "",detail,p.desktop_id,p.command]).casefold()
             if not q or q in hay:
                 results.append({"kind":"profile","id":p.id,"label":(f"{p.channel:03d}  " if p.channel is not None else "")+label,"detail":detail,"profile":p})
         for w in windows:

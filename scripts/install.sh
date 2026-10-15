@@ -375,6 +375,7 @@ if command -v i3 >/dev/null 2>&1 && ! command -v xsetroot >/dev/null 2>&1; then 
 command -v udisksctl >/dev/null 2>&1 || need udisks2 "Settings: storage (opening and closing drives)"
 # Helper programs that are not on PATH (TVWCS_LIBEXEC lets the tests point elsewhere).
 libexec_has() { for d in ${TVWCS_LIBEXEC:-/usr/libexec /usr/lib/gvfs /usr/lib}; do [ -e "$d/$1" ] && return 0; done; return 1; }
+command -v gio >/dev/null 2>&1 && command -v gsettings >/dev/null 2>&1 || need libglib2.0-bin "Settings: network shares (gio), and light or dark mode for GTK apps (gsettings)"
 libexec_has gvfsd-smb || need gvfs-backends "Settings: storage (network shares)"
 libexec_has xdg-desktop-portal-gtk || need "xdg-desktop-portal xdg-desktop-portal-gtk" "light or dark mode for Flatpak apps and browsers"
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth"
