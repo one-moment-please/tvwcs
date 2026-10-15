@@ -14,7 +14,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
-from tvwcs.model import CONFIG_HOME, apply_use, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
+from tvwcs.model import CONFIG_HOME, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import power, privilege, quick_status, tv_mode
@@ -22,7 +22,7 @@ from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfiles, ProfileEditor
 from tvwcs.ui_window import TVWCSWindow
-from tvwcs.widgets import app_icon, has_icon, set_scale
+from tvwcs.widgets import app_icon, has_icon, screen_height, set_scale
 from tvwcs.window_manager import I3WindowManager
 from tvwcs.workspaces import build_entries
 
@@ -183,7 +183,7 @@ class TVWCSApp(Gtk.Application):
         self.grace_until=time.monotonic()+(10 if self.store.settings["startup"]["mode"] in ("app","last") else 0)
 
     @property
-    def scale_factor(self): return SCALE_PRESETS[self.store.settings["scale"]]
+    def scale_factor(self): return effective_scale(self.store.settings["scale"],screen_height())
     def tv_option(self,key):
         """One of TV mode's options (tv_hide_bar, tv_keep_menu_open): on only while TVWCS is used on a TV, under i3 or sway."""
         s=self.store.settings

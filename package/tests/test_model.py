@@ -216,6 +216,15 @@ class ScaleTests(unittest.TestCase):
         self.assertEqual([k for k,_ in scale_choices("tenfoot_4k",False)],["desktop","tenfoot","tenfoot_4k"])
         self.assertTrue(is_4k(3840,2160)); self.assertTrue(is_4k(2160,3840)); self.assertFalse(is_4k(1920,1080)); self.assertFalse(is_4k(5120,1440))
 
+class ScaleTests(unittest.TestCase):
+    def test_tv_sizes_shrink_on_a_smaller_screen(self):
+        from tvwcs.model import effective_scale
+        self.assertEqual(effective_scale("tenfoot",1080),1.6); self.assertEqual(effective_scale("tenfoot",0),1.6)
+        self.assertAlmostEqual(effective_scale("tenfoot",720),1.067,places=3)
+        self.assertEqual(effective_scale("tenfoot",480),1.0)                      # never smaller than Desktop
+        self.assertEqual(effective_scale("tenfoot_4k",2160),3.0); self.assertEqual(effective_scale("tenfoot_4k",1080),1.5)
+        self.assertEqual(effective_scale("desktop",720),1.0); self.assertEqual(effective_scale("tenfoot",2160),1.6)
+
 class AppNameTests(unittest.TestCase):
     def test_plain_profiles_follow_a_renamed_application(self):
         from types import SimpleNamespace as NS

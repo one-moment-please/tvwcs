@@ -25,6 +25,13 @@ def is_tvwcs_title(title: str) -> bool:
 
 SCALE_PRESETS={"desktop":1.0,"tenfoot":1.6,"tenfoot_4k":3.0}
 SCALE_LABELS={"desktop":"Desktop","tenfoot":"TV Mode","tenfoot_4k":"4K TV Mode"}
+# The screen height each TV size is drawn for. On a smaller screen (a 720p TV) it shrinks to fit, never below Desktop.
+SCALE_DESIGN_HEIGHT={"tenfoot":1080,"tenfoot_4k":2160}
+def effective_scale(key, screen_height=0) -> float:
+    """The interface size actually used: the preset, made smaller on a screen shorter than the one it is drawn for."""
+    scale=SCALE_PRESETS.get(key,1.0); design=SCALE_DESIGN_HEIGHT.get(key)
+    if design and screen_height and screen_height<design: scale=max(1.0,round(scale*screen_height/design,3))
+    return scale
 UHD_SCALES=("tenfoot_4k",)   # only offered when a 4K (3840×2160) or larger display is connected
 
 def scale_choices(current, has_4k_display):

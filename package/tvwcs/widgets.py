@@ -89,3 +89,12 @@ class NavGroup(list):
     def __init__(self,widgets=(),entry=None):
         super().__init__(widgets); self.entry=entry; self.toggle=None; self.expand=None; self.expanded=None; self.column=False   # column: a grid row, Up/Down keeps the column
         self.lane=None   # in a multi-column layout (Settings), which column the row is in; ←/→ jump between lanes
+
+def screen_height():
+    """The tallest connected monitor's height in logical pixels (0 when there is no display yet)."""
+    display=Gdk.Display.get_default()
+    if display is None: return 0
+    monitors=display.get_monitors(); best=0
+    for i in range(monitors.get_n_items()):
+        best=max(best,monitors.get_item(i).get_geometry().height)
+    return best

@@ -19,9 +19,9 @@ from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
 from tvwcs import privilege
 from tvwcs.hotkeys import HotkeyCapture, describe
-from tvwcs.model import SCALE_PRESETS, ConfigStore, key_hints
+from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints
 from tvwcs.theme import render_css
-from tvwcs.widgets import METRO_COLORS, NavGroup, S, clear_box, glyph, held_modifiers, icon_button, set_scale, usable
+from tvwcs.widgets import METRO_COLORS, NavGroup, S, clear_box, glyph, held_modifiers, icon_button, screen_height, set_scale, usable
 
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
@@ -150,7 +150,7 @@ class ControlWindow(Gtk.ApplicationWindow):
 
     def settings_changed(self, settings):
         """Options saved a change: draw this window with its accent, size, key names and motion too."""
-        app=self.app; scale=SCALE_PRESETS.get(settings.get("scale"),1.0); resized=scale!=app.scale
+        app=self.app; scale=effective_scale(settings.get("scale"),screen_height()); resized=scale!=app.scale
         app.accent=settings.get("accent",app.accent); app.use=settings.get("use",""); app.reduce_motion=bool(settings.get("reduce_motion"))
         if resized and self._running():   # rebuilding would lose the run's output: the new size waits for the next time
             self._load_css(); self._apply_settings()
@@ -550,10 +550,10 @@ class ControlPanelApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         settings=ConfigStore().settings   # TVWCS's interface size, accent colour, use and motion; Options changes them (settings_changed)
-        self.scale=SCALE_PRESETS.get(settings.get("scale"),1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
+        self.scale_key=settings.get("scale"); self.scale=SCALE_PRESETS.get(self.scale_key,1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
         self.use=settings.get("use",""); self.reduce_motion=bool(settings.get("reduce_motion"))
     def do_startup(self):
-        Gtk.Application.do_startup(self); set_scale(self.scale)
+        Gtk.Application.do_startup(self); self.scale=effective_scale(self.scale_key,screen_height()); set_scale(self.scale)   # fitted to the screen, now there is one
     def do_command_line(self, command_line):
         args=command_line.get_arguments()[1:]
         if self.window is None: self.window=ControlWindow(self)
