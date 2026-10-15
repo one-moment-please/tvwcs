@@ -1,171 +1,168 @@
-# TVWCS: Project goals and intended behavior
+# TVWCS: project overview
 
-*Updated for 2.7.*
+*Updated for 3.0.*
 
-## A short introduction
+This document is for people working on TVWCS: what it is meant to do, how it behaves, and how the code is laid out. The user guide is [README.md](README.md).
 
-**TVWCS stands for TV Window Channel Switcher.** It is a lightweight, TV-style interface for using an ordinary Linux computer from the couch. It aims to make the computer feel more like a television or set-top box: browse a guide, assign channel numbers to things you use, pin favorites, search by name, and switch between applications that are already open.
+## Goal
 
-TVWCS does not replace Linux, the desktop, or the applications. It is a remote-friendly launcher and application switcher that sits on top of the existing desktop (i3 or sway). It should work with normal Linux applications without requiring each application to ship a TVWCS-specific plugin.
+**Make a Linux computer as easy to use from the couch as a TV, without taking control away from Linux or its apps.**
 
-## The problem it solves
+A normal desktop assumes a mouse, a keyboard and a screen at arm's length. On a TV across the room, small controls and taskbars are hard to use. Media centers help, but often need a plugin for each service. TVWCS keeps the computer general-purpose and adds one remote-friendly way to find, start and return to apps.
 
-A standard desktop assumes the user is sitting close to a monitor with a mouse and keyboard. On a television across the room, small controls, taskbars, window lists, and app launchers are awkward. Media-center applications can solve some of this, but often require plugins or special integrations for each service. TVWCS takes a different approach: keep the flexibility of a general-purpose Linux computer, and add a consistent couch-friendly way to find, launch, and return to applications.
+**TVWCS is:** a TV-style launcher and app switcher; one search for apps, profiles, channels and open windows; a user-made channel list and favorites; a Settings app for what a TV computer needs; built on standard `.desktop` metadata and the i3 / sway IPC.
 
-## Design language: Metro / Modern UI
+**TVWCS is not:** an operating system or window manager; a media player (Kodi, VLC, Jellyfin); a promise that every app becomes D-pad friendly; a plugin system; a fixed channel list.
 
-The interface follows the Windows Metro (Modern UI) language: flat, typographic and content-first.
+## Design
 
-- **Square everything.** Buttons, fields, dialogs and popovers have sharp 90° corners; there are no gradients, shadows or rounded shapes.
-- **Solid colour blocks.** Dark neutral surfaces, one accent colour (configurable, default blue), light-weight large type, small spaced capitals for section titles.
-- **Focus is unmistakable from across the room.** The focused item becomes a solid accent block with a white frame and bold text. Danger actions focus red.
-- **Real icons.** Application logos appear wherever an app is listed; a coloured letter tile stands in when no icon exists. Window rows can carry a badge (an unread count or an urgent marker).
-- **Symbols over words where the meaning is universal** (power, close, lock, refresh, settings); words where it is not (Guide, Edit).
-- **Scales to the room.** The whole interface (type, icons, spacing, panel widths) scales for a desktop monitor, a 1080p TV across the room, or a 4K TV.
+The look follows Metro (Modern UI): flat and typographic.
 
-## The central user experience
+- **Square.** No rounded corners, gradients or shadows.
+- **Solid colour.** Dark surfaces, one accent colour (chosen in Settings), large light type, small spaced capitals for section titles. Text contrast is kept high.
+- **Clear focus.** The selected item is a solid accent block with a white frame. Dangerous actions turn red.
+- **Real icons.** App logos wherever an app is listed; a coloured letter tile when there is none. Symbols where the meaning is universal (⚙ ⏻ ✕ ⊞ ⋯ ≡ ☆ ✎), words elsewhere.
+- **Scales to the room.** Desktop, TV Mode (1080p) and 4K TV Mode sizes. The size applies at once.
+- **Calm motion.** Short fades, turned off by **Reduce motion**.
+- **Everything in one window.** Dialogs, editors, messages and the on-screen keyboard are drawn inside the TVWCS window, so they cannot get lost behind it.
+- **Remote first.** Every control is reachable with arrows, OK and Back. In TV mode the key hints name the remote's keys (OK, Back).
 
-### 1. The screen layout: two panels
+## How it behaves
 
-TVWCS is one borderless panel placed in the usable area of the active workspace, that is, the workspace on the monitor under the pointer, excluding the bar. It is made of up to two panels, left to right:
+### Layout
 
-- **The Quick Menu** is a full-height column at the **left**, with a small margin above, below and to its left. It is always present.
-- **The Applications pane** opens **alongside** it and fills the rest. It always opens on the applications guide; a button at its **top right** switches it between the guide and **Settings**.
+TVWCS is one borderless floating window placed in the usable area of the workspace on the monitor under the pointer (i3 already excludes the bar). It holds up to two panels:
 
-Every panel keeps the **same margin** from the screen edges and from its neighbours. The Quick Menu can be open on its own; the Applications pane always has the Quick Menu with it.
+- **Quick Menu:** a full-height column at the left, always shown when TVWCS is open.
+- **Applications:** opens to the right of it and fills the rest.
 
-One hotkey shows or hides the Quick Menu, another opens the Applications pane beside it (and closes it again). Navigation is spatial: **Right** past the last control of the Quick Menu opens the Applications pane; **Left** goes back, and **Esc** (or the remote's **Back** key) steps back one level: dialog, Settings, Applications, Quick Menu. With *Button hints* turned on in Settings (off by default), a button with only an icon shows its tooltip after it has been selected for 3 seconds, for 6 seconds, so a remote gets the same hints as a mouse. Typing any text, anywhere, goes straight into the search field.
+The same margin (the **Screen edge margin**, which also handles TV overscan) separates panels from each other and from the screen edges. TVWCS computes the exact position at run time.
 
-### 2. The Quick Menu
+Navigation is spatial. → past the Quick Menu opens Applications; ← goes back. Back/Esc steps back one level: dialog, Applications, Quick Menu. Typing anywhere goes into search.
+
+### Quick Menu
 
 From top to bottom:
 
-- **Header:** the Guide toggle and Close.
-- **Universal search:** profiles, application names, custom commands, channel numbers and open windows in one field. Just type; no need to select it first. Typing a channel number and pressing Enter activates that channel.
-- **Open applications, organised by workspace.** TVWCS treats a workspace, not a window, as the unit you "change channel" between. An application alone on its workspace is listed as that application. Applications that share a workspace are grouped into one workspace entry, **named after what is in it** ("Brave + Text Editor"), with their logos and any badges.
-- **Favorites**, pinned launch profiles, listed below the open applications.
+- **Header:** ⚙ Settings, ⏻ power menu, ✕ close (⚙ and ✕ can be hidden), ⊞ Applications.
+- **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. OK on the empty field opens the on-screen keyboard (or number keypad).
+- **Open applications, by workspace.** A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor").
+- **Favorites:** pinned launch profiles.
+- **Key hints**, then the **status row:** clock, network, volume, Bluetooth and waiting updates. Each opens its Settings page.
 
-Each row mirrors the Guide: in the Guide the application is on the left and its controls on the right; in the Quick Menu the application is on the right and a single **options button** (☰) on the left, or **Left** on the remote while the application is selected, expands the row's options in place. They fold away again as soon as the selection moves off them:
+Each row has an options button (⋯), also opened with ← on the row or a right-click. Options fold away when the selection moves off them:
 
-- **An application:** open it the other way (tiled in the current workspace, or in a workspace of its own), its `.desktop` actions, and Close.
-- **A workspace:** move it to another monitor (the option only exists when there is another monitor, and then offers a choice of which), expand it into its individual apps (to open just one, or reach that app's own options), and close the workspace and every app on it (after a confirmation).
-- **A favorite:** its launch-mode icon (see below) and `.desktop` actions.
+- **App:** open it the other way (tiled here, or in its own workspace), ≡ its own `.desktop` actions, Close.
+- **Workspace:** move it to another monitor, expand it into its apps, or close it and everything on it (asks first).
+- **Favorite:** its launch mode and `.desktop` actions.
 
-### 3. Settings
+Messages, errors and a "Starting <app>…" card are shown in the window. The first time TVWCS opens it asks whether it is used on a TV or at a desk.
 
-Settings shares the Applications pane with the guide (switched with the button at its top right) and holds everything that is about TVWCS itself rather than about launching something. Every row is one button, so it works with a D-pad alone. See "Settings" below.
+In **TV mode** the i3/sway bar is hidden (the status row replaces it), and while no app is open the Quick Menu stays on screen and returns when the last app closes. Both can be turned off.
 
-### 4. The Channel Guide
+### Applications
 
-The Guide is the main browseable catalogue. It discovers installed graphical applications from standard Linux XDG `.desktop` entries and groups them into foldable categories such as Media, Internet, Games, Office, Graphics, Development, Utilities, System, and Other. Each row shows the application's logo, channel, name and, less prominently, its description. At its top is the user's own channel lineup: any launch profile can be given a number and the numbered profiles are shown together. The Guide imposes no fixed lineup. Unassigned apps remain browsable by category.
+- **Channels:** every profile with a channel number.
+- **All applications:** every installed graphical app from XDG `.desktop` entries, in foldable categories (Media, Internet, Games, Office, Graphics, Development, Utilities, System, Other). Each row shows logo, channel, name and description, then ☆ favorite and ✎ edit.
 
-A **secondary profile** (a second way to start the same application) is shown under its application with a **↳** where the logo would be, and instead of the application's description it lists what makes it different: the chosen `.desktop` action and any custom launch command (or a description the owner wrote). A lock mark shows a PIN-protected profile. The Guide never jumps or collapses because of an edit such as favoriting.
+A **secondary profile** (a second way to start the same app) sits under its app with ↳ in place of the logo, and shows what makes it different (its action or command, or its own description). A lock mark shows a PIN. Edits never make the list jump or fold.
 
-### 5. Launch profiles
+### Launch profiles
 
-An application is the installed program; a launch profile is one particular way to start it. One browser might have profiles for a streaming website, a private session, or a kiosk mode. A profile has a human-readable name, an optional custom command, an optional `.desktop` action, an optional channel, a favorite state, a **launch mode**, an optional description, and an optional **PIN**.
+An application is the installed program. A launch profile is one way to start it, such as a browser opened on a streaming site. A profile has a name and, optionally, a command, a `.desktop` action, a channel, a favorite flag, a launch mode, a description, a hotkey and a PIN.
 
-If the command is empty, TVWCS uses the application's standard desktop launcher. If a custom command is entered, TVWCS starts it as an argument list rather than a shell script, which keeps the behavior understandable and avoids silently interpreting shell operators.
+- An empty command uses the app's standard launcher. A custom command runs as an argument list, not through a shell.
+- The editor opens inside the TVWCS window. Each field is a row that opens the on-screen keyboard, the keypad, a list or hotkey capture. Nothing is stored until **Save**; **Cancel** and **Delete** are beside it. An app's profile list opens the same way.
+- **PIN:** asked when launching, or also when showing the app on a workspace that is not on screen. Editing or deleting a protected profile asks for it first. It is a convenience lock, not security.
+- **Plain profiles follow renamed apps:** a profile with no changes of its own keeps working when its `.desktop` file is renamed (such as the old Control Panel launcher).
 
-**PIN protection.** Any profile can be protected by a PIN of its own, for example to keep a child out of a browser profile on a shared TV. The owner chooses when it is asked: only when launching, or also when showing the app if it is open on a workspace that is not on screen. The PIN is entered on an on-screen keypad that works with a D-pad. It is a convenience lock, not strong security, and editing or deleting a protected profile needs its PIN too.
+### Where apps open
 
-**Descriptions.** The description beside a profile defaults to its application's `.desktop` description (main profile) or to its launch options (secondary profile), and either can be overridden from the edit pages.
+One setting, **Where apps open**:
 
-### 6. Where an app opens: launch modes
+- **Full screen, one per workspace:** every app, launched or selected, gets a workspace of its own. The TV default.
+- **Side by side:** every app opens tiled beside what is on screen. The desktop default.
+- **As each app's profile says:** each profile chooses "tiled here" or "always in a new workspace". The default for config files from before 3.0.
 
-Every profile has one of two launch modes:
+Nothing is moved, closed or minimized: other workspaces are just not shown. An app's options always offer the opposite for one time. TVWCS restores fullscreen on an app that was fullscreen when TVWCS opened over it.
 
-- **Tiled in the current workspace** (the default): the app opens beside whatever is already showing.
-- **Always in a new workspace:** the app opens alone on a fresh workspace. Everything else stays on its own workspace and is simply not displayed, so nothing is moved, closed or minimized.
+### Switching to open apps
 
-The mode is chosen in the profile's **edit page**, and can be flipped from the icon beside a favorite. Separately, a **Settings toggle governs selecting apps that are already running**: with it on, selecting an open app gives it a workspace of its own; with it off, the app is tiled into the current workspace. Either way, an app's options offer the opposite for that one time, and an app individually set to always launch in a new workspace is unaffected by the toggle.
+TVWCS focuses an existing window rather than starting a second copy when it can match one. Matching uses window class, instance, `StartupWMClass` and names, so it is best-effort. The window manager stays in charge of windows and workspaces; TVWCS only sends it commands.
 
-### 7. Workspaces as units
+### Channels and favorites
 
-A workspace holding two or more applications is a working set (for example, a video call plus notes). It is listed under Open applications as one entry named for its contents, and selecting it **opens the whole workspace** on the monitor the user is looking at. Its options can send the whole workspace to another monitor, expand it into its apps, or close it with everything on it.
+Channel numbers are the user's own shortcuts to profiles. They are unique, optional and stored locally. Favorites are independent of channels.
 
-### 8. Channels and favorites
+### Hotkeys
 
-Channel numbers are assigned by the user and stored locally. A number is a shortcut to a profile, not an application category and not a global standard. Numbers are unique within the user's configuration and a profile can have none. Favorites are independent: a favorite does not need a channel, and a channel does not have to be a favorite.
+Three sets: keyboard (default: tap Super for the Quick Menu), remote (default: F2) and gamepad (none; needs a mapper such as AntiMicroX). Each has a Quick Menu key and an Applications key; the remote also has a fullscreen key. Any profile can have its own hotkey. A key does one thing: choosing a key already in use warns and asks before moving it. A modifier tapped alone is bound by keycode on release, so Super combinations keep working. Remote media keys are written with their `XF86` names.
 
-### 9. Switching between open applications
+### Power and locking
 
+The power menu has Sleep, Reboot and Shut down, Log out when there is a login screen, and Lock when enabled. Reboot, Shut down and Log out ask first, with Cancel selected. Power actions use `systemctl`. When polkit refuses, TVWCS uses a no-password sudo or doas rule (the installer offers a narrow one), else asks for the sudo password in its own dialog and passes it to `sudo -S` without storing it.
 
-TVWCS prefers focusing an existing window over starting another copy when it can identify a match. The window manager remains responsible for windows, focus, and workspaces; TVWCS issues requests through i3 (or sway) and does not implement its own window management.
+Settings keeps idle times for screen off, lock and sleep (TVWCS watches idle time itself on i3; it runs `swayidle` on sway). Nothing happens while sound plays or an app inhibits idle.
 
-Application identity is imperfect across Linux apps. Matching uses the window class, instance, the `.desktop` file's `StartupWMClass`, and names, and is therefore best-effort. The same matching drives logos, badges and launch modes on open windows.
+The optional **TVWCS lock screen** (`lockscreen.py`) does not draw a lock itself. It paints one picture per monitor ("Locked — A password is needed. Type <user>'s password, then press Enter to unlock.") and runs i3lock, or swaylock on sway, with it. The power menu's Lock, the idle lock and `tvwcs lock` use it. When the i3 config starts xss-lock, its locker line is replaced too, and restored when the option is turned off.
 
-## Settings
+## Settings app
 
-- **Interface size:** Desktop, TV Mode (a 1080p TV) or 4K TV Mode, chosen from a small pop-up list. 4K TV Mode is only offered when a 4K (3840×2160) or larger display is connected.
-- **Close when clicking outside** TVWCS.
-- **Open running apps in a new workspace** (the toggle described under launch modes).
-- **Always open apps in a new workspace:** every app, launched or already open, gets a workspace of its own whatever its profile says.
-- **Fullscreen is kept:** an app that was fullscreen when TVWCS opened is made fullscreen again when TVWCS closes or switches to it (i3 drops fullscreen when another window takes the focus, and sway would keep TVWCS hidden behind it, so TVWCS ends it while it is open).
-- **Dialogs never trap TVWCS:** clicking the TVWCS window while a profile editor is open closes the editor, without saving.
-- **Hotkeys:** three sets, for the keyboard (default: tap Super for the Quick Menu), the remote (default: F2 for the Quick Menu) and a gamepad (unset by default; its buttons need mapping to keys with a tool such as AntiMicroX). Each set has a key for the Quick Menu and one for the Applications pane, and the remote has one more that toggles fullscreen on the focused app; any of them can be cleared. A key can only do one thing: choosing one that is already in use (by another slot or an application) warns and asks before moving it.
-- **Application hotkeys:** any launch profile can have a hotkey that launches it, set in its editor. Settings counts them, and lists them to change or remove each one. A modifier tapped on its own (such as Super) can be used; it is bound by its keycode and triggers when the key is released, so Super+Enter and every other Super shortcut keep working.
-- **At login:** open a chosen app (favorites listed first, then apps with channel numbers), or reopen the last app used, once per login. It can also open the Quick Menu at login (after that app, if one is chosen).
-- **Check for updates:** asks GitHub for the latest published release; if it is newer, offers to download it, install it over the current copy (keeping the user's data), remove the download and restart TVWCS.
-- **System:** Lock, Refresh applications, Sleep, Log out, Reboot, Shut down. When a power action needs root (no systemd or elogind, or polkit refuses), TVWCS uses a no-password doas or sudo rule if there is one (install.sh offers a narrow one), else asks for the sudo password in a remote-friendly dialog (keyboard, or keypad for a numeric password) and passes it to `sudo -S`, never storing it. Sleep, Reboot and Shut down use systemd, else elogind's `loginctl`, else the plain `zzz` / `reboot` / `poweroff` commands. Log out, Reboot and Shut down always ask for confirmation first; the safe choice (Cancel) is pre-selected, and Esc backs out.
+A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Options, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network. Each page is also a `.desktop` action, so it can be a channel or favorite.
 
-## The Control Panel
+It drives standard tools rather than services: `pactl` (PipeWire/PulseAudio), `xrandr` or `swaymsg`, `bluetoothctl`, `nmcli` (read-only `ip` fallback), `timedatectl`, apt or zypper plus Flatpak, OpenSSH via `systemctl`, and VTE for the terminal. A page whose tool is missing says what to install. Changes TVWCS needs to know about are sent with `tvwcs reload`.
 
-A separate application in the same style, for the settings a couch needs without a desktop environment: **Sound** (outputs, inputs, volume), **Displays** (resolution, refresh rate, arrangement, primary display), **Bluetooth**, **Software updates**, **System information**, a **Terminal** and **Network** (Ethernet and Wi-Fi). Its pages are vertical tabs at the left with the chosen page beside them; moving along the tabs shows each page at once, → enters it and ← or Back leaves it. Like TVWCS, every control is a button reachable with the D-pad, dialogs are drawn inside the window, and text can be entered on an on-screen keyboard. It is launched like any other app (from the guide, a channel, a favorite or a hotkey), and each page is a `.desktop` action of its own.
+## Supported systems
 
-It drives the standard command-line tools rather than linking to services: `pactl` (PipeWire and PulseAudio), `xrandr` or `swaymsg` for displays, `bluetoothctl` (BlueZ), `nmcli` (NetworkManager, with a read-only fallback to `ip`), the distribution's package manager and Flatpak, and VTE for the terminal. A page whose tool is missing says what to install. Updates that need root use the same route as the power actions: a no-password doas or sudo rule, else the sudo password asked for in the window.
+Debian and its family (apt) and openSUSE (zypper), with systemd. Support for Arch, Fedora, Void, Alpine, Gentoo and non-systemd init systems was removed in 3.0. [TODO.md](TODO.md) lists, place by place, what bringing them back would take (the last commit with that code is `9e7ef12`), and holds researched but unstarted work on a tablet mode and a dedicated passwordless TV user.
 
-## What TVWCS is, and is not
+## Installer
 
-**It is:**
-- A lightweight TV-style guide and launcher with a Metro look.
-- A universal place to search for apps and profiles.
-- A user-configurable channel lineup and a favorites list.
-- A workspace and open-window switcher.
-- A layer above Linux that uses standard desktop application metadata.
-- Designed first for i3 and ordinary keyboard-like remote input.
+`scripts/install.sh` (POSIX sh) copies the program to `~/.local/share/tvwcs`, adds the Settings launcher, and sets up the window manager. It first asks for the setup, saved in `~/.config/tvwcs/setup`:
 
-**It is not:**
-- A replacement operating system or window manager.
-- A media server or player like Jellyfin, Emby, Kodi, or VLC.
-- A promise that every app will become fully controllable with a D-pad.
-- A system requiring a custom plugin for every streaming site or app.
-- A fixed, centrally maintained channel list.
+- **dedicated:** adds `include ~/.local/share/tvwcs/tvwcs.conf` to the user's i3/sway config (or creates one from the standard template), and, with no display manager, offers automatic login on tty1 (a systemd getty drop-in plus marked lines in the shell's login file that run `startx` or `sway`).
+- **alongside:** writes `~/.config/tvwcs/<wm>-session.conf` (template plus the include line) and login screen entries `tvwcs-i3.desktop` / `tvwcs-sway.desktop` that run `/usr/local/bin/tvwcs-session <wm>`. The wrapper exports `TVWCS_SESSION` and `TVWCS_SESSION_CONFIG` so TVWCS knows which config is its own. It never sets up automatic login. Adding the include line to the usual config is optional (default no).
 
-## Technical direction
+It also installs missing packages (including an icon theme and Open Sans), offers i3 or sway when neither is installed, offers the power sudo rule, asks TV or desktop, restarts a running TVWCS and migrates installs from `~/.config/i3/tvwcs` (2.6 and older). Every change to a user file is asked first and backed up as `<file>.tvwcs-backup`. Environment variables are listed at the top of the script.
 
-The target is any Linux distribution with i3 or sway, tested on Debian/Ubuntu/Mint, Arch, Fedora, Void and Alpine, with or without systemd. GTK 4 supplies the interface and the Metro theme (one CSS block). The application catalogue comes from XDG desktop entries. i3's IPC, exposed by `i3-msg` (and spoken by sway through `swaymsg`), enumerates windows and workspaces, reports each monitor's usable rectangle, switches and moves workspaces, and positions the TVWCS panel. TVWCS does not read raw evdev devices; a remote that behaves like a keyboard works through the normal Linux input path.
-
-The code is divided into small modules so the logic can be tested without a display: `model` (profiles, settings, layout maths, badges, search), `applications` (discovery, window-to-app matching), `workspaces` (workspace entries and names), `hotkeys` (hotkey specs and the i3 config they produce), `pinlock` (PIN hashing and try limits), `ownership` (which profile launched which window), `window_manager` (the i3 / sway adapter) and `system_actions`; and, for the GTK interface, `widgets`, `theme`, `ui_window`, `ui_settings`, `ui_editors` and `main`. The Control Panel reads and changes the system in `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_updates` and `control_sysinfo` (no GTK), and draws it in `ui_control` (window, navigation, dialogs, on-screen keyboard) and `ui_control_pages`.
-
-### Where things live
+## Where things live
 
 | What | Where |
 |---|---|
-| The program | `~/.local/share/tvwcs/` (`~/.config/i3/tvwcs/` before 2.7; install.sh moves it) |
-| i3 / sway integration | `~/.local/share/tvwcs/tvwcs.conf` |
-| The user's data and settings | `~/.config/tvwcs/config.json` |
-| Hotkeys, written by Settings | `~/.config/tvwcs/hotkeys.conf` |
+| The program | `~/.local/share/tvwcs/` |
+| i3 / sway fragment (starts TVWCS, includes hotkeys, window rules) | `~/.local/share/tvwcs/tvwcs.conf` |
+| User data and settings | `~/.config/tvwcs/config.json` |
+| Hotkeys, written by TVWCS | `~/.config/tvwcs/hotkeys.conf` |
+| Kept display settings | `~/.config/tvwcs/displays.json` |
+| TVWCS's own session configs (alongside) | `~/.config/tvwcs/<wm>-session.conf` |
+| PID file and per-session files | `$XDG_RUNTIME_DIR` |
 
-The i3 or sway config gains a single line, `include ~/.local/share/tvwcs/tvwcs.conf`, which install.sh offers to add (or to create a config from the standard template when there is none). That file starts TVWCS, includes the generated hotkeys file, and sets the window rules (floating, borderless panel; centered dialogs). Because the usable area differs per monitor and bar, TVWCS computes the panel's exact position and size at run time; the margin and Quick Menu width are settings in `config.json`. The user's data is kept apart from the program so that upgrading never touches channels, favorites or hotkeys. TVWCS recognises its own windows by an exact title (`TVWCS`) or a distinctive prefix (`TVWCS · `), never by a prefix an ordinary document name could share.
+User data is kept apart from the program so upgrades never touch it. TVWCS recognises its own windows by the exact title `TVWCS` or the prefix `TVWCS · `.
 
-## Phase 2.5 deliverables
+## Code
 
-1. Launch-as-another-user removed (a custom launch command covers it).
-2. Per-profile PIN protection with a D-pad keypad, scoped to launching only or to launching and showing.
-3. Description overrides on the application page and on secondary-profile editors.
-4. Settings choices open as a small pop-up list; the login-app chooser lists favorites, then channels, then the rest.
-5. The remote's Back key (XF86Back) acts as Esc everywhere in TVWCS.
-6. Everything from Phase 2.4: spatial three-panel navigation, type-to-search, workspace-centric Open applications, Settings (interface size, close on outside click, hotkeys, login app, system actions), the missing-apps fix, Metro theme, equal-margin layout, launch modes, logos and badges, installation under `~/.config/i3/tvwcs`.
+Logic modules have no GTK dependency and are tested without a display.
 
-## What success looks like
+| Area | Modules |
+|---|---|
+| Core | `model` (profiles, settings, layout, search), `applications` (discovery, window matching), `workspaces`, `ownership`, `profile_draft`, `pinlock`, `hotkeys` |
+| System | `window_manager` (i3 / sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `flatpak_env` |
+| Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_datetime`, `control_updates`, `control_flatpak`, `control_ssh`, `control_sysinfo` |
+| GTK interface | `main` (app, CLI), `ui_window` (Quick Menu, Applications, dialogs, on-screen keyboard), `ui_editors` (profile editor), `ui_control` and `ui_control_pages` (Settings), `widgets`, `theme` |
 
-A person on a couch presses a remote button and a clean, square, high-contrast menu slides in at the left of the screen, sized for the room. They see their open workspaces ("Brave + Text Editor", "Messages") above their favorites, see that the messaging app has three unread items, and jump to it. They press Right and the full catalogue opens beside it, still framed by the same margins; they find a game, which opens alone on its own workspace, while the video call and notes they had open stay together on another workspace, one selection away. The button at the top right of that pane opens Settings, where they change the hotkey to the Super key without losing Super+Enter. They never touch a mouse, no application needed a plugin, and a stray press on Shut down asks "Are you sure?" first.
+```
+package/tvwcs/   modules                  package/tests/  unit tests
+package/bin/     the tvwcs launcher       data/           tvwcs.conf and the Settings .desktop file
+scripts/         install, tests, release  docs/           Debian guide, release process
+```
 
-## A concise explanation to say aloud
+```sh
+./scripts/run-tests.sh            # unit tests (no display needed)
+./scripts/make-release.sh --beta  # a test zip in resources/
+```
 
-> TVWCS stands for TV Window Channel Switcher. It is a lightweight, Metro-styled, TV-like interface for a Linux computer connected to a television. A menu on the left of the screen gives you your favorites, your open apps and open workspaces, and search; a full guide can open beside it. You can assign your own channel numbers, and choose whether each app opens tiled with what you have or alone on its own workspace. It does not replace Linux or apps like Jellyfin and Steam. It sits above the existing desktop and provides a remote-friendly way to control it, without needing a plugin for every app.
+Release steps are in [docs/RELEASES.md](docs/RELEASES.md).
 
-## One-sentence mission
+## In one paragraph
 
-**Make a Linux computer as easy to browse and control from the couch as a television, without taking control away from Linux or its applications.**
+TVWCS is a Metro-styled, TV-like layer for a Linux computer on a television. A menu at the left shows your favorites, open apps and search; a full list of applications opens beside it. You give apps your own channel numbers and choose whether they open full screen or side by side. It does not replace Linux or apps like Jellyfin and Steam; it sits on top of i3 or sway and makes them usable with a remote, without a plugin for every app.
