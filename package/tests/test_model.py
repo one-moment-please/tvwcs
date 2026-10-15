@@ -1,6 +1,6 @@
-import json, tempfile, unittest
+import copy, json, tempfile, unittest
 from pathlib import Path
-from tvwcs.model import (ConfigStore, apply_use, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
+from tvwcs.model import (ACCENT_NAMES, DEFAULT_SETTINGS, MARGIN_CHOICES, ConfigStore, accent_name, apply_use, apps_open, key_hints, set_apps_open, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
 from tvwcs.applications import Application
 
 class ModelTests(unittest.TestCase):
@@ -84,6 +84,29 @@ class SettingsAndProfileTests(unittest.TestCase):
             self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("desktop","desktop",False,False))
             self.assertRaises(ValueError,apply_use,s,"phone")
             path.write_text(json.dumps({"settings":{"use":"phone"}})); self.assertEqual(ConfigStore(path).settings["use"],"")
+    def test_a_tv_turns_button_hints_on(self):
+        s=copy.deepcopy(DEFAULT_SETTINGS); self.assertFalse(s["button_hints"])
+        apply_use(s,"desktop"); self.assertFalse(s["button_hints"])
+        apply_use(s,"tv"); self.assertTrue(s["button_hints"])
+        apply_use(s,"desktop"); self.assertTrue(s["button_hints"])   # switched back, the user's hints stay as they are
+    def test_where_apps_open_is_one_choice_over_two_keys(self):
+        s=copy.deepcopy(DEFAULT_SETTINGS); self.assertEqual(apps_open(s),"side")
+        for choice,keys in (("fullscreen",(True,True)),("side",(False,False)),("profile",(False,False))):
+            set_apps_open(s,choice); self.assertEqual((s["always_new_workspace"],s["open_in_new_workspace"]),keys); self.assertEqual(apps_open(s),choice)
+        self.assertRaises(ValueError,set_apps_open,s,"tiled")
+        # the keys win over the remembered choice: a hand-edited file, or the old switches set one by one
+        s.update(always_new_workspace=True,open_in_new_workspace=False,apps_open="side"); self.assertEqual(apps_open(s),"fullscreen")
+        s.update(always_new_workspace=False,open_in_new_workspace=True); self.assertEqual(apps_open(s),"profile")
+        apply_use(s,"tv"); self.assertEqual(apps_open(s),"fullscreen"); apply_use(s,"desktop"); self.assertEqual(apps_open(s),"side")
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"; store=ConfigStore(path); set_apps_open(store.settings,"profile"); store.save()
+            self.assertEqual(apps_open(ConfigStore(path).settings),"profile")
+            path.write_text(json.dumps({"settings":{"apps_open":"anywhere","reduce_motion":True,"tvwcs_lock_screen":False}}))
+            s=ConfigStore(path).settings; self.assertEqual((s["apps_open"],s["reduce_motion"],s["tvwcs_lock_screen"]),("side",True,False))
+    def test_accent_names_and_key_hints(self):
+        self.assertEqual(accent_name("#E81123"),"Red"); self.assertEqual(accent_name("#123456"),"#123456")
+        self.assertIn(DEFAULT_SETTINGS["accent"],ACCENT_NAMES); self.assertIn(DEFAULT_SETTINGS["margin"],MARGIN_CHOICES)
+        self.assertIn("Back  Go back",key_hints("tv")); self.assertIn("Esc  Go back",key_hints("desktop")); self.assertIn("Esc",key_hints(""))
     def test_a_key_used_twice_keeps_only_its_first_use(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"remote":{"menu":"F5","guide":"F5"},"gamepad":{"menu":"Mod4"}}}}))
