@@ -98,6 +98,8 @@ class Page:
         if focused is not None and self.root is not None and (focused is self.root or focused.is_ancestor(self.root)):
             old=next((i for i,w in self._ids.items() if w is focused or focused.is_ancestor(w)),None)
         stale={id(w):i for i,w in self._ids.items()}
+        wanted=getattr(self,"focus_after",None); self.focus_after=None   # the row a change turns the focused one into
+        if wanted is not None and old is not None: old=wanted
         clear_box(self.body); self.groups=[]; self._ids={}
         self.draw(self.state); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
@@ -106,7 +108,7 @@ class Page:
         last=self.win._last_page_focus.get(self.key)
         if last is not None and id(last) in stale and stale[id(last)] in self._ids: self.win._last_page_focus[self.key]=self._ids[stale[id(last)]]
         if old is not None:
-            target=self._ids.get(old)
+            target=self._ids.get(old) or (next((w for i,w in self._ids.items() if i.startswith(old)),None) if old==wanted else None)
             if target is not None and usable(target): target.grab_focus()
             elif not self.win._focus_first(self.groups): self.win.tab_buttons[self.key].grab_focus()
     def draw(self, state): pass
@@ -359,6 +361,11 @@ class PowerPage(Page):
                          detail="X's own screen saver" + (" (switched off while TVWCS turns the screen off)" if screen is not None else ""),ident="sys:saver")
                 self.row("X switches the monitor off after",power.duration_text(x.dpms_off) if x.dpms_off else "Never",None,
                          detail="DPMS power saving",ident="sys:dpms")
+            if s.xss_lock:
+                self.row("Locks when the screen turns off","Yes",self.stop_xss_lock if s.xss_lock!="?" else None,
+                         detail="xss-lock is running"+(", started by your i3 config. Choose this to stop it" if s.xss_lock!="?" else
+                                                       ". Remove it from the file that starts it to stop the screen locking"),
+                         icon="system-lock-screen-symbolic",fallback="🔒",ident="sys:xss")
         l=s.logind
         if l.available:
             action={"ignore":"Nothing","suspend":"Sleep","hibernate":"Hibernate","hybrid-sleep":"Hybrid sleep","suspend-then-hibernate":"Sleep, then hibernate",
@@ -369,6 +376,14 @@ class PowerPage(Page):
                                detail="logind's HandleLidSwitch",ident="sys:lid")
         self.note("Change “Turn off the screen after” to let TVWCS decide instead of X. "
                   "logind's settings are changed in /etc/systemd/logind.conf, as root.")
+
+    def stop_xss_lock(self):
+        path=self.state.xss_lock
+        self.win.confirm("Stop locking when the screen turns off",
+                         "xss-lock locks the screen every time it turns off, even with “Lock after” set to Never, so a TV wakes up "
+                         f"to a password prompt. TVWCS will turn it off in {path.replace(str(Path.home()),'~',1)} (keeping a copy of the file as "
+                         f"{os.path.basename(path)}.before-tvwcs) and stop it now. “Lock after” still locks when you choose a time.",
+                         "Stop it",lambda:self.act(lambda:power.stop_xss_lock(path),"Stopping xss-lock…","Power and sleep"),danger=False)
 
     @staticmethod
     def system_screen_text(s):
@@ -429,8 +444,10 @@ class SoundPage(Page):
     def card_output_row(self, o):
         """An output of a profile the card is not using now (often its HDMI output): choosing it switches the card over."""
         detail=f"{o.card_label} · "+("switches the sound card to this output" if o.available else "nothing seems plugged in here, but it can be tried")
-        self.row(o.label,"",lambda o=o:self.act(lambda:_outcome(sound.use_card_output(o),f"Could not switch {o.card_label} to {o.label}."),
-                 f"Switching to {o.label}…","Sound"),detail=detail,icon="video-display-symbolic" if o.hdmi else "audio-speakers-symbolic",
+        def use(o=o):
+            self.act(lambda:_outcome(sound.use_card_output(o),f"Could not switch {o.card_label} to {o.label}."),f"Switching to {o.label}…",
+                     "Sound",after=lambda:setattr(self,"focus_after",f"sink:{sound.sink_for(o.card,o.output)}"))
+        self.row(o.label,"",use,detail=detail,icon="video-display-symbolic" if o.hdmi else "audio-speakers-symbolic",
                  fallback="🖵" if o.hdmi else "🔈",ident=f"card:{o.card}:{o.output}")
 
     def choose_port(self, d, ports):
@@ -453,8 +470,12 @@ class SoundPage(Page):
             mute.set_child(glyph("audio-volume-muted-symbolic" if d.muted else "audio-volume-high-symbolic","🔇" if d.muted else "🔊"))
             mute.set_tooltip_text(("Unmute " if d.muted else "Mute ")+d.label)
             (mute.add_css_class if d.muted else mute.remove_css_class)("active")
+        def applied(result, what):
+            if result.ok: return
+            self.win.notice("Sound",f"Could not {what} {d.label}: {result.message}"); self.refresh(quiet=True)
         def apply_volume():
-            pending[0]=0; level=d.volume; in_background(lambda:sound.set_volume(d,level),lambda _r:None); return GLib.SOURCE_REMOVE
+            pending[0]=0; level=d.volume
+            in_background(lambda:sound.set_volume(d,level),lambda r:applied(r,"change the volume of")); return GLib.SOURCE_REMOVE
         def step(direction):
             d.volume=sound.stepped(d.volume,direction); show()
             if pending[0]: GLib.source_remove(pending[0])
@@ -465,7 +486,8 @@ class SoundPage(Page):
             if pending[0]: GLib.source_remove(pending[0])
             pending[0]=GLib.timeout_add(120,apply_volume)
         def toggle_mute():
-            d.muted=not d.muted; show(); in_background(lambda:sound.set_muted(d,d.muted),lambda _r:None)
+            d.muted=not d.muted; show(); muted=d.muted
+            in_background(lambda:sound.set_muted(d,muted),lambda r:applied(r,"mute" if muted else "unmute"))
         scale.connect("value-changed",dragged); mute.connect("clicked",lambda *_:toggle_mute())
         for w in (minus,plus,mute): w.add_css_class("square")
         label=Gtk.Label(label="Volume"); label.set_xalign(0); label.set_size_request(S(110),-1)

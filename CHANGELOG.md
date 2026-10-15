@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+**Settings app**
+- Power and sleep: where `xss-lock` runs (Debian's and Ubuntu's stock i3 config starts `xss-lock -- i3lock`), turning the screen off also locked the computer, even with "Lock after" set to Never, so a TV woke up to a password prompt. The page now says so, and a **Locks when the screen turns off** row comments the line out of the i3 config (keeping a copy as `config.before-tvwcs`) and stops xss-lock.
+- Power and sleep: "Closing the lid" is only shown on a computer that has a lid.
+- Sound: when the volume or mute cannot be changed, the reason is shown and the page shows the real values again, instead of looking changed. − from a volume above 100 % (set by another program) goes down 5 % at a time rather than straight to 100 %. After choosing an output, the selection stays on it.
+- Network: Wi-Fi names with characters outside ASCII (such as "Taylor’s") show and join correctly: the tools Settings runs now use the C.UTF-8 locale instead of C.
+- Network: joining Wi-Fi on a computer that is also on a wired connection NetworkManager does not manage (ifupdown on Debian) no longer moves all traffic to Wi-Fi: its route metric is set above the wired one, so Wi-Fi stays as a backup.
+- Displays: "Keep these display settings?" now starts on Go back, so pressing Enter on a screen that shows nothing undoes the change.
+- Long choice lists open scrolled to the current choice.
+
 ## 2.10.1 — 2026-10-15
 
 **Installer**

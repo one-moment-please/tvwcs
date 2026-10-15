@@ -14,7 +14,8 @@ import os, subprocess, sys, threading
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk
+gi.require_version("Graphene", "1.0")
+from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
 from tvwcs import privilege
 from tvwcs.hotkeys import HotkeyCapture, describe
@@ -61,6 +62,14 @@ button.app-tile { padding: 16px 10px 12px 10px; min-height: 170px; }
 button:focus .app-name { font-weight: 700; }
 .app-summary { font-size: 17px; }
 """
+
+def scroll_into_view(scroll, widget):
+    """Scroll so the widget is in the middle of the ScrolledWindow: focusing a row before the list has its size
+    does not scroll to it by itself, so the current choice of a long list would start out of sight."""
+    ok,point=widget.compute_point(scroll.get_child(),Graphene.Point())
+    if not ok: return
+    adj=scroll.get_vadjustment(); middle=point.y+widget.get_height()/2-adj.get_page_size()/2
+    adj.set_value(max(adj.get_lower(),min(middle,adj.get_upper()-adj.get_page_size())))
 
 def in_background(work, done, failed=None):
     """work() on a worker thread, so a slow tool never freezes the remote; then done(result) (or failed(error))
@@ -328,6 +337,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         cancel_action=back or self.close_modal
         cancel,=self._buttons(("Cancel",cancel_action,None)); groups.append([cancel])
         self._finish_modal(groups,cancel_action,focus)
+        if focus is not None and holder is not self.modal_card: GLib.timeout_add(80,lambda:(scroll_into_view(scroll,focus),GLib.SOURCE_REMOVE)[1])
 
     # ---------------------------------------------------------- choosing a hotkey (Options)
     def capture_hotkey(self, label, callback, can_clear=False, cancelled=None):
@@ -365,7 +375,8 @@ class ControlWindow(Gtk.ApplicationWindow):
 
     def countdown(self, title, message, seconds, keep_label, on_keep, undo_label, on_undo):
         """Ask whether to keep a change that may have left the screen unreadable. message(seconds) is the text; with
-        no answer by the end of the countdown (or on Esc), on_undo runs. Keep is selected: whoever can see it can use it."""
+        no answer by the end of the countdown (or on Esc), on_undo runs. Going back is selected, so a blind Enter on a
+        screen that shows nothing undoes the change; whoever can see the dialog moves right to Keep."""
         self._begin_modal(title); text=self._message(""); left=[seconds]; token=object(); self._countdown=token
         def finish(handler):
             if self._countdown is not token: return
@@ -377,7 +388,7 @@ class ControlWindow(Gtk.ApplicationWindow):
             text.set_text(message(left[0])); return GLib.SOURCE_CONTINUE
         text.set_text(message(seconds))
         undo,keep=self._buttons((undo_label,lambda:finish(on_undo),None),(keep_label,lambda:finish(on_keep),"active"))
-        GLib.timeout_add_seconds(1,tick); self._finish_modal([[undo,keep]],lambda:finish(on_undo),keep)
+        GLib.timeout_add_seconds(1,tick); self._finish_modal([[undo,keep]],lambda:finish(on_undo),undo)
 
     def form(self, title, rows, save_label, on_save, message="", error="", back=None):
         """A small form: each row (label, value, handler) is one button showing its current value, Enter changes it

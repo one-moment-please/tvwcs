@@ -81,7 +81,20 @@ def read_logind():
     for name in ("IdleAction","IdleActionUSec","HandleLidSwitch"):
         r=run(["busctl","--system","get-property","org.freedesktop.login1","/org/freedesktop/login1","org.freedesktop.login1.Manager",name],timeout=5)
         if r.ok: props[name]=r.out.strip()
-    return parse_logind(props)
+    state=parse_logind(props)
+    if not has_lid(): state.lid=""   # logind has a lid setting everywhere; only show it where there is a lid
+    return state
+
+LID_PATHS=("/proc/acpi/button/lid","/sys/bus/acpi/devices")
+
+def has_lid(paths=LID_PATHS):
+    """Whether the computer has a lid switch: an ACPI lid button (LID0, or the PNP0C0D device). A desktop has none."""
+    proc,acpi=paths
+    try:
+        if any(os.scandir(proc)): return True
+    except OSError: pass
+    try: return any(e.name.startswith("PNP0C0D") for e in os.scandir(acpi))
+    except OSError: return False
 
 def read_xset(env=None):
     env=os.environ if env is None else env
@@ -168,6 +181,59 @@ def screen_on(env=None):
     if sway(env): return run(["swaymsg","output * power on"],timeout=5)
     return run(["xset","dpms","force","on"],timeout=5)
 
+# ---------------------------------------------------------------------- xss-lock
+# Debian's and Ubuntu's i3 config starts `xss-lock -- i3lock`, which locks the screen whenever X's screen saver comes
+# on. X turns its screen saver on whenever the monitor is switched off, so with it running, "Turn off the screen
+# after" also locks the computer, whatever "Lock after" says, and a TV then wakes up to a password prompt.
+_XSS_LINE=re.compile(r"^\s*exec(?:_always)?\s+(?:--no-startup-id\s+)?xss-lock\b")
+XSS_NOTE="# Turned off by TVWCS's Settings: xss-lock locked the screen whenever it turned off. Remove the # to use it again."
+
+def xss_lock_running(proc="/proc"):
+    try: entries=[e.name for e in os.scandir(proc) if e.name.isdigit()]
+    except OSError: return False
+    for pid in entries:
+        try:
+            with open(f"{proc}/{pid}/comm",encoding="utf-8",errors="replace") as f:
+                if f.read().strip()=="xss-lock": return True
+        except OSError: continue
+    return False
+
+def i3_config_path(env=None):
+    """The i3 config i3 reads first (~/.config/i3/config, else ~/.i3/config), or None."""
+    env=os.environ if env is None else env
+    home=env.get("HOME") or os.path.expanduser("~")
+    for p in (os.path.join(env.get("XDG_CONFIG_HOME") or os.path.join(home,".config"),"i3","config"),os.path.join(home,".i3","config")):
+        if os.path.isfile(p): return p
+    return None
+
+def xss_lock_lines(text):
+    """The line numbers (from 0) of the config lines that start xss-lock."""
+    return [i for i,line in enumerate(text.splitlines()) if _XSS_LINE.match(line)]
+
+def without_xss_lock(text):
+    """The config with each xss-lock line commented out, under a note saying why."""
+    lines=text.splitlines(keepends=True); found=set(xss_lock_lines(text)); out=[]
+    for i,line in enumerate(lines):
+        if i in found: out+=[XSS_NOTE+"\n","# "+line]
+        else: out.append(line)
+    return "".join(out)
+
+def stop_xss_lock(path):
+    """Comment xss-lock out of the i3 config (keeping a copy as config.before-tvwcs), then stop the running one.
+    Returns "" when it worked, else why not."""
+    try: text=open(path,encoding="utf-8").read()
+    except OSError as exc: return f"Could not read {path}: {exc.strerror}"
+    if xss_lock_lines(text):
+        backup=path+".before-tvwcs"
+        try:
+            if not os.path.exists(backup): shutil.copy2(path,backup)
+            tmp=path+".tvwcs-new"
+            with open(tmp,"w",encoding="utf-8") as f: f.write(without_xss_lock(text))
+            os.replace(tmp,path)
+        except OSError as exc: return f"Could not change {path}: {exc.strerror}"
+    if have("pkill"): run(["pkill","-x","xss-lock"],timeout=5)
+    return ""
+
 # ---------------------------------------------------------------------- sway: swayidle
 def swayidle_argv(settings, launcher):
     """swayidle with one timeout per action; each calls `tvwcs idle <action>` back, which checks sound and inhibitors."""
@@ -207,9 +273,16 @@ class PowerState:
     idle_works: bool = True        # TVWCS can tell how long the computer has been idle here
     locker: bool = True            # a screen locker is installed
     can_sleep: bool = True
+    xss_lock: str = ""             # X11: xss-lock is running; the i3 config line that starts it ("?" when not found there)
 
 def read_state(settings, lock_ok, sleep_ok):
     on_sway=sway()
     works=bool(shutil.which("swayidle")) if on_sway else x_idle_available()
+    xss=""
+    if not on_sway and xss_lock_running():
+        path=i3_config_path(); xss="?"
+        if path:
+            try: xss=path if xss_lock_lines(open(path,encoding="utf-8").read()) else "?"
+            except OSError: pass
     return PowerState(clean_idle(settings.get("idle")),"sway" if on_sway else "X11",XTimers() if on_sway else read_xset(),
-                      read_logind(),works,lock_ok,sleep_ok)
+                      read_logind(),works,lock_ok,sleep_ok,xss)

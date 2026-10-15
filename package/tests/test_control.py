@@ -112,6 +112,7 @@ class SoundTests(unittest.TestCase):
     def test_volume_steps_land_on_multiples_and_stay_in_range(self):
         self.assertEqual([sound.stepped(v,1) for v in (0,47,45,98,100)],[5,50,50,100,100])
         self.assertEqual([sound.stepped(v,-1) for v in (0,3,47,45,100)],[0,0,45,40,95])
+        self.assertEqual([sound.stepped(110,-1),sound.stepped(110,1),sound.stepped(112,-1)],[105,110,110])   # above 100 %: down from there
     def test_stream_indexes(self):
         self.assertEqual(sound.parse_short_streams("12\t52\t83\tPipeWire\ts16le\n15\t52\t90\n"),[12,15])
 
@@ -168,6 +169,16 @@ class NetworkTests(unittest.TestCase):
         found=net.parse_ip_json(addr,route,physical=lambda name:name=="enp3s0")
         self.assertEqual([(i.device,i.state,i.addresses,i.gateway,i.mac) for i in found],[("enp3s0","connected",["10.0.0.5/24"],"10.0.0.1","aa:bb:cc:dd:ee:ff")])
         self.assertEqual(net.parse_ip_json("not json",""),[])
+    def test_wifi_stays_behind_a_wired_connection(self):
+        wireless=lambda name:name.startswith("wl")
+        ifupdown='[{"dst":"default","gateway":"192.168.0.1","dev":"enp1s0","metric":1002},{"dst":"default","gateway":"192.168.0.1","dev":"wlp2s0","metric":600}]'
+        self.assertEqual(net.wifi_metric(ifupdown,"wlp2s0",wireless),1102)
+        managed='[{"dst":"default","dev":"enp1s0","metric":100},{"dst":"default","dev":"wlp2s0","metric":600}]'
+        self.assertIsNone(net.wifi_metric(managed,"wlp2s0",wireless))                                      # wired already first
+        self.assertIsNone(net.wifi_metric('[{"dst":"default","dev":"wlp2s0","metric":600}]',"wlp2s0",wireless))   # Wi-Fi only
+        self.assertIsNone(net.wifi_metric('[{"dst":"default","dev":"enp1s0"}]',"wlp2s0",wireless))          # Wi-Fi has no route
+        self.assertEqual(net.wifi_metric('[{"dst":"default","dev":"eth0"},{"dst":"default","dev":"wlan0"}]',"wlan0",wireless),100)   # both 0
+        self.assertIsNone(net.wifi_metric("not json","wlp2s0",wireless))
     def test_ipv4_settings(self):
         s=net.parse_ipv4("ipv4.method:manual\nipv4.addresses:192.168.1.20/24\nipv4.gateway:192.168.1.1\nipv4.dns:1.1.1.1,9.9.9.9\n")
         self.assertEqual((s.automatic,s.address,s.gateway,s.dns),(False,"192.168.1.20/24","192.168.1.1","1.1.1.1,9.9.9.9"))
