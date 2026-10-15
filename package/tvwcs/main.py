@@ -20,7 +20,7 @@ from tvwcs.pinlock import PinGate
 from tvwcs import power, privilege, quick_status, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
-from tvwcs.ui_editors import ApplicationProfilesWindow, ProfileEditor
+from tvwcs.ui_editors import ApplicationProfiles, ProfileEditor
 from tvwcs.ui_window import TVWCSWindow
 from tvwcs.widgets import app_icon, has_icon, set_scale
 from tvwcs.window_manager import I3WindowManager
@@ -391,14 +391,10 @@ class TVWCSApp(Gtk.Application):
         p=self.store.get(profile.id)
         if p: p.favorite=not p.favorite; self.store.save(); self.window.refresh_favorites(p.id)   # in place: no rebuild, no jump
     def edit_profile(self,profile,application):
-        # A new profile is not stored until Save is pressed, so closing the editor cannot leave a half-created profile.
-        if profile is None and application is not None:
-            existing=self.store.for_app(application.desktop_id)
-            editor=ProfileEditor(self,None,application)
-            editor.name_entry.set_text(application.name if not existing else f"{application.name} profile {len(existing)+1}")
-            editor.present(); return
-        ProfileEditor(self,profile,application or self.catalogue.by_id().get(profile.desktop_id)).present()
-    def edit_application_profiles(self,desktop_id): ApplicationProfilesWindow(self,desktop_id).present()
+        """The profile editor, in the TVWCS window. A new profile is not stored until Save."""
+        if profile is None and application is None: return
+        ProfileEditor(self.window,profile,application or self.catalogue.by_id().get(profile.desktop_id)).open()
+    def edit_application_profiles(self,desktop_id): ApplicationProfiles(self.window,desktop_id).show()
     def activate_result(self,result):
         if result["kind"]=="profile": self.launch_profile(result["profile"])
         elif result["kind"]=="window": self.focus_window(result["window"]["con_id"])

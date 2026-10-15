@@ -34,6 +34,9 @@ button:focus .description, .tvwcs-selected .description { color: #e3eefa; }
 button.pin-key { font-size: 24px; min-height: 64px; }
 button.pin-key.kb-key { font-size: 18px; min-height: 46px; min-width: 0; padding: 0 2px; }
 .text-display { font-size: 22px; min-height: 48px; }
+.field-value { color: #b5b5b5; font-size: 14px; }
+button.field-row { padding-top: 6px; padding-bottom: 6px; }
+button.field-row:focus .field-value { color: inherit; }
 .setting-value { color: @ACCENT@; font-weight: 700; }
 button:focus .setting-value { color: #ffffff; }
 .tvwcs-selected { background: @ACCENT@; color: #ffffff; outline: 3px solid #ffffff; outline-offset: -3px; }
