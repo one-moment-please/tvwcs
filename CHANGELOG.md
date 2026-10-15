@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+**Installer**
+- `install.sh` asks whether TVWCS will be used on a TV or a desktop monitor (until it is answered), and sets the interface size and how apps open to match.
+
 **Settings app**
 - New **Apps** page, a store for Flatpak apps from Flathub: a grid of tiles with icons, names and summaries; Featured apps that suit a TV first, then categories (Video & music, Games, Internet, Graphics & photos, Office & education, Utilities), a search typed on the on-screen keyboard, and the installed apps. A tile opens the app's description with Install, or Open and Remove. Apps are installed for the user (`flatpak install --user`, no password); one installed system-wide is removed as root. The page offers to install Flatpak with the package manager and to set up Flathub for the user, and reads the catalog flatpak downloads (`flatpak update --appstream`), so it works with the remote alone. `tvwcs settings apps` opens it.
+- Options: a new **Used on** row (A TV, or A desktop monitor) sets the interface size and where apps open: on a TV every app opens in a workspace of its own; on a desktop monitor apps open tiled in the current workspace. Each can still be changed on its own.
+- Options: **Open at login** is now one choice: None, TVWCS Quick Menu, Last application or Chosen application; choosing the last shows an **Application** row to pick it with. The separate "Open the Quick Menu at login" switch is gone (a config that had it on, with nothing else chosen, opens the Quick Menu).
 - The applications guide finds Flatpak apps even when the session's `XDG_DATA_DIRS` does not include Flatpak's folders (as right after installing Flatpak, before logging in again).
 
 ## 2.10.0 — 2026-10-14

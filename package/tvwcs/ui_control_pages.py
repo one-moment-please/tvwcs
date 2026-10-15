@@ -12,7 +12,7 @@ from tvwcs import control_bluetooth as bluetooth, control_flatpak as flatpak, co
 from pathlib import Path
 from tvwcs import __version__, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, is_4k, scale_choices, startup_choices
+from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, apply_use, is_4k, scale_choices, startup_choices
 from tvwcs.system_actions import command_for, login_manager_installed
 from tvwcs.ui_control import StreamedRun, in_background
 from tvwcs.widgets import NavGroup, S, clear_box, glyph, muted_label, section_title, usable
@@ -202,6 +202,9 @@ class OptionsPage(Page):
         self.option("Button hints","button_hints","Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
 
         self.section("DISPLAY")
+        self.row("Used on",{"tv":"A TV","desktop":"A desktop monitor"}.get(st["use"],"Not chosen"),self.choose_use,ident="opt:use")
+        self.note("A TV: TV Mode size, and every app opens in a workspace of its own. A desktop monitor: Desktop size, and apps open "
+                  "tiled in the current workspace. Both can still be changed one by one below.")
         has_4k=self.has_4k()
         self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
         self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
@@ -215,12 +218,14 @@ class OptionsPage(Page):
 
         self.section("AT LOGIN")
         names={p.id:p.name for p in store.profiles}
-        self.row("Open at login",STARTUP_LABELS[st["startup"]["mode"]],lambda:self.win.choose_option("Open at login",[(m,STARTUP_LABELS[m]) for m in STARTUP_MODES],
-                 st["startup"]["mode"],lambda m:self.change(lambda s:s.settings["startup"].update(mode=m))),ident="opt:startup")
-        self.row("Chosen app",names.get(st["startup"]["profile_id"],"Not chosen"),lambda:self.choose_app(store),ident="opt:startup-app")
-        self.note("“Reopen the last app” starts whichever app you used most recently. Either runs once per login, a moment after TVWCS starts.")
-        self.row("Open the Quick Menu at login",_on_off(st["startup"]["show_menu"]),
-                 lambda:self.change(lambda s:s.settings["startup"].update(show_menu=not s.settings["startup"]["show_menu"])),ident="opt:startup-menu")
+        mode=st["startup"]["mode"]
+        self.row("Open at login",STARTUP_LABELS[mode],lambda:self.win.choose_option("Open at login",[(m,STARTUP_LABELS[m]) for m in STARTUP_MODES],
+                 mode,lambda m:self.pick_startup(store,m)),ident="opt:startup")
+        if mode=="app":
+            self.row("Application",names.get(st["startup"]["profile_id"],"Not chosen"),lambda:self.choose_app(store),ident="opt:startup-app")
+        self.note({"none":"Nothing opens by itself when you log in.","menu":"The Quick Menu opens when you log in.",
+                   "last":"Whichever application you used most recently opens when you log in.",
+                   "app":"The application chosen above opens when you log in."}[mode]+" It happens once per login, a moment after TVWCS starts.")
 
         hints={"keyboard":"A modifier tapped on its own (such as Super) triggers when it is released, so Super combinations keep working.",
                "remote":"Most remotes send ordinary keys; F2 suits many of them. Fullscreen switches the app you are using in and out of fullscreen.",
@@ -253,11 +258,19 @@ class OptionsPage(Page):
         return False
     def pick_scale(self, key):
         self.change(lambda s:s.settings.update(scale=key),"TVWCS uses the new size now. Settings uses it the next time it opens.")
+    def choose_use(self):
+        def picked(use):
+            old=self.state.settings["scale"]; self.change(lambda s:apply_use(s.settings,use))
+            if self.state.settings["scale"]!=old: self.win.notice("Options","TVWCS uses the new size now. Settings uses it the next time it opens.")
+        self.win.choose_option("Used on",[("tv","A TV, across the room"),("desktop","A desktop monitor, at arm's length")],self.state.settings["use"],picked)
+    def pick_startup(self, store, mode):
+        if mode=="app" and store.get(store.settings["startup"]["profile_id"]) is None: self.choose_app(store); return   # pick which one first
+        self.change(lambda s:s.settings["startup"].update(mode=mode))
     def choose_app(self, store):
         options=[]
         for heading,profiles in startup_choices(store.profiles):
             for p in profiles: options.append((p.id,(f"{p.channel:03d}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
-        if not options: self.win.notice("Chosen app","There are no applications to choose from yet."); return
+        if not options: self.win.notice("Chosen application","There are no applications to choose from yet."); return
         def picked(pid): self.change(lambda s:s.settings["startup"].update(profile_id=pid,mode="app"))
         self.win.choose_option("Open at login",options,store.settings["startup"]["profile_id"],picked)
 

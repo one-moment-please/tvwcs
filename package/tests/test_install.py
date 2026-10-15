@@ -87,6 +87,17 @@ class InstallTests(unittest.TestCase):
                 if out.rstrip().endswith((b"]",b"]:",b"):")):   # a prompt: the next answer (or "n" when none is left)
                     os.write(fd,((pending.pop(0) if pending else "n")+"\n").encode()); out+=b"\n"
         os.waitpid(pid,0); return out.decode(errors="replace")
+    def test_asks_once_whether_it_is_used_on_a_tv_or_a_desktop(self):
+        config=self.home/".config"/"tvwcs"/"config.json"
+        out=self.converse(["n","2"])   # no i3 config / a desktop monitor
+        self.assertIn("Will TVWCS be used on a TV or on a desktop monitor?",out)
+        s=json.loads(config.read_text())["settings"]
+        self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("desktop","desktop",False,False))
+        out=self.converse(["n"]); self.assertNotIn("Will TVWCS be used",out)   # answered: not asked again
+        config.unlink(); self.converse(["n",""])   # Enter: a TV
+        s=json.loads(config.read_text())["settings"]
+        self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("tv","tenfoot",True,True))
+        config.unlink(); out=self.run_install(); self.assertNotIn("Will TVWCS be used",out); self.assertFalse(config.exists())   # no terminal
     def test_creates_an_i3_config_with_the_chosen_mod_key_and_layout(self):
         out=self.converse(["y","2","n","de nodeadkeys","y"])   # create? / Alt / not the current layout / German / add the include
         text=self.i3.read_text()
@@ -149,7 +160,7 @@ class InstallTests(unittest.TestCase):
         text=override.read_text()
         self.assertEqual(self.calls.read_text(),"systemctl restart getty@tty1.service\nchvt 1\n",out)   # started now, on the screen
         config=json.loads((self.home/".config"/"tvwcs"/"config.json").read_text())
-        self.assertTrue(config["settings"]["startup"]["show_menu"])   # TVWCS opens at log-in
+        self.assertEqual(config["settings"]["startup"]["mode"],"menu")   # TVWCS opens its Quick Menu at log-in
         self.assertIn("does not include TVWCS",out)   # the i3 config was not created
         self.assertIn("ExecStart=\n",text); self.assertIn("--autologin tv %I $TERM",text); self.assertIn("-o '-p -f -- \\\\u'",text)
         profile=(self.home/".profile").read_text()
