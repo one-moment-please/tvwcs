@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.10.4 — 2026-10-15
+
+- Updating from Settings restarts TVWCS again. Updating 2.10.2 to 2.10.3 installed it but left the old TVWCS running, with nothing said: Settings imported the new `main.py` to send the restart, and that needed a name the old modules still loaded in Settings did not have. Settings now sends the request itself, and the new start-up code lives in a module of its own, so an update from 2.10.2 or 2.10.3 restarts properly.
+
 ## 2.10.3 — 2026-10-15
 
 - Flatpak apps launch from the Quick Menu and the guide, and show their icons, when the session's `XDG_DATA_DIRS` lacks Flatpak's folders (X started with `startx`, or Flatpak installed during this login): TVWCS adds them for itself at start-up, the way Flatpak's profile script does. Before, such an app was listed but nothing happened when it was chosen.

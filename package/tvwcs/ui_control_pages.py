@@ -2,7 +2,7 @@
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
-import os, subprocess, time
+import os, signal, subprocess, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -13,6 +13,7 @@ from pathlib import Path
 from tvwcs import __version__, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, apply_use, is_4k, scale_choices, startup_choices
+from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for, login_manager_installed
 from tvwcs.ui_control import StreamedRun, in_background
 from tvwcs.widgets import NavGroup, S, clear_box, glyph, muted_label, section_title, usable
@@ -165,11 +166,15 @@ def _outcome(result, otherwise):
 
 # ====================================================================== Options (TVWCS's own)
 def tell_tvwcs(request):
-    """Ask the running TVWCS to read its options again ("reload") or to restart ("restart PATH"); False when it is not running."""
-    from tvwcs.main import PID_FILE, send_request   # TVWCS's own module, only needed here
-    try: os.kill(int(PID_FILE.read_text(encoding="ascii").strip()),0)
+    """Ask the running TVWCS to read its options again ("reload") or to restart ("restart PATH"); False when it is not running.
+    The same files and signal as main.send_request, written here rather than imported: after an update, main.py on disk
+    is the new version, and importing it into this process (with the old versions of the other modules) can fail."""
+    runtime=runtime_dir()
+    try:
+        pid=int((runtime/"tvwcs.pid").read_text(encoding="ascii").strip()); os.kill(pid,0)
+        with open(runtime/"tvwcs-requests","a",encoding="utf-8") as f: f.write(request+"\n")
+        os.kill(pid,signal.SIGWINCH); return True
     except (OSError,ValueError): return False   # not running: it reads its options when it starts
-    return send_request(request)==0
 
 class OptionsPage(Page):
     """TVWCS's options: the Quick Menu's buttons, the interface size, behaviour, what opens at login, hotkeys and
