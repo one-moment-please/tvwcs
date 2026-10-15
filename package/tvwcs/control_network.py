@@ -260,3 +260,110 @@ def apply_ipv4(uuid, settings):
     if problem: return problem
     problem=_outcome(run(["nmcli","connection","modify",uuid,*args],timeout=15))
     return problem or activate(uuid)
+
+# ------------------------------------------------------------------ an Ethernet port NetworkManager leaves alone
+# Debian's installer sets up the port it installed over in /etc/network/interfaces ("allow-hotplug enp1s0" and
+# "iface enp1s0 inet dhcp"), run by ifupdown's networking service. NetworkManager's ifupdown plugin, with Debian's
+# default "managed=false", then leaves that port unmanaged, so Settings could only show it. Taking it over comments
+# its lines out of the interfaces file (a copy is kept as interfaces.before-tvwcs), stops ifupdown on it and restarts
+# NetworkManager, which then connects it with DHCP ("Wired connection 1").
+INTERFACES="/etc/network/interfaces"
+INTERFACES_D="/etc/network/interfaces.d"
+NM_CONF="/etc/NetworkManager/NetworkManager.conf"
+TAKEN_NOTE="# Handed to NetworkManager by TVWCS Settings (Network); the copy from before is interfaces.before-tvwcs:"
+
+def ifupdown_lines(text, device):
+    """The line numbers (from 0) of the stanza lines for `device`: its auto / allow-* lines, and its iface line with
+    the indented options under it. Other interfaces (lo) are not touched."""
+    lines=text.splitlines(); found=[]; inside=False
+    for i,line in enumerate(lines):
+        words=line.split()
+        if not words or words[0].startswith("#"):
+            continue   # blank lines and comments do not end a stanza's options
+        if words[0]=="iface":
+            inside=len(words)>1 and words[1]==device
+            if inside: found.append(i)
+            continue
+        if words[0]=="auto" or words[0].startswith("allow-"):
+            inside=False
+            if device in words[1:]: found.append(i)
+            continue
+        if words[0] in ("source","source-directory","mapping","no-auto-down","no-scripts","rename"): inside=False; continue
+        if inside: found.append(i)
+    return found
+
+def without_device(text, device):
+    """The interfaces file with `device`'s lines commented out (an auto line naming other interfaces too keeps them)."""
+    lines=text.splitlines(); hit=set(ifupdown_lines(text,device)); out=[]; noted=False
+    for i,line in enumerate(lines):
+        if i not in hit: out.append(line); continue
+        if not noted: out.append(TAKEN_NOTE); noted=True
+        words=line.split()
+        if (words[0]=="auto" or words[0].startswith("allow-")) and len(words)>2:
+            out.append("# "+line); out.append(" ".join([words[0]]+[w for w in words[1:] if w!=device]))
+        else: out.append("# "+line)
+    return "\n".join(out)+("\n" if text.endswith("\n") or not text else "")
+
+def ifupdown_ignored(conf_text):
+    """NetworkManager.conf says to leave interfaces in /etc/network/interfaces alone ([ifupdown] managed=false, Debian's default)."""
+    section=None; managed=None; plugin=False
+    for line in conf_text.splitlines():
+        t=line.strip()
+        if t.startswith("["): section=t.strip("[]").strip().lower(); continue
+        if "=" not in t or t.startswith("#"): continue
+        key,value=(x.strip().lower() for x in t.split("=",1))
+        if section=="main" and key=="plugins": plugin="ifupdown" in value
+        if section=="ifupdown" and key=="managed": managed=value in ("true","1","yes")
+    return plugin and managed is not True
+
+def _read(path):
+    try:
+        with open(path,encoding="utf-8") as f: return f.read()
+    except OSError: return ""
+
+def interfaces_files():
+    files=[INTERFACES]
+    try: files+=sorted(os.path.join(INTERFACES_D,n) for n in os.listdir(INTERFACES_D) if not n.startswith("."))
+    except OSError: pass
+    return files
+
+def unmanaged_reason(device):
+    """Why NetworkManager leaves `device` alone: "ifupdown" (it is set up in /etc/network/interfaces, which Settings can
+    take over), "config" (another setting; Settings can still ask NetworkManager to manage it), or ""."""
+    if ifupdown_ignored(_read(NM_CONF)) and any(ifupdown_lines(_read(p),device) for p in interfaces_files()): return "ifupdown"
+    return "config"
+
+TAKE_OVER_SCRIPT=r'''set -u
+dev=$1; shift
+while [ $# -ge 2 ]; do
+  f=$1; new=$2; shift 2
+  [ -e "$f.before-tvwcs" ] || cp -p "$f" "$f.before-tvwcs"
+  cat "$new" > "$f"
+done
+if command -v ifdown >/dev/null 2>&1; then ifdown --force "$dev" 2>/dev/null || true; fi
+ip addr flush dev "$dev" 2>/dev/null || true
+systemctl restart NetworkManager
+for i in 1 2 3 4 5 6 7 8 9 10; do nmcli -t general >/dev/null 2>&1 && break; sleep 1; done
+nmcli device set "$dev" managed yes || true
+sleep 1
+nmcli device connect "$dev"
+'''
+
+def take_over_argv(device, rewritten):
+    """The root command that hands `device` to NetworkManager. `rewritten` is [(interfaces file, new copy written by
+    the user)]; with none (it is unmanaged for another reason) NetworkManager is only asked to manage it."""
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]+",device): raise ValueError("Unexpected device name.")
+    pairs=[x for f,new in rewritten for x in (f,new)]
+    return ["sh","-c",TAKE_OVER_SCRIPT,"sh",device,*pairs]
+
+def prepare_take_over(device, folder):
+    """Write the interfaces files without `device`'s lines into `folder` (as the user). -> [(file, new copy)]."""
+    out=[]
+    os.makedirs(folder,exist_ok=True)
+    for n,path in enumerate(interfaces_files()):
+        text=_read(path)
+        if not ifupdown_lines(text,device): continue
+        new=os.path.join(folder,f"interfaces-{n}.tvwcs")
+        with open(new,"w",encoding="utf-8") as f: f.write(without_device(text,device))
+        out.append((path,new))
+    return out

@@ -41,6 +41,15 @@ It works with normal desktop apps. It is not a media center and needs no plugins
 
 Other distributions and systems without systemd are not supported. [TODO.md](TODO.md) records what it would take to bring them back.
 
+**On a system that isn't Debian-based**, TVWCS's own windows may still run if you install its packages by hand, but:
+
+- the installer can't install anything: it only knows apt and Debian's package names, so it lists what is missing and stops;
+- **Software updates** can't check for or install system updates (apt only); Flatpak and TVWCS's own updates still work;
+- **System information** can't install the SSH server, and **Apps** can't install Flatpak itself;
+- **Network** can't take over an Ethernet port set up in `/etc/network/interfaces` (Debian's ifupdown);
+- the hints that name a missing tool give Debian's package names;
+- without systemd, Sleep, Reboot and Shut down, the network-time switch, starting PipeWire and the SSH switch don't work, and the installer can't set up automatic login.
+
 **New computer?** [Setting up a TV computer with Debian](docs/INSTALL-DEBIAN.md) goes from an empty computer to one that boots into TVWCS.
 
 ## Install
@@ -92,11 +101,13 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 | **OK** / Enter | Open, switch to or choose the selected item |
 | **Back** / Esc | Go back one step |
 | **OK** on the empty search field | Open the on-screen keyboard (or number keypad) |
-| Any letter or digit | Search. A channel number then OK opens that channel |
-| **←** on a Quick Menu row (or right-click) | Show that row's options |
+| Any letter or digit | Search. A channel number (000 to 999) then OK opens that channel |
+| **←** on a Quick Menu row (or right-click) | Open that row's menu |
 
 - **First start:** TVWCS asks whether it is used on a TV or at a desk. This sets the interface size and how apps open.
-- **Row options (⋯):** open an app another way, close it, move a workspace to another monitor, or ≡ start the app with one of its own shortcuts.
+- **Row menu (⋯):** one menu of labelled choices: open the app in a new workspace or this one, start it with one of its own shortcuts, close it, or move a workspace to another monitor.
+- **Channels:** 000 to 999. Channel 000 opens Settings unless you give it to another app. Setting a channel shows three digit boxes; typing replaces the number.
+- **Slow apps:** while an app takes a few seconds to open, TVWCS shows "Starting…" so the screen is never blank, and the Quick Menu still opens.
 - **Launch profiles (✎):** a profile is one way to start an app. It can have a channel number, a hotkey, a custom command, a description and a PIN. The editor opens inside the TVWCS window: each field is a row, with Save, Cancel and Delete at the bottom. A PIN-protected profile asks for its PIN first. The PIN is a lock for a shared TV, not real security.
 - **Power menu (⏻):** Sleep, Reboot, Shut down; Log out when there is a login screen; Lock when switched on in Options. If a power action needs your password, TVWCS asks for it on screen and never stores it.
 - **Other keys:** set keys for Applications, fullscreen, a gamepad or any app in **Settings › Remote and hotkeys**. A gamepad needs a key mapper such as AntiMicroX.
@@ -109,18 +120,19 @@ Open **TVWCS Settings** with ⚙ in the Quick Menu, from Applications (under Sys
 
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
-| **Options** (`options`) | TV or desktop monitor (TV also turns on button hints), interface size (applies at once), accent colour, screen edge margin for TVs that cut off the edges (overscan), Reduce motion, Quick Menu buttons, where apps open (full screen one per workspace, side by side, or as each app's profile says), what opens at login. |
+| **Options** (`options`) | TV or desktop monitor (TV also turns on button hints), light or dark mode (dark by default; passed on to apps that follow the system's choice), background colour, interface size (applies at once), accent colour, screen edge margin for TVs that cut off the edges (overscan), Reduce motion, Quick Menu buttons, where apps open (full screen one per workspace, side by side, or as each app's profile says), what opens at login, and whether password dialogs open with the full keyboard or a number pad. |
 | **Remote and hotkeys** (`hotkeys`) | Keys for the keyboard, remote and gamepad, and apps that have their own hotkey. |
 | **Sound** (`sound`) | Volume, mute, and output (speakers, HDMI, headphones) and microphone. |
 | **Displays** (`displays`) | Resolution, refresh rate and arrangement. A change goes back after 15 seconds unless you keep it. |
-| **Power and sleep** (`power`) | When the screen turns off, the computer locks and it sleeps. The lock screen to use. |
+| **Power and sleep** (`power`) | When the screen saver starts, the screen turns off, the computer locks and it sleeps. The screen saver is a bouncing DVD logo, TVWCS's logo or a picture of your own. The lock screen to use. |
 | **Bluetooth** (`bluetooth`) | Pair, connect and forget devices. Shows battery levels. |
-| **Date and time** (`datetime`) | Time zone, network time, 12- or 24-hour clock. |
+| **Date and time** (`datetime`) | Time zone, network time, 12- or 24-hour clock. Setting the time by hand in one of three ways: each field with ▲ and ▼, steps forward and back, or four digits on the number pad. |
 | **Apps** (`apps`) | Install and remove apps from Flathub, with no password. |
 | **Software updates** (`updates`) | System and Flatpak updates, and TVWCS's own updates (including prereleases and rolling back). |
 | **System information** (`system`) | Hardware and versions. Turns the SSH server on or off and shows how to connect. |
 | **Terminal** (`terminal`) | A terminal, with Tab and Esc buttons for a remote. |
-| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. |
+| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. An Ethernet port the Debian installer set up (shown as "not managed") can be handed to NetworkManager; the old setup is kept as a backup. |
+| **Storage** (`storage`) | Drives: open, close and safely remove them. Network shares (Windows/Samba, NFS, SFTP, WebDAV, FTP): add, connect and disconnect. Passwords are not saved. |
 
 A page whose tool is missing says what to install.
 
@@ -128,7 +140,7 @@ A page whose tool is missing says what to install.
 
 ## Update and uninstall
 
-**Update:** **Settings › Software updates › Check for TVWCS updates**, or run a newer installer. Your data is never changed. If you edited `~/.local/share/tvwcs/tvwcs.conf`, your copy is saved as `tvwcs.conf.bak`.
+**Update:** **Settings › Software updates › Check for TVWCS updates**, or run a newer installer. When a new version needs packages that are not installed, Settings lists them and offers to install them first. Your data is never changed. If you edited `~/.local/share/tvwcs/tvwcs.conf`, your copy is saved as `tvwcs.conf.bak`.
 
 **Uninstall:**
 

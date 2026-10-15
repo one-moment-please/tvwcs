@@ -8,12 +8,13 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
+from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
 from tvwcs import __version__, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, accent_name, apply_use,
-                         apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
+from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, PASSWORD_KEYBOARDS, SCALE_LABELS, SCREENSAVER_LOGOS, STARTUP_LABELS, STARTUP_MODES,
+                         THEMES, TIME_ENTRY, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for, login_manager_installed
 from tvwcs.ui_control import StreamedRun, colour_swatch, in_background
@@ -227,8 +228,13 @@ class OptionsPage(_ConfigPage):
         has_4k=self.has_4k()
         self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
         self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
+        self.row("Appearance",THEMES[st["theme"]],self.choose_theme,ident="opt:theme")
+        self.note("Dark or light, for TVWCS and Settings. Applications that follow the desktop's colour scheme (most GTK apps, "
+                  "and Flatpak apps and browsers through the desktop portal) switch with it.")
         self.row("Accent colour",accent_name(st["accent"]),self.choose_accent,ident="opt:accent",swatch=st["accent"])
         self.note("The colour of the selection, of switched-on things and of the tiles.")
+        self.row("Background colour","",self.choose_wallpaper,ident="opt:wallpaper",swatch=st["wallpaper"])
+        self.note("Shown where no application is open, and behind the Quick Menu.")
         self.row("Screen edge margin",f"{st['margin']} px",self.choose_margin,ident="opt:margin")
         self.note("Space between the Quick Menu and the edges of the screen. Many TVs cut off the edges of the picture "
                   "(overscan): if the edges of TVWCS are missing, make this larger, or turn overscan off in the TV's own picture settings.")
@@ -238,6 +244,14 @@ class OptionsPage(_ConfigPage):
                         "Bluetooth and waiting updates instead. Off: the bar shows as your i3 or sway config sets it.")
             self.option("Keep the Quick Menu open","tv_keep_menu_open","While no application is open, the Quick Menu stays on screen "
                         "(Esc does not close it) and comes back when the last application closes.")
+
+        self.section("PASSWORDS")
+        self.row("Password keyboard",PASSWORD_KEYBOARDS[st["password_keyboard"]],self.choose_password_keyboard,ident="opt:password_keyboard")
+        self.note("What the on-screen keyboard shows first when a password is asked. A key on it switches to the other. "
+                  "Choose Number pad if your password is only digits.")
+        if st["password_keyboard"]=="digits":
+            self.note("A password of digits only is easy to guess. If the SSH server is on, set System information › "
+                      "Sign in with to Keys only, so nobody can sign in over the network with it.","error")
 
         self.section("BEHAVIOR")
         self.option("Close when clicking outside","close_on_click_outside")
@@ -277,6 +291,14 @@ class OptionsPage(_ConfigPage):
         current=self.state.settings["accent"].lower()
         options=[(c,accent_name(c)) for c in METRO_COLORS]+([] if current in METRO_COLORS else [(current,f"{current} (set in config.json)")])
         self.win.choose_option("Accent colour",options,current,lambda c:self.change(lambda s:s.settings.update(accent=c)),swatches=True)
+    def choose_theme(self):
+        self.win.choose_option("Appearance",list(THEMES.items()),self.state.settings["theme"],lambda t:self.change(lambda s:s.settings.update(theme=t)))
+    def choose_wallpaper(self):
+        self.win.choose_swatch("Background colour","Six greys, six colours and the same colours darker.",WALLPAPERS,self.state.settings["wallpaper"],
+                               lambda c:self.change(lambda s:s.settings.update(wallpaper=c)))
+    def choose_password_keyboard(self):
+        self.win.choose_option("Password keyboard",list(PASSWORD_KEYBOARDS.items()),self.state.settings["password_keyboard"],
+                               lambda k:self.change(lambda s:s.settings.update(password_keyboard=k)))
     def choose_margin(self):
         m=self.state.settings["margin"]; choices=sorted(set(MARGIN_CHOICES)|{m})
         self.win.choose_option("Screen edge margin",[(str(v),f"{v} px"+(" (none)" if v==0 else " (the default)" if v==DEFAULT_SETTINGS["margin"] else "")) for v in choices],
@@ -389,14 +411,40 @@ class _SelfUpdate:
                          "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
                          lambda:self.install(release,target,moving),danger=False)
     def install(self, release, target, moving):
+        """Download the release, install the packages it needs that are missing here (asked first), then install it."""
+        self.updating=True; self.update_text="Downloading…"; self.redraw()
+        def failed(exc): self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
+        def downloaded(result):
+            folder,missing=result
+            if not missing: self.install_downloaded(release,folder,target,moving,""); return
+            listing="\n".join(f"• {packages}: {why}" for packages,why in missing)
+            def cancel(): self.win.close_modal(); selfupdate.discard(folder); self.updating=False; self.update_text=""; self.redraw()
+            def install_them():
+                try: argv=selfupdate.install_packages_argv([p for p,_w in missing])
+                except ValueError as exc: self.install_downloaded(release,folder,target,moving,str(exc)); return
+                self.update_text="Installing packages…"; self.redraw(); lines=[]
+                def after(code,tail):
+                    problem="" if code==0 else ("\n".join(lines[-3:]) or tail or "apt-get did not finish.").strip()
+                    self.install_downloaded(release,folder,target,moving,problem)
+                self.win.run_as_root(argv,"Installing packages",lines.append,after)
+            self.win.confirm(f"TVWCS {release.version} needs more packages",
+                             f"These packages are not installed yet:\n{listing}\n\nInstall them first? It asks for your password. "
+                             "Cancel stops the update.","Install and update",install_them,danger=False,back=cancel)
+        def fetch():
+            folder=selfupdate.download_release(release)
+            return folder,selfupdate.missing_packages(folder)
+        in_background(fetch,downloaded,failed)
+    def install_downloaded(self, release, folder, target, moving, package_problem):
         self.updating=True; self.update_text="Installing…"; self.redraw()
         def done(_out):
+            selfupdate.discard(folder)
             self.updating=False; self.update_text=f"Installed {release.version}"; self.redraw()
             restarted=tell_tvwcs(f"restart {target/'bin'/'tvwcs'}")
+            note=f" Some packages could not be installed: {package_problem}" if package_problem else ""
             self.win.notice("TVWCS updated",f"TVWCS {release.version} is installed"+(" and has restarted." if restarted else ".")+
-                            " Close Settings and open it again to use the new version.")
-        def failed(exc): self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
-        in_background(lambda:selfupdate.install_release(release,target,migrate=moving),done,failed)
+                            " Close Settings and open it again to use the new version."+note)
+        def failed(exc): selfupdate.discard(folder); self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
+        in_background(lambda:selfupdate.install_downloaded(folder,target,migrate=moving),done,failed)
 
 # ====================================================================== Power and sleep
 LOCK_SCREENS={True:"TVWCS lock screen",False:"The system's screen locker"}
@@ -411,6 +459,8 @@ class PowerPage(Page):
     def draw(self, s):
         times=s.settings
         self.section("WHEN NOTHING IS TOUCHED")
+        self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"]),
+                 icon="video-display-symbolic",fallback="▭",ident="idle:screensaver")
         screen=times["screen_off"]
         self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
                  lambda:self.choose("screen_off",screen,system=True),icon="video-display-symbolic",fallback="🖵",ident="idle:screen_off")
@@ -422,6 +472,14 @@ class PowerPage(Page):
                  icon="weather-clear-night-symbolic",fallback="☾",ident="idle:sleep")
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
+        self.section("SCREEN SAVER")
+        st=ConfigStore().settings
+        logo=st["screensaver_logo"]
+        self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
+        self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
+                 icon="media-playback-start-symbolic",fallback="▶")
+        self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
+                  "The TVWCS logo is drawn in the same style as the DVD one; a picture of your own can be any PNG, JPEG or SVG.")
         self.section("LOCKING")
         own=bool(ConfigStore().settings["tvwcs_lock_screen"])
         self.row("Lock screen",LOCK_SCREENS[own],self.choose_lock_screen,icon="system-lock-screen-symbolic",fallback="🔒",ident="lock:screen")
@@ -456,6 +514,24 @@ class PowerPage(Page):
         self.note(("Change “Turn off the screen after” to let TVWCS decide instead of X. " if s.session=="X11" else "")+
                   "logind's settings are changed in /etc/systemd/logind.conf, as root.")
 
+    def choose_logo(self):
+        def picked(key):
+            if key=="image": self.ask_image(); return
+            store=ConfigStore(); store.settings["screensaver_logo"]=key; store.save(); self.redraw()
+        self.win.choose_option("Screen saver logo",list(SCREENSAVER_LOGOS.items()),ConfigStore().settings["screensaver_logo"],picked)
+    def ask_image(self, error=""):
+        def got(path):
+            full=os.path.expanduser(path.strip())
+            if not os.path.isfile(full): self.ask_image(f"There is no file at {path.strip() or '(nothing typed)'}."); return
+            store=ConfigStore(); store.settings["screensaver_logo"]="image"; store.settings["screensaver_image"]=path.strip(); store.save(); self.redraw()
+        self.win.ask_text("Your own logo","The picture's path, such as ~/Pictures/logo.png. A picture with a transparent background looks best.",got,
+                          ConfigStore().settings["screensaver_image"] or "~/Pictures/",error=error)
+    def preview_saver(self):
+        from tvwcs.lockscreen import launcher
+        from tvwcs import screensaver
+        if screensaver.cairo_missing(): self.win.notice("Screen saver",screensaver.MISSING_CAIRO); return
+        try: subprocess.Popen([launcher(),"screensaver","--preview"],start_new_session=True,stdin=subprocess.DEVNULL)
+        except OSError as exc: self.win.notice("Screen saver",f"Could not start it: {exc}")
     def stop_xss_lock(self):
         path=self.state.xss_lock
         self.win.confirm("Stop locking when the screen turns off",
@@ -1100,6 +1176,9 @@ class SystemPage(Page):
                  ident="ssh:server",value_css="state-on" if s.active else "setting-value")
         self.row("Sign in with","Keys only" if not s.passwords else "Password or key",lambda:self.choose_sign_in(s),
                  detail=f"{s.keys} key{'s' if s.keys!=1 else ''} added for {s.user}",ident="ssh:auth")
+        if s.passwords and s.active and ConfigStore().settings["password_keyboard"]=="digits":
+            self.note("Your password keyboard is the number pad, so your password may be only digits, which is easy to guess. "
+                      "Keys only is recommended: then nobody can sign in over the network with a password.","error")
         self.row("Connect with",f"ssh {s.user}@{s.address}",None,ident="ssh:command")
         self.row("User",s.user,None,ident="ssh:user")
         self.row("Local name",s.local_name if s.mdns else f"{s.local_name} (not announced)",None,
@@ -1272,16 +1351,43 @@ class NetworkPage(Page):
         return {"unavailable":"No cable","disconnected":"Not connected","unmanaged":"Not managed"}.get(i.state.split(" ")[0],i.state.capitalize() or "Unknown")
 
     def ethernet_row(self, i, managed):
-        go=None; extras=[]
-        if managed and i.state not in ("unavailable","unmanaged"):
+        go=None; extras=[]; detail=self._details(i)
+        if managed and i.state.startswith("unmanaged"):
+            go=lambda i=i:self.take_over(i)
+            detail=" · ".join(x for x in ("Not set up through NetworkManager, so it cannot be changed here. Choose it to let Settings manage it",detail) if x)
+        elif managed and i.state not in ("unavailable",):
             if i.connected:
                 go=lambda i=i:self.win.confirm(f"Disconnect {i.device}?",f"Disconnect {i.connection or i.device}? Anything using the network will lose it until you connect again.",
                                                "Disconnect",lambda:self.act(lambda:network.disconnect_device(i.device),f"Disconnecting {i.device}…","Ethernet"))
             else: go=lambda i=i:self.act(lambda:network.connect_device(i.device),f"Connecting {i.device}…","Ethernet")
         label=("Ethernet" if i.kind=="ethernet" else "Wi-Fi")+f" ({i.device})"
-        self.row(label,self._state_text(i),go,detail=self._details(i),icon="network-wired-symbolic" if i.kind=="ethernet" else "network-wireless-symbolic",
+        self.row(label,self._state_text(i),go,detail=detail,icon="network-wired-symbolic" if i.kind=="ethernet" else "network-wireless-symbolic",
                  fallback="⇄",ident=f"if:{i.device}",extras=extras,value_css="state-on" if i.connected else "setting-value")
         if managed: self.ip_row(i)
+
+    def take_over(self, i):
+        """Hand a port that NetworkManager leaves alone to it (control_network: Debian's installer set it up in
+        /etc/network/interfaces)."""
+        reason=network.unmanaged_reason(i.device)
+        if reason=="ifupdown":
+            text=(f"{i.device} was set up when Debian was installed, in /etc/network/interfaces, so NetworkManager (which Settings uses) "
+                  "leaves it alone. Settings can hand it to NetworkManager: its lines in that file are turned into comments (a copy is kept as "
+                  "interfaces.before-tvwcs), and NetworkManager connects it again with DHCP. The wired connection drops for a few seconds"
+                  +(", and Wi-Fi keeps you online meanwhile." if any(w.connected for w in self.state.of_kind("wifi")) else ".")+" It asks for your password.")
+        else:
+            text=(f"NetworkManager is set to leave {i.device} alone. Settings can ask it to manage the port; it then connects it with DHCP. "
+                  "If that does not last after a restart, a file in /etc/NetworkManager/conf.d lists it under unmanaged-devices.")
+        def go():
+            try: rewritten=network.prepare_take_over(i.device,str(runtime_dir()/"tvwcs-network")) if reason=="ifupdown" else []
+            except OSError as exc: self.win.notice("Ethernet",f"Could not prepare the change: {exc}"); return
+            self.set_status(f"Handing {i.device} to NetworkManager…"); lines=[]
+            def done(code,tail):
+                self.set_status("")
+                if code: self.win.notice("Ethernet",("\n".join(lines[-6:]) or tail or "It did not work.").strip())
+                else: self.win.notice("Ethernet",f"NetworkManager manages {i.device} now. Its IP settings can be changed here.")
+                self.refresh(quiet=True)
+            self.win.run_as_root(network.take_over_argv(i.device,rewritten),f"Managing {i.device}",lines.append,done)
+        self.win.confirm(f"Manage {i.device} here?",text,"Manage it",go,danger=False)
 
     def ip_row(self, i):
         """IP address, default gateway and DNS servers of the interface's connection: from DHCP, or set by hand."""
@@ -1354,6 +1460,95 @@ class NetworkPage(Page):
                       "Automatic (DHCP) asks the router for the address, gateway and DNS servers; choose the first row to switch. "
                       "Saving reconnects, so the connection drops for a moment.",error)
 
+# ====================================================================== Storage
+class StoragePage(Page):
+    """The drives in the computer and plugged into it (open, close, switch off before unplugging), and network shares
+    (connect, disconnect, add, forget). See control_storage."""
+    key="storage"; title="Storage"; icon="drive-harddisk-symbolic"; fallback="🖴"; poll=5
+    def read(self): return storage.read_state(ConfigStore().settings["network_shares"])
+    def summary(self):
+        s=self.state
+        return f"{len(s.drives)} drive{'s' if len(s.drives)!=1 else ''}" if s else ""
+    def draw(self, s):
+        self.section("DRIVES")
+        if s.message: self.note(s.message,"error")
+        if not s.drives: self.note("No drives were found.")
+        for d in s.drives: self.drive_rows(d,s)
+        if not s.udisks: self.note("Install udisks2 to open and close drives here.","error")
+        self.note("Close a drive before unplugging it. A drive's files are in the folder shown under it once it is open.")
+        self.section("NETWORK SHARES")
+        missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
+        if missing: self.note("Connecting to network shares needs "+" and ".join(missing)+". Install it with sudo apt install "
+                              +" ".join(m.split()[0] for m in missing)+".","error")
+        for sh in s.shares: self.share_row(sh,s)
+        if not s.shares: self.note("No network shares yet.")
+        self.row("Add a network share","",self.add_share if s.gio else None,icon="list-add-symbolic",fallback="+",ident="share:add",
+                 detail="A folder shared by another computer or a NAS, such as smb://nas/videos")
+        self.note("Shares from Windows or Samba start with smb://, NFS with nfs://, SSH with sftp://. Their files appear in "
+                  f"/run/user/{os.getuid()}/gvfs/ and in file managers. Passwords are not stored by TVWCS.")
+
+    def drive_rows(self, d, s):
+        kind="Inside the computer" if not d.removable else ("USB drive" if d.transport=="usb" else "Removable drive")
+        extras=[]
+        if d.removable and not d.system and s.udisks:
+            extras.append(self.button("media-eject-symbolic","⏏",f"Switch off {d.title} so it can be unplugged",lambda d=d:self.eject(d)))
+        self.row(d.title,storage.size_text(d.size),None,detail=kind+(" · holds this system" if d.system else ""),icon="drive-removable-media-symbolic" if d.removable else "drive-harddisk-symbolic",
+                 fallback="🖴",ident=f"drive:{d.name}",extras=extras)
+        for v in d.volumes:
+            if v.fstype=="swap": continue
+            used=f"{storage.size_text(v.used)} used, {storage.size_text(v.avail)} free" if v.mounted and (v.used or v.avail) else storage.size_text(v.size)
+            detail=" · ".join(x for x in (v.fstype,", ".join(v.mountpoints) if v.mounted else "Not open",used) if x)
+            go=None
+            if not v.system and s.udisks and v.fstype not in ("crypto_LUKS","LVM2_member"):
+                go=(lambda v=v:self.act(lambda:storage.unmount(v.path),f"Closing {v.title}…","Storage")) if v.mounted else \
+                   (lambda v=v:self.act(lambda:storage.mount(v.path),f"Opening {v.title}…","Storage"))
+            self.row(f"   {v.title}","Open" if v.mounted else "Closed",go,detail=detail,ident=f"vol:{v.name}",
+                     value_css="state-on" if v.mounted else "setting-value")
+
+    def eject(self, d):
+        def work():
+            for v in d.volumes:
+                if v.mounted:
+                    problem=storage.unmount(v.path)
+                    if problem: return problem
+            return storage.power_off(d.path)
+        self.act(work,f"Switching off {d.title}…","Storage",after=lambda:None)
+
+    def share_row(self, sh, s):
+        forget=self.button("user-trash-symbolic","✕",f"Forget {sh.address}",lambda sh=sh:self.win.confirm("Forget this share?",
+                           f"Remove {storage.share_label(sh.address)} from the list"+(" and disconnect it?" if sh.connected else "?"),"Forget",lambda:self.forget(sh)),danger=True)
+        go=(lambda sh=sh:self.act(lambda:storage.disconnect(sh.address),"Disconnecting…","Network share")) if sh.connected else (lambda sh=sh:self.connect(sh.address))
+        self.row(storage.share_label(sh.address),"Connected" if sh.connected else "Not connected",go if s.gio else None,
+                 detail=sh.path if sh.connected else sh.address,icon="folder-remote-symbolic",fallback="⇄",ident=f"share:{sh.address}",
+                 extras=[forget],value_css="state-on" if sh.connected else "setting-value")
+
+    def add_share(self, error="", initial="smb://"):
+        def got(address):
+            address=address.strip(); problem=storage.valid_address(address)
+            if problem: self.add_share(problem,address); return
+            store=ConfigStore()
+            if not any(storage.same_share(address,x) for x in store.settings["network_shares"]): store.settings["network_shares"].append(address); store.save()
+            self.connect(address)
+        self.win.ask_text("Add a network share","The share's address, such as smb://nas/videos or smb://192.168.0.10/music.",got,initial,ok_label="Next",error=error)
+    def connect(self, address):
+        def with_user(user):
+            if not user.strip():
+                self.act(lambda:storage.connect(address),f"Connecting to {storage.share_label(address)}…","Network share"); return
+            self.win.ask_text("Password",f"The password for {user.strip()} on {urlparse_host(address)}. It is used to connect and not stored by TVWCS.",
+                              lambda pw:self.act(lambda:storage.connect(address,user.strip(),pw),f"Connecting to {storage.share_label(address)}…","Network share"),
+                              secret=True,ok_label="Connect")
+        self.win.ask_text("User name",f"Your user name on {urlparse_host(address)}. Leave it empty to connect as a guest.",with_user,"",ok_label="Next")
+    def forget(self, sh):
+        def work():
+            problem=storage.disconnect(sh.address) if sh.connected else ""
+            store=ConfigStore(); store.settings["network_shares"]=[x for x in store.settings["network_shares"] if not storage.same_share(x,sh.address)]; store.save()
+            return problem
+        self.act(work,"Forgetting the share…","Network share")
+
+def urlparse_host(address):
+    from urllib.parse import urlparse
+    return urlparse(address).hostname or address
+
 # ====================================================================== Date and time
 class DateTimePage(Page):
     """The time zone (a region, then a city), the clock set from the network, and the Quick Menu's 12/24-hour clock."""
@@ -1377,16 +1572,25 @@ class DateTimePage(Page):
                             ("Turn it on to keep the clock right by itself" if s.can_ntp else "No network time service is installed (such as systemd-timesyncd or chrony)"),
                      ident="dt:ntp",value_css="state-on" if s.ntp else "setting-value")
         else: self.row("Set the time from the network","Unknown",None,detail="Needs systemd's timedatectl",ident="dt:ntp")
+        self.section("SET THE TIME BY HAND")
+        entry=ConfigStore().settings["time_entry"]
+        self.row("Set the time",timedate.clock_text(now,hours24),self.set_by_hand if s.timedatectl else None,
+                 detail=("Turns network time off first" if s.ntp else "The date and the time of day") if s.timedatectl else "Needs systemd's timedatectl",ident="dt:set")
+        self.row("Way to set it",TIME_ENTRY[entry],self.choose_entry,ident="dt:entry")
+        self.note("Hour and minute: a ▲ and ▼ for each part of the date and time. Number pad: type the time as four digits. "
+                  "Steps: move the clock forward or back by a day, an hour, ten minutes or a minute.")
         self.section("QUICK MENU CLOCK")
         self.row("Clock",'24-hour (14:05)' if hours24 else "12-hour (2:05 PM)",self.choose_clock,ident="dt:clock")
         self.note("How the time at the bottom of the Quick Menu is written.")
 
-    def as_root_if_needed(self, argv, label, status):
-        """timedatectl as the user first (polkit may allow it), then as root when polkit wants a password."""
+    def as_root_if_needed(self, argv, label, status, after=None):
+        """timedatectl as the user first (polkit may allow it), then as root when polkit wants a password.
+        after() runs when it worked."""
         self.set_status(status); lines=[]
         def finish(code, tail):
             self.set_status("")
             if code: self.win.notice("Date and time",("\n".join(lines[-6:]) or tail or f"{label} did not work.").strip())
+            elif after: after()
             self.refresh(quiet=True)
         def first(code, tail):
             if code and (argv[0]!="timedatectl" or privilege.polkit_refused(tail)): self.win.run_as_root(argv,label,lines.append,finish)
@@ -1411,9 +1615,73 @@ class DateTimePage(Page):
             if zone==s.timezone or not timedate.valid_zone(zone,s.zones): return
             self.as_root_if_needed(timedate.timezone_argv(zone,s.timedatectl),"Time zone",f"Setting the time zone to {timedate.zone_label(zone)}…")
         self.win.choose_option(f"City · {region}",cities,s.timezone if s.timezone in dict(cities) else None,picked)
+    # ---------------------------------------------------------- setting the time by hand
+    def choose_entry(self):
+        def picked(key):
+            store=ConfigStore(); store.settings["time_entry"]=key; store.save(); self.refresh(quiet=True)
+        self.win.choose_option("Way to set the time",list(TIME_ENTRY.items()),ConfigStore().settings["time_entry"],picked)
+    def set_by_hand(self):
+        s=self.state[0]
+        if s.ntp:
+            self.win.confirm("Turn network time off?","The time can only be set by hand while it is not set from the network. "
+                             "Turn network time off now? You can turn it on again here.","Turn off",
+                             lambda:self.as_root_if_needed(timedate.ntp_argv(False),"Network time","Turning network time off…",after=self.set_by_hand_now),danger=False)
+            return
+        self.set_by_hand_now()
+    def set_by_hand_now(self):
+        import datetime
+        now=datetime.datetime.now().replace(second=0,microsecond=0)
+        way=ConfigStore().settings["time_entry"]
+        if way=="digits": self.time_digits(now)
+        elif way=="steps": self.time_steps(now)
+        else: self.time_fields(now)
+    def apply_time(self, when):
+        self.win.close_modal()
+        self.as_root_if_needed(timedate.set_time_argv(when),"Set the time",f"Setting the time to {when:%H:%M}…")
+    def _time_text(self, when):
+        return f"{timedate.date_text(when.timestamp())}, {when.year}   {timedate.clock_text(when.timestamp(),self.state[1])}"
+    def time_fields(self, when):
+        """▲ and ▼ under each of year, month, day, hour and minute: ← → moves between them, ↑ ↓ between ▲ and ▼."""
+        win=self.win; win._begin_modal("Set the time"); state={"when":when}
+        shown=win._message(self._time_text(when))
+        row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); row.set_halign(Gtk.Align.CENTER); ups=[]; downs=[]; values={}
+        names={"year":"Year","month":"Month","day":"Day","hour":"Hour","minute":"Minute"}
+        def show():
+            w=state["when"]; shown.set_text(self._time_text(w))
+            for f,l in values.items(): l.set_text(f"{getattr(w,f):04d}" if f=="year" else f"{getattr(w,f):02d}")
+        def move(field,delta): state["when"]=timedate.adjust(state["when"],field,delta); show()
+        for field in timedate.FIELDS:
+            col=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4))
+            up=Gtk.Button(label="▲"); up.connect("clicked",lambda _b,f=field:move(f,1)); col.append(up); ups.append(up)
+            v=Gtk.Label(); v.add_css_class("time-field"); col.append(v); values[field]=v
+            down=Gtk.Button(label="▼"); down.connect("clicked",lambda _b,f=field:move(f,-1)); col.append(down); downs.append(down)
+            n=Gtk.Label(label=names[field]); n.add_css_class("muted"); col.append(n); row.append(col)
+        win.modal_card.append(row); show()
+        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",lambda:self.apply_time(state["when"]),"active"))
+        g1=NavGroup(ups); g1.column=True; g2=NavGroup(downs); g2.column=True
+        win._finish_modal([g1,g2,NavGroup([cancel,ok])],win.close_modal,ups[3])
+    def time_steps(self, when):
+        """The time now, and buttons that move it by a day, an hour, ten minutes or a minute."""
+        win=self.win; win._begin_modal("Set the time"); state={"when":when}
+        shown=win._message(self._time_text(when),"time-now"); groups=[]
+        def move(minutes): state["when"]=timedate.step(state["when"],minutes); shown.set_text(self._time_text(state["when"]))
+        for half in (timedate.STEPS[:4],timedate.STEPS[4:]):
+            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); made=[]
+            for minutes,label in half:
+                b=Gtk.Button(label=label); b.connect("clicked",lambda _b,m=minutes:move(m)); line.append(b); made.append(b)
+            win.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
+        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",lambda:self.apply_time(state["when"]),"active"))
+        groups.append(NavGroup([cancel,ok])); win._finish_modal(groups,win.close_modal,groups[1][0])
+    def time_digits(self, when, error=""):
+        def got(text):
+            try: self.apply_time(timedate.from_digits(when,text))
+            except ValueError as exc: self.time_digits(when,str(exc))
+        self.win.ask_text("Set the time","Type the time as four digits in 24-hour time, such as 1905 for 19:05 (7:05 PM). The date stays "
+                          f"{timedate.date_text(when.timestamp())}.",got,"",ok_label="Set the time",error=error,digits=True)
+
     def choose_clock(self):
         def picked(key):
             store=ConfigStore(); store.settings["clock_24h"]=key=="24"; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
         self.win.choose_option("Quick Menu clock",[("12","12-hour (2:05 PM)"),("24","24-hour (14:05)")],"24" if self.state[1] else "12",picked)
 
-PAGES=(OptionsPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)
+PAGES=(OptionsPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)

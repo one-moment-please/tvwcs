@@ -55,4 +55,11 @@ class HotkeyTests(unittest.TestCase):
         c=HotkeyCapture(); self.assertIsNone(c.press("Super_L",())); self.assertEqual(c.release("Super_L"),"Mod4")
     def test_modifier_used_in_a_chord_is_not_a_lone_modifier(self):
         c=HotkeyCapture(); c.press("Super_L",()); self.assertEqual(c.press("space",("Mod4",)),"Mod4+space"); self.assertIsNone(c.release("Super_L"))
+class NavigationKeyTests(unittest.TestCase):
+    def test_d_pad_ok_and_back_navigate_the_dialog(self):
+        from tvwcs.hotkeys import is_navigation
+        for k in ("Up","Down","Left","Right","Return","KP_Enter","Escape","Back","Tab"): self.assertTrue(is_navigation(k),k)
+        for k in ("XF86Tools","XF86Mail","F5","a"): self.assertFalse(is_navigation(k),k)
+        self.assertFalse(is_navigation("Up",held=("Super_L",)))   # Super+Up is a hotkey
+
 if __name__=="__main__": unittest.main()

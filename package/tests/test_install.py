@@ -38,6 +38,20 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(p.returncode,0,p.stderr); return p.stdout
     def write_i3(self,text): self.i3.parent.mkdir(parents=True,exist_ok=True); self.i3.write_text(text)
 
+    def test_missing_only_lists_what_is_needed_and_changes_nothing(self):
+        bin_=Path(self.tmp.name)/"fakebin"; bin_.mkdir()
+        (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
+        (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        p=subprocess.run(["sh",str(SCRIPT),"--missing"],env={**self.env,"PATH":f"{bin_}:{self.env['PATH']}"},stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+        self.assertEqual(p.returncode,0,p.stderr)
+        self.assertIn("need\tpython3-gi gir1.2-gtk-4.0\tGTK 4 for Python: TVWCS's windows (required)\n",p.stdout)
+        self.assertTrue(all(line.startswith("need\t") for line in p.stdout.splitlines()),p.stdout)
+        self.assertFalse(self.dest.exists()); self.assertFalse((self.home/".config").exists())
+    def test_help_and_unknown_options_install_nothing(self):
+        p=subprocess.run(["sh",str(SCRIPT),"--help"],env=self.env,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+        self.assertEqual(p.returncode,0); self.assertIn("--missing",p.stdout); self.assertNotIn("set -eu",p.stdout)
+        p=subprocess.run(["sh",str(SCRIPT),"--bogus"],env=self.env,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+        self.assertEqual(p.returncode,2); self.assertFalse(self.dest.exists())
     def test_installs_into_local_share_and_points_the_fragment_at_it(self):
         out=self.run_install()
         self.assertTrue((self.dest/"bin"/"tvwcs").is_file() and (self.dest/"tvwcs"/"main.py").is_file(),out)
@@ -291,20 +305,22 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn("icons for apps",self.run_install(**env))
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xdotool","pipewire","unclutter","xprintidle"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","unclutter","xprintidle"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for helper in ("gvfsd-smb","xdg-desktop-portal-gtk"): (bin_/helper).write_text("")
+        env["TVWCS_LIBEXEC"]=str(bin_)
         (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
         out=self.converse(["y","n","n"],**env)   # install; no i3 config; no power rule
         self.assertRegex(out,r"python3-gi gir1\.2-gtk-4\.0 +GTK 4 for Python: TVWCS's windows \(required\)")
         self.assertRegex(out,r"gir1\.2-vte-3\.91 +Settings: the terminal page")
         self.assertNotIn("Settings: sound",out); self.assertNotIn("xdotool",out)   # installed here, so not listed
-        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91\n",(bin_/"apt").read_text())
+        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91 python3-gi-cairo\n",(bin_/"apt").read_text())
         (bin_/"unclutter").unlink()
         if not shutil.which("unclutter",path=self.env["PATH"]):   # a computer with unclutter installed has it anyway
             self.assertRegex(self.converse(["n","n","n"],**env),r"unclutter-xfixes +hides the mouse pointer after 3 seconds")
         (bin_/"unclutter").write_text("#!/bin/sh\n"); (bin_/"unclutter").chmod(0o755)
         out=self.converse(["n","n","n"],**env)
-        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91",out)
+        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91 python3-gi-cairo",out)
 
     # ---------------------------------------------------------------- the two setups
     def test_suggests_a_setup_from_what_is_found_and_remembers_the_choice(self):

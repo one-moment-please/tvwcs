@@ -56,7 +56,7 @@ class ProfileEditor:
         box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); scroll.set_child(box); win.modal_card.append(scroll)
         actions=dict(app.desktop_actions) if app else {}
         rows=[("name","Name",d.name or "(none)",self._edit_name),
-              ("channel","Channel number",d.channel or "None",self._edit_channel),
+              ("channel","Channel number",f"{int(d.channel):03d}" if d.channel.strip().isdigit() else "None",self._edit_channel),
               ("opens","Opens",("In a workspace of its own" if d.new_workspace else "Next to the other apps"),self._edit_opens),
               ("hotkey","Hotkey",describe(d.hotkey) if d.hotkey else "None",self._edit_hotkey)]
         if actions: rows.append(("action","Starts with",actions.get(d.action,"The usual way") if d.action else "The usual way",self._edit_action))
@@ -86,9 +86,10 @@ class ProfileEditor:
         def got(text): self.draft.name=text.strip() or self.draft.name; self.show()
         self.win.ask_text("Profile name",got,self.draft.name,back=self.show,max_len=80)
     def _edit_channel(self):
-        def got(text): self.draft.channel=text.strip(); self.show()
-        self.win.ask_text("Channel number",got,self.draft.channel,"1 to 999. Type the number in the Quick Menu to launch it. Leave empty for none.",
-                          back=self.show,digits=True,max_len=3)
+        def got(text):
+            t=text.strip(); self.draft.channel=str(int(t)) if t.isdigit() else t   # "002" is the same channel as "2": not a change
+            self.show()
+        self.win.ask_channel("Channel number",got,self.draft.channel,back=self.show)
     def _edit_opens(self):
         def got(k): self.draft.new_workspace=k=="new"; self.show()
         self.win.choose_option("Opens",[("same","Next to the other apps (tiled)"),("new","In a workspace of its own")],
