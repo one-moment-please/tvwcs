@@ -444,8 +444,9 @@ class TVWCSApp(Gtk.Application):
         """Set (or, with "", clear) the hotkey that launches a profile, taking the key from whatever had it."""
         self.store.set_profile_hotkey(profile_id,spec); self.apply_hotkeys()
     def apply_hotkeys(self):
-        """Write hotkeys.conf from the settings and the profiles' hotkeys, and ask i3 to reload if it changed."""
-        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes(),self.store.app_hotkeys())
+        """Write hotkeys.conf from the settings, the profiles' hotkeys and (on a TV) the border rules, and ask i3 to reload
+        if it changed."""
+        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes(),self.store.app_hotkeys(),self.store.settings["use"]=="tv")
         try: old=HOTKEYS_FILE.read_text(encoding="utf-8")
         except OSError: old=None
         if old!=text:

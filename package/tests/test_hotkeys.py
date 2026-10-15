@@ -20,6 +20,12 @@ class HotkeyTests(unittest.TestCase):
         self.assertNotIn("bindsym Mod4 ",conf)   # binding Super itself would steal Super+Enter etc.
         for line in conf.splitlines():   # i3 has no end-of-line comments; one would become arguments to tvwcs
             if line.startswith("bind"): self.assertNotIn("#",line)
+    def test_on_a_tv_a_lone_window_has_no_border(self):
+        hk=clean_hotkeys(None)
+        self.assertNotIn("border",render_i3(hk,"t"))
+        conf=render_i3(hk,"t",tv=True).splitlines()
+        self.assertIn("hide_edge_borders smart",conf); self.assertIn("default_border pixel 2",conf)
+        self.assertTrue(all(l.startswith(("#","bind","default_border","hide_edge_borders")) for l in conf))
     def test_lone_modifiers_bind_their_own_keycode_on_release(self):
         hk=clean_hotkeys({"keyboard":{"menu":"Mod4","guide":"Mod1"},"gamepad":{"menu":"Control"}})
         conf=render_i3(hk,"t",{"Mod4":134})   # the keyboard's real keycode wins over the default

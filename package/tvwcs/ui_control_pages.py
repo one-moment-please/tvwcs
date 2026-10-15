@@ -203,8 +203,9 @@ class OptionsPage(Page):
 
         self.section("DISPLAY")
         self.row("Used on",{"tv":"A TV","desktop":"A desktop monitor"}.get(st["use"],"Not chosen"),self.choose_use,ident="opt:use")
-        self.note("A TV: TV Mode size, and every app opens in a workspace of its own. A desktop monitor: Desktop size, and apps open "
-                  "tiled in the current workspace. Both can still be changed one by one below.")
+        self.note("A TV: TV Mode size, every app opens in a workspace of its own, and an app alone on its workspace has no border. "
+                  "A desktop monitor: Desktop size, and apps open tiled in the current workspace. Size and workspaces can still be "
+                  "changed one by one below.")
         has_4k=self.has_4k()
         self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
         self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
