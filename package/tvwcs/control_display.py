@@ -310,19 +310,50 @@ def apply(state, outputs):
     return "" if r.ok else (r.message or "The displays did not accept the change.")
 
 # ---------------------------------------------------------------------- keeping it
-def to_saved(state, outputs):
-    return {"backend":state.backend,"outputs":{o.name:{"enabled":o.enabled,"primary":o.primary,"x":o.x,"y":o.y,"width":o.width,
+# displays.json keeps one entry per backend ({"xrandr": {"outputs": …}, "sway": {…}}), since i3 (X) and sway name the
+# same connector differently (HDMI-1 / HDMI-A-1): keeping a mode under one never overwrites the other's. A file from
+# before 3.0.1 ({"backend": …, "outputs": …}) is read as the entry for its backend.
+def _entries(saved):
+    if not isinstance(saved,dict): return {}
+    if "backend" in saved and "outputs" in saved: return {str(saved["backend"]):{"outputs":saved["outputs"]}}
+    return {k:v for k,v in saved.items() if k in ("xrandr","sway") and isinstance(v,dict)}
+
+def to_saved(state, outputs, saved=None):
+    entries=_entries(saved)
+    entries[state.backend]={"outputs":{o.name:{"enabled":o.enabled,"primary":o.primary,"x":o.x,"y":o.y,"width":o.width,
             "height":o.height,"interlaced":o.interlaced,"rate":o.rate} for o in outputs}}
+    return entries
 
 def save(state, outputs, path=SAVED):
     path=Path(path); path.parent.mkdir(parents=True,exist_ok=True); tmp=path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(to_saved(state,outputs),indent=2)+"\n",encoding="utf-8"); os.replace(tmp,path)
+    try: saved=json.loads(path.read_text(encoding="utf-8"))
+    except (OSError,ValueError): saved=None
+    tmp.write_text(json.dumps(to_saved(state,outputs,saved),indent=2)+"\n",encoding="utf-8"); os.replace(tmp,path)
+
+def connector_key(name):
+    """A connector name the same under X and sway: X's HDMI-1 is sway's HDMI-A-1 (DRM's HDMI type A)."""
+    return re.sub(r"^HDMI-A-","HDMI-",str(name))
+
+def _matching(state, want):
+    """`want` (name -> settings) keyed by the names connected now, or None when they are other displays."""
+    names={o.name for o in state.outputs}
+    if set(want)==names: return want
+    by_key={connector_key(k):v for k,v in want.items()}
+    if len(by_key)==len(want) and set(by_key)=={connector_key(n) for n in names}: return {n:by_key[connector_key(n)] for n in names}
+    if len(want)==1 and len(names)==1: return {next(iter(names)):next(iter(want.values()))}   # one display either way
+    return None
 
 def from_saved(state, saved):
-    """The saved settings applied to what is connected now, or None when they were saved for other displays."""
-    if not isinstance(saved,dict) or saved.get("backend")!=state.backend: return None
-    want=saved.get("outputs") or {}
-    if set(want)!={o.name for o in state.outputs}: return None
+    """The saved settings applied to what is connected now, or None when they were saved for other displays. Without
+    an entry for this backend, the other backend's is used (the first time sway runs, it gets the mode kept under i3)."""
+    entries=_entries(saved)
+    order=[state.backend]+[b for b in entries if b!=state.backend]
+    want=None
+    for b in order:
+        if b in entries:
+            want=_matching(state,entries[b].get("outputs") or {})
+            break
+    if not want: return None
     new=copy.deepcopy(state.outputs)
     for o in new:
         s=want[o.name]; o.enabled=bool(s.get("enabled")); o.primary=bool(s.get("primary")); o.x,o.y=int(s.get("x",0)),int(s.get("y",0))

@@ -136,6 +136,25 @@ class SavedTests(unittest.TestCase):
         self.assertEqual((by(back,"HDMI-1").width,by(back,"DP-1").x),(1280,1280))
         fewer=disp.DisplayState(True,"xrandr","",[o for o in outputs() if o.name!="VGA-1"])
         self.assertIsNone(disp.from_saved(fewer,saved))
-        self.assertIsNone(disp.from_saved(disp.DisplayState(True,"sway","",outputs()),saved))
+        self.assertIsNotNone(disp.from_saved(disp.DisplayState(True,"sway","",outputs()),saved))   # no sway entry yet: X's is used
+    def test_each_backend_keeps_its_own_settings(self):
+        x=disp.DisplayState(True,"xrandr","",outputs())
+        sway_outs=outputs()
+        for o in sway_outs:
+            if o.name=="HDMI-1": o.name="HDMI-A-1"
+        sway=disp.DisplayState(True,"sway","",sway_outs)
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"displays.json"
+            disp.save(x,disp.edited(x.outputs,"HDMI-1",mode=(1280,720,False)),path)
+            first=disp.from_saved(sway,json.loads(path.read_text()))                 # sway's first start: X's mode, by connector
+            self.assertEqual(by(first,"HDMI-A-1").width,1280)
+            disp.save(sway,sway.outputs,path)                                          # kept under sway at its own mode
+            saved=json.loads(path.read_text()); self.assertEqual(set(saved),{"xrandr","sway"})
+            self.assertEqual(by(disp.from_saved(x,saved),"HDMI-1").width,1280)       # i3's is untouched
+            self.assertEqual(by(disp.from_saved(sway,saved),"HDMI-A-1").width,by(sway.outputs,"HDMI-A-1").width)
+    def test_a_file_from_before_3_0_1_still_loads(self):
+        x=disp.DisplayState(True,"xrandr","",outputs())
+        old={"backend":"xrandr","outputs":disp.to_saved(x,disp.edited(x.outputs,"HDMI-1",mode=(1280,720,False)))["xrandr"]["outputs"]}
+        self.assertEqual(by(disp.from_saved(x,old),"HDMI-1").width,1280)
 
 if __name__=="__main__": unittest.main()

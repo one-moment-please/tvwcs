@@ -453,7 +453,7 @@ class PowerPage(Page):
                      detail="logind's IdleAction, set in /etc/systemd/logind.conf",ident="sys:logind")
             if l.lid: self.row("Closing the lid",{"suspend":"Sleep","ignore":"Nothing","poweroff":"Shut down","lock":"Lock","hibernate":"Hibernate"}.get(l.lid,l.lid),None,
                                detail="logind's HandleLidSwitch",ident="sys:lid")
-        self.note("Change “Turn off the screen after” to let TVWCS decide instead of X. "
+        self.note(("Change “Turn off the screen after” to let TVWCS decide instead of X. " if s.session=="X11" else "")+
                   "logind's settings are changed in /etc/systemd/logind.conf, as root.")
 
     def stop_xss_lock(self):

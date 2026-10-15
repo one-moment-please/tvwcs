@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.1 — 2026-10-15
+
+- Displays: the resolution kept under i3 and the one kept under sway are saved separately, so one never overwrites the other. The first time sway runs, it uses the resolution kept under i3 (X calls the TV's port HDMI-1, sway calls it HDMI-A-1).
+- On a 720p TV, TV Mode and 4K TV Mode shrink to fit, so Settings and the Quick Menu are no longer cut off. On a 1080p TV nothing changes.
+- Power and sleep no longer mentions X when running under sway.
+
 ## 3.0.0 — 2026-10-15
 
 **Supported systems**
