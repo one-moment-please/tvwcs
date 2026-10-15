@@ -320,7 +320,8 @@ class TVWCSApp(Gtk.Application):
     def workspace_entries(self): return build_entries(self.wm.windows(),self.wm.workspaces(),self.match_application_window)
     def default_profile(self,application):
         profiles=self.store.for_app(application.desktop_id)
-        return next((p for p in profiles if p.name==application.name and not p.command and not p.desktop_action),profiles[0] if profiles else None)
+        plain=[p for p in profiles if not p.command and not p.desktop_action]
+        return next((p for p in plain if p.name==application.name),(plain or profiles or [None])[0])
     def match_application_window(self,window): return match_window(window,self.catalogue.applications)
     def window_icon(self,window,size=32,badge=None):
         app=self.match_application_window(window)

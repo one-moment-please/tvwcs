@@ -216,6 +216,23 @@ class ScaleTests(unittest.TestCase):
         self.assertEqual([k for k,_ in scale_choices("tenfoot_4k",False)],["desktop","tenfoot","tenfoot_4k"])
         self.assertTrue(is_4k(3840,2160)); self.assertTrue(is_4k(2160,3840)); self.assertFalse(is_4k(1920,1080)); self.assertFalse(is_4k(5120,1440))
 
+class AppNameTests(unittest.TestCase):
+    def test_plain_profiles_follow_a_renamed_application(self):
+        from types import SimpleNamespace as NS
+        with tempfile.TemporaryDirectory() as d:
+            store=ConfigStore(Path(d)/"c.json")
+            store.ensure_defaults([NS(desktop_id="k.desktop",name="Kodi")])
+            store.profiles.append(LaunchProfile("x","k.desktop","My Kodi")); store.profiles.append(LaunchProfile("y","k.desktop","Kodi",command="kodi --x"))
+            store.ensure_defaults([NS(desktop_id="k.desktop",name="Kodi Media Center")])
+            self.assertEqual(sorted(p.name for p in store.profiles),["Kodi","Kodi Media Center","My Kodi"])
+            self.assertEqual(ConfigStore(Path(d)/"c.json").app_names,{"k.desktop":"Kodi Media Center"})
+    def test_the_old_control_panel_name(self):
+        from types import SimpleNamespace as NS
+        with tempfile.TemporaryDirectory() as d:
+            store=ConfigStore(Path(d)/"c.json"); store.profiles.append(LaunchProfile("x","com.tvwcs.ControlPanel.desktop","Control Panel"))
+            store.ensure_defaults([NS(desktop_id="com.tvwcs.ControlPanel.desktop",name="TVWCS Settings")])
+            self.assertEqual([p.name for p in store.profiles],["TVWCS Settings"])
+
 class LayoutTests(unittest.TestCase):
     AREA={"x":0,"y":30,"width":1920,"height":1050}   # y offset = a 30 px bar on top
     def test_quick_menu_only(self):

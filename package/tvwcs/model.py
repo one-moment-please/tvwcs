@@ -149,12 +149,17 @@ def _clean_settings(raw) -> dict:
         if st.get("show_menu") is True and s["startup"]["mode"]=="none": s["startup"]["mode"]="menu"   # before 2.11 the menu was a separate switch
     return s
 
+# Names TVWCS's own Settings entry had before its .desktop file was renamed (profiles made then still carry them).
+LEGACY_NAMES_ALL={"com.tvwcs.ControlPanel.desktop":("Control Panel","Settings","TVWCS Settings")}
+LEGACY_NAMES={k:v[0] for k,v in LEGACY_NAMES_ALL.items()}
+
 class ConfigStore:
     def __init__(self, path: Path | str = DEFAULT_CONFIG):
         self.path=Path(path); self.profiles: list[LaunchProfile]=[]; self.settings=copy.deepcopy(DEFAULT_SETTINGS); self.app_descriptions: dict[str,str]={}
+        self.app_names: dict[str,str]={}
         self.load()
     def load(self):
-        self.profiles=[]; self.settings=copy.deepcopy(DEFAULT_SETTINGS); self.app_descriptions={}
+        self.profiles=[]; self.settings=copy.deepcopy(DEFAULT_SETTINGS); self.app_descriptions={}; self.app_names={}
         try: data=json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError): return
         if not isinstance(data,dict): return
@@ -162,6 +167,8 @@ class ConfigStore:
         raw_descriptions=data.get("app_descriptions")
         if isinstance(raw_descriptions,dict):
             self.app_descriptions={str(k):_clean_text(v) for k,v in raw_descriptions.items() if _clean_text(v)}
+        raw_names=data.get("app_names")
+        if isinstance(raw_names,dict): self.app_names={str(k):str(v) for k,v in raw_names.items() if isinstance(v,str)}
         for raw in data.get("profiles",[]):
             try:
                 channel=raw.get("channel")
@@ -178,12 +185,20 @@ class ConfigStore:
     def save(self):
         self.path.parent.mkdir(parents=True,exist_ok=True)
         temp=self.path.with_suffix(".json.tmp")
-        temp.write_text(json.dumps({"version":2,"settings":self.settings,"app_descriptions":self.app_descriptions,"profiles":[asdict(p) for p in self.profiles]},indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+        temp.write_text(json.dumps({"version":2,"settings":self.settings,"app_descriptions":self.app_descriptions,"app_names":self.app_names,"profiles":[asdict(p) for p in self.profiles]},indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
         os.replace(temp,self.path)
     def ensure_defaults(self, applications):
+        """Give every application a launch profile, and keep a plain profile's name in step when the application is
+        renamed (its .desktop file now has another Name): a name the user typed is left alone."""
         known={p.desktop_id for p in self.profiles}
         changed=False
         for app in applications:
+            old=self.app_names.get(app.desktop_id) or LEGACY_NAMES.get(app.desktop_id)
+            if self.app_names.get(app.desktop_id)!=app.name: self.app_names[app.desktop_id]=app.name; changed=True
+            for p in self.profiles:
+                if p.desktop_id==app.desktop_id and p.name!=app.name and not p.command and not p.desktop_action \
+                        and (p.name==old or p.name in LEGACY_NAMES_ALL.get(app.desktop_id,())):
+                    p.name=app.name; changed=True
             if app.desktop_id not in known:
                 self.profiles.append(LaunchProfile(str(uuid.uuid4()),app.desktop_id,app.name)); known.add(app.desktop_id); changed=True
         if changed: self.save()
