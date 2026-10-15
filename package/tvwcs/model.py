@@ -44,7 +44,32 @@ def apply_use(settings, use):
     settings["use"]=use; tv=use=="tv"
     if tv and settings["scale"]=="desktop": settings["scale"]="tenfoot"
     if not tv: settings["scale"]="desktop"
-    settings["always_new_workspace"]=tv; settings["open_in_new_workspace"]=tv
+    set_apps_open(settings,"fullscreen" if tv else "side")
+    if tv: settings["button_hints"]=True   # icon-only buttons explain themselves: no hovering mouse on a sofa
+
+# "Where apps open" in Settings > Options: one choice over the two keys TVWCS reads (main.launch_mode / window_mode).
+# always_new_workspace overrides everything. With both off, apps_open says whether apps always tile ("side") or follow
+# each profile's own setting ("profile", what TVWCS did before 3.0, so it is the default for an older config file).
+APPS_OPEN={"fullscreen":"Full screen, one per workspace","side":"Side by side","profile":"As each app's profile says"}
+def apps_open(settings) -> str:
+    if settings.get("always_new_workspace"): return "fullscreen"
+    if settings.get("open_in_new_workspace"): return "profile"   # the old "open running apps in a new workspace" alone
+    return "side" if settings.get("apps_open")=="side" else "profile"
+def set_apps_open(settings, choice):
+    if choice not in APPS_OPEN: raise ValueError(f"Unknown choice: {choice}")
+    settings["always_new_workspace"]=settings["open_in_new_workspace"]=choice=="fullscreen"; settings["apps_open"]=choice
+
+# Settings > Options > Accent colour: the Metro colours of widgets.METRO_COLORS, by name (a hand-set colour keeps its hex).
+ACCENT_NAMES={"#0078d7":"Blue","#e81123":"Red","#00b294":"Teal","#ff8c00":"Orange","#881798":"Purple","#107c10":"Green",
+              "#ea005e":"Magenta","#6b69d6":"Iris","#00cc6a":"Mint","#c239b3":"Orchid"}
+def accent_name(colour) -> str: return ACCENT_NAMES.get((colour or "").lower(),colour or "")
+# Settings > Options > Screen edge margin, in px at desktop scale: many TVs crop the picture's edges (overscan).
+MARGIN_CHOICES=(0,10,20,40,60,80)
+
+def key_hints(use) -> str:
+    """The Settings app's footer: a remote's key is called Back, a keyboard's Esc."""
+    back="Back" if use=="tv" else "Esc"
+    return f"↑ ↓ ← →  Navigate    {'OK' if use=='tv' else 'Enter'}  Select\n{back}  Go back"
 
 DEFAULT_SETTINGS={
     "margin":20,                    # px (at desktop scale) between the panels and the edges of the usable workspace
@@ -65,6 +90,9 @@ DEFAULT_SETTINGS={
     "clock_24h":False,              # the Quick Menu's clock shows 14:05 instead of 2:05 PM
     "tv_hide_bar":True,             # TV mode: hide the i3 / sway bar (the Quick Menu shows the time and status instead)
     "tv_keep_menu_open":True,       # TV mode: keep the Quick Menu on screen while no application is open
+    "apps_open":"profile",          # Where apps open (APPS_OPEN); always_new_workspace above still wins
+    "reduce_motion":False,          # no animated transitions (slow TV boxes)
+    "tvwcs_lock_screen":False,      # Lock uses TVWCS's own lock screen (i3lock / swaylock with its message), else the system's locker
     "idle":{"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},   # mode: STARTUP_MODES
@@ -106,9 +134,10 @@ def _clean_settings(raw) -> dict:
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
     if raw.get("use") in USES: s["use"]=raw["use"]
+    if raw.get("apps_open") in APPS_OPEN: s["apps_open"]=raw["apps_open"]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
                 "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
-                "clock_24h","tv_hide_bar","tv_keep_menu_open"):
+                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","reduce_motion"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle"))
@@ -120,12 +149,17 @@ def _clean_settings(raw) -> dict:
         if st.get("show_menu") is True and s["startup"]["mode"]=="none": s["startup"]["mode"]="menu"   # before 2.11 the menu was a separate switch
     return s
 
+# Names TVWCS's own Settings entry had before its .desktop file was renamed (profiles made then still carry them).
+LEGACY_NAMES_ALL={"com.tvwcs.ControlPanel.desktop":("Control Panel","Settings","TVWCS Settings")}
+LEGACY_NAMES={k:v[0] for k,v in LEGACY_NAMES_ALL.items()}
+
 class ConfigStore:
     def __init__(self, path: Path | str = DEFAULT_CONFIG):
         self.path=Path(path); self.profiles: list[LaunchProfile]=[]; self.settings=copy.deepcopy(DEFAULT_SETTINGS); self.app_descriptions: dict[str,str]={}
+        self.app_names: dict[str,str]={}
         self.load()
     def load(self):
-        self.profiles=[]; self.settings=copy.deepcopy(DEFAULT_SETTINGS); self.app_descriptions={}
+        self.profiles=[]; self.settings=copy.deepcopy(DEFAULT_SETTINGS); self.app_descriptions={}; self.app_names={}
         try: data=json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError): return
         if not isinstance(data,dict): return
@@ -133,6 +167,8 @@ class ConfigStore:
         raw_descriptions=data.get("app_descriptions")
         if isinstance(raw_descriptions,dict):
             self.app_descriptions={str(k):_clean_text(v) for k,v in raw_descriptions.items() if _clean_text(v)}
+        raw_names=data.get("app_names")
+        if isinstance(raw_names,dict): self.app_names={str(k):str(v) for k,v in raw_names.items() if isinstance(v,str)}
         for raw in data.get("profiles",[]):
             try:
                 channel=raw.get("channel")
@@ -149,12 +185,20 @@ class ConfigStore:
     def save(self):
         self.path.parent.mkdir(parents=True,exist_ok=True)
         temp=self.path.with_suffix(".json.tmp")
-        temp.write_text(json.dumps({"version":2,"settings":self.settings,"app_descriptions":self.app_descriptions,"profiles":[asdict(p) for p in self.profiles]},indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
+        temp.write_text(json.dumps({"version":2,"settings":self.settings,"app_descriptions":self.app_descriptions,"app_names":self.app_names,"profiles":[asdict(p) for p in self.profiles]},indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
         os.replace(temp,self.path)
     def ensure_defaults(self, applications):
+        """Give every application a launch profile, and keep a plain profile's name in step when the application is
+        renamed (its .desktop file now has another Name): a name the user typed is left alone."""
         known={p.desktop_id for p in self.profiles}
         changed=False
         for app in applications:
+            old=self.app_names.get(app.desktop_id) or LEGACY_NAMES.get(app.desktop_id)
+            if self.app_names.get(app.desktop_id)!=app.name: self.app_names[app.desktop_id]=app.name; changed=True
+            for p in self.profiles:
+                if p.desktop_id==app.desktop_id and p.name!=app.name and not p.command and not p.desktop_action \
+                        and (p.name==old or p.name in LEGACY_NAMES_ALL.get(app.desktop_id,())):
+                    p.name=app.name; changed=True
             if app.desktop_id not in known:
                 self.profiles.append(LaunchProfile(str(uuid.uuid4()),app.desktop_id,app.name)); known.add(app.desktop_id); changed=True
         if changed: self.save()
@@ -176,7 +220,7 @@ class ConfigStore:
         if profile.hotkey and not valid_spec(profile.hotkey): raise ValueError("The hotkey is not valid.")
         profile.description=_clean_text(profile.description)
         profile.name=profile.name.strip()
-        if not profile.name: raise ValueError("Profile name cannot be empty.")
+        if not profile.name: raise ValueError("The name cannot be empty.")
         if profile.command.strip():
             try: parts=shlex.split(profile.command)
             except ValueError as exc: raise ValueError(f"Command quoting is invalid: {exc}")
@@ -195,7 +239,7 @@ class ConfigStore:
         self.save(); return p.launch_mode
     def save_settings(self): self.save()
     def set_app_description(self, desktop_id, text):
-        """Override an application's description in the Guide. Empty restores the one from its .desktop file."""
+        """Override an application's description in Applications. Empty restores the one from its .desktop file."""
         text=_clean_text(text)
         if text: self.app_descriptions[desktop_id]=text
         else: self.app_descriptions.pop(desktop_id,None)
@@ -305,6 +349,8 @@ def search_items(query, profiles, applications, windows):
     """Return tagged search results as dictionaries; search is case-insensitive."""
     q=(query or "").strip().casefold()
     results=[]
+    # A profile whose application was uninstalled cannot start (unless it runs its own command): it is not offered.
+    profiles=[p for p in profiles if p.desktop_id in applications or p.command.strip()]
     def window_result(w):
         title,badge=extract_badge(w.get("title",""),w.get("urgent",False))
         return {"kind":"window","id":str(w.get('con_id')),"label":title or w.get("class") or "Untitled window","detail":"Open window","window":w,"badge":badge}

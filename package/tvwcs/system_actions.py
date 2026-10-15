@@ -1,10 +1,10 @@
 """System actions offered by the Quick Menu's power menu; no GTK dependency.
 
-Power actions use systemd when it runs the system, else elogind's loginctl (Artix, Gentoo, Void, Devuan and others
-without systemd), else the plain commands (zzz, reboot, poweroff), which usually need root without either."""
+Power actions use systemd's systemctl (TVWCS supports systemd systems only; TODO.md lists what others would need)."""
 from __future__ import annotations
 import os, shlex, shutil
 from dataclasses import dataclass
+from tvwcs import lockscreen
 
 @dataclass(frozen=True)
 class SystemAction:
@@ -50,7 +50,6 @@ def logout_command(env=None, which=shutil.which):
     return ["swaymsg","exit"] if _sway(env,which) else ["i3-msg","exit"]
 
 POWER_VERBS={"sleep":"suspend","reboot":"reboot","shutdown":"poweroff"}
-PLAIN_POWER={"sleep":(("zzz",),("pm-suspend",),("loginctl","suspend")),"reboot":(("reboot",),),"shutdown":(("poweroff",),)}
 
 def systemd_running(exists=os.path.isdir):
     """sd_booted(): systemd is the init system when this folder exists."""
@@ -60,8 +59,7 @@ def power_command(action_id, which=shutil.which, systemd=None):
     """How to suspend, reboot or power off here, or None when nothing installed can."""
     verb=POWER_VERBS[action_id]
     if (systemd_running() if systemd is None else systemd) and which("systemctl"): return ["systemctl",verb]
-    if which("loginctl"): return ["loginctl",verb]   # elogind (systemd's own loginctl only gets here without systemd running)
-    return next((list(c) for c in PLAIN_POWER[action_id] if which(c[0])),None)
+    return None
 
 def lock_command(configured="", env=None, which=shutil.which):
     """A user-configured command wins; otherwise the first locker that is installed."""
@@ -79,7 +77,8 @@ def lock_command(configured="", env=None, which=shutil.which):
 def command_for(action_id, settings=None, env=None, which=shutil.which, systemd=None):
     """The command for a system action, or None when this system has nothing that does it (or it is not a command)."""
     settings=settings or {}
-    if action_id=="lock": return lock_command(settings.get("lock_command",""),env,which)
+    if action_id=="lock":   # TVWCS's own lock screen when chosen (lockscreen.py), else the usual locker
+        return lockscreen.command(settings,env,which) or lock_command(settings.get("lock_command",""),env,which)
     if action_id=="logout": return logout_command(env,which)
     if action_id in POWER_VERBS: return power_command(action_id,which,systemd)
     return None
@@ -88,4 +87,4 @@ def unavailable_message(action_id):
     if action_id=="lock":
         return ("No screen locker was found. Install one (such as i3lock, or swaylock on sway), or set "
                 "\"lock_command\" in ~/.config/tvwcs/config.json.")
-    return "Nothing on this system can do that: TVWCS needs systemd, elogind (loginctl), or the reboot/poweroff/zzz commands."
+    return "Nothing on this system can do that: TVWCS needs systemd (systemctl) for sleep, reboot and shut down."

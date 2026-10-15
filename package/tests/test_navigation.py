@@ -51,7 +51,7 @@ def make_window(**state):
     win=ui_window.TVWCSWindow.__new__(ui_window.TVWCSWindow)
     win.app=MagicMock(); win._groups={"quick":[],"guide":[],"options":[]}; win._header_group=[]; win._result_groups=[]; win._modal_groups=[]
     win.guide_open=False; win.options_open=False; win.guide_pane=None; win.options_pane=None; win._last_focus={}
-    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None; win._password=None; win._focus_tip=None; win._focus_tip_source=0
+    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None; win._password=None; win._text=None; win._focus_tip=None; win._focus_tip_source=0
     win.search_entry=Entry("search"); win.get_focus=lambda:W.focus
     win._type_to_search=MagicMock(); win._escape=MagicMock()
     for k,v in state.items(): setattr(win,k,v)

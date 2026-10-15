@@ -8,7 +8,7 @@ window.tvwcs-window, .tvwcs-root { background: #000000; color: #ffffff; font-fam
 .pane { background: #1b1b1b; }
 .brand { font-size: 26px; font-weight: 300; letter-spacing: 2px; }
 .pane-title { font-size: 34px; font-weight: 200; }
-.muted { color: #9a9a9a; font-size: 13px; }
+.muted { color: #b5b5b5; font-size: 14px; }
 .section-title { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: @ACCENT@; margin-top: 12px; margin-bottom: 2px; }
 .channel-number { font-weight: 700; color: @ACCENT@; }
 .child-marker { color: #7d7d7d; font-size: 22px; }
@@ -17,7 +17,8 @@ button:hover { background: #3f3f3f; }
 button:focus, button:focus-visible, button:active { background: @ACCENT@; color: #ffffff; outline: 3px solid #ffffff; outline-offset: -3px; }
 button:focus .channel-number, button:focus .muted, button:focus .child-marker { color: #ffffff; }
 button:focus label { font-weight: 700; }
-button.active { background: @ACCENT@; }
+button.active { box-shadow: inset 0 -4px @ACCENT@; }   /* on, or the main choice: a bar, so it never looks selected */
+button.active:focus, button.active:focus-visible { box-shadow: none; }
 button.dialog-button { padding: 0 16px; }
 button.danger:focus, button.danger:focus-visible { background: #e81123; }
 button.square { min-width: 44px; min-height: 44px; padding: 0; }
@@ -28,10 +29,15 @@ button.close-button:focus, button.close-button:focus-visible, button.close-butto
 button.category-header { background: #262626; font-size: 18px; font-weight: 300; margin-top: 6px; }
 button.category-header:hover { background: #343434; }
 button.category-header:focus, button.category-header:focus-visible { background: @ACCENT@; outline: 3px solid #ffffff; outline-offset: -3px; }
-.description { color: #8a8a8a; font-size: 12px; }
+.description { color: #b5b5b5; font-size: 13px; }
 button:focus .description, .tvwcs-selected .description { color: #e3eefa; }
 .pin-display { font-size: 34px; font-weight: 300; letter-spacing: 4px; }
 button.pin-key { font-size: 24px; min-height: 64px; }
+button.pin-key.kb-key { font-size: 18px; min-height: 46px; min-width: 0; padding: 0 2px; }
+.text-display { font-size: 22px; min-height: 48px; }
+.field-value { color: #b5b5b5; font-size: 14px; }
+button.field-row { padding-top: 6px; padding-bottom: 6px; }
+button.field-row:focus .field-value { color: inherit; }
 .setting-value { color: @ACCENT@; font-weight: 700; }
 button:focus .setting-value { color: #ffffff; }
 .tvwcs-selected { background: @ACCENT@; color: #ffffff; outline: 3px solid #ffffff; outline-offset: -3px; }
@@ -58,7 +64,7 @@ button.clock-button { padding: 4px 8px; }
 button.clock-button:hover, button.status-icon:hover { background: #2d2d2d; }
 button.clock-button:focus, button.clock-button:focus-visible, button.status-icon:focus, button.status-icon:focus-visible { background: @ACCENT@; outline: 3px solid #ffffff; outline-offset: -3px; }
 .clock-time { font-size: 30px; font-weight: 200; }
-.clock-date { color: #9a9a9a; font-size: 13px; }
+.clock-date { color: #b5b5b5; font-size: 13px; }
 button:focus .clock-date { color: #ffffff; }
 button.status-wide { padding: 0 8px; }
 .status-count { font-size: 14px; font-weight: 700; }

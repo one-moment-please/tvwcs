@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.0.0 — 2026-10-15
+
+**Supported systems**
+- TVWCS now supports Debian and Debian-based systems (Debian, Ubuntu, Mint, Pop!_OS, Raspberry Pi OS) and openSUSE, with systemd. Arch, Fedora, Void, Alpine, Gentoo and systems without systemd are no longer supported; `TODO.md` lists what bringing them back would take.
+
+**Installer**
+- It first asks how TVWCS is used: as this computer's only interface (it can log in and start TVWCS at boot, as before), or next to your other desktops. The second adds "TVWCS (i3)" and "TVWCS (sway)" to the login screen, with TVWCS's own session config in `~/.config/tvwcs/`. It never sets up automatic login, and adding TVWCS to your usual i3 or sway config is optional (default no). `TVWCS_SETUP=dedicated` or `alongside` answers the question.
+- It starts by saying what it found: a login screen, other desktops, i3 and sway.
+- It offers an icon theme and the Open Sans font when they are missing.
+
+**Quick Menu**
+- An on-screen keyboard and number keypad: press OK on the empty search field to type with a remote.
+- The launch profile editor and an app's list of profiles open inside the TVWCS window and work fully with a remote: each field is a row, with Save, Cancel and Delete. A PIN-protected profile asks for its PIN first.
+- A welcome on first start asks whether TVWCS is used on a TV or at a desk.
+- Errors, messages and a "Starting <app>…" card show in the window.
+- New icons: ⊞ opens Applications, ⋯ opens a row's options, ≡ starts an app with one of its own shortcuts.
+- "Guide" is now called Applications, and its channel list Channels.
+- On a TV, the key hints at the bottom name the remote's keys (OK, Back).
+- Text has more contrast, and fades follow the new Reduce motion option.
+- Plain launch profiles keep working when their app is renamed (such as the old "Control Panel").
+
+**Settings app**
+- A new **Remote and hotkeys** page (`tvwcs settings hotkeys`). TVWCS's own updates moved to **Software updates**.
+- **Where apps open** is one choice: Full screen, one per workspace; Side by side; or As each app's profile says.
+- Choosing TV turns on button hints. Interface size applies at once.
+- New options: accent colour, screen edge margin (for TVs that cut off the edges), and Reduce motion.
+- Pages show key hints at the bottom.
+- The launcher is called "TVWCS Settings" and is hidden in GNOME and KDE menus.
+
+**Lock screen**
+- An optional TVWCS lock screen (Settings › Power and sleep › Lock screen, off by default). It shows "Locked" and says whose password to type, using i3lock (swaylock on sway). The power menu's Lock, the idle lock and xss-lock (when the i3 config starts it) use it; switching back restores the previous locker. `tvwcs lock` locks by hand.
+
 ## 2.11.2 — 2026-10-15
 
 - TV mode: when the Quick Menu is kept open over an empty screen and a window opens from elsewhere (Settings started from a terminal or a hotkey, an app started by its hotkey), the menu now steps aside for it. Before, the new window opened hidden under the menu while taking the keyboard.

@@ -5,7 +5,7 @@ have=lambda names:(lambda c: f"/usr/sbin/{c}" if c in names else None)
 
 class PrivilegeTests(unittest.TestCase):
     def test_which_commands_need_root(self):
-        self.assertTrue(needs_root(["reboot"],euid=1000)); self.assertTrue(needs_root(["/usr/sbin/zzz"],euid=1000))
+        self.assertTrue(needs_root(["reboot"],euid=1000)); self.assertTrue(needs_root(["/usr/sbin/poweroff"],euid=1000))
         self.assertFalse(needs_root(["reboot"],euid=0)); self.assertFalse(needs_root(["systemctl","reboot"],euid=1000))   # polkit decides
     def test_polkit_refusals(self):
         self.assertTrue(polkit_refused("Failed to reboot system via logind: Interactive authentication required."))

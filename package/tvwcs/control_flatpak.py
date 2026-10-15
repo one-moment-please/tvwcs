@@ -31,9 +31,7 @@ CATEGORIES=(("featured","Featured",frozenset()),
             ("utilities","Utilities",frozenset({"Utility","System","Settings","Development","FileManager"})))
 CATEGORY_LABELS={k:label for k,label,_ in CATEGORIES}
 
-INSTALL_FLATPAK={"apt-get":["apt-get","install","-y","flatpak"],"dnf":["dnf","install","-y","flatpak"],
-                 "pacman":["pacman","-S","--needed","--noconfirm","flatpak"],"zypper":["zypper","--non-interactive","install","flatpak"],
-                 "xbps-install":["xbps-install","-y","flatpak"],"apk":["apk","add","flatpak"]}
+INSTALL_FLATPAK={"apt-get":["apt-get","install","-y","flatpak"],"zypper":["zypper","--non-interactive","install","flatpak"]}
 
 @dataclass(frozen=True)
 class App:

@@ -143,7 +143,7 @@ def backend(env=None, has=have):
     if env.get("WAYLAND_DISPLAY") and not env.get("DISPLAY"):
         return "","Display settings work in sway or in an X11 session such as i3; this Wayland session is neither."
     if not env.get("DISPLAY"): return "","There is no graphical session to change."
-    return ("xrandr","") if has("xrandr") else ("","xrandr was not found. Install it (x11-xserver-utils, or xorg-xrandr) to change displays.")
+    return ("xrandr","") if has("xrandr") else ("","xrandr was not found. Install it (x11-xserver-utils, or xrandr on openSUSE) to change displays.")
 
 def read_state():
     tool,why=backend()

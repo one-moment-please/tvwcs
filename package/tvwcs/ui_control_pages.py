@@ -12,11 +12,12 @@ from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, 
 from pathlib import Path
 from tvwcs import __version__, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, apply_use, is_4k, scale_choices, startup_choices
+from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, accent_name, apply_use,
+                         apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for, login_manager_installed
-from tvwcs.ui_control import StreamedRun, in_background
-from tvwcs.widgets import NavGroup, S, clear_box, glyph, muted_label, section_title, usable
+from tvwcs.ui_control import StreamedRun, colour_swatch, in_background
+from tvwcs.widgets import METRO_COLORS, NavGroup, S, clear_box, glyph, muted_label, section_title, usable
 
 try:
     gi.require_version("Vte","3.91")
@@ -111,6 +112,9 @@ class Page:
             if w is not None and id(w) in stale and stale[id(w)] in self._ids: setattr(self.win,widget_ref,self._ids[stale[id(w)]])
         last=self.win._last_page_focus.get(self.key)
         if last is not None and id(last) in stale and stale[id(last)] in self._ids: self.win._last_page_focus[self.key]=self._ids[stale[id(last)]]
+        ident=getattr(self,"focus_ident",None)
+        if ident is not None and old is None and self._ids.get(ident) is not None:
+            self.focus_ident=None; GLib.idle_add(lambda w=self._ids[ident]:(usable(w) and w.grab_focus(),GLib.SOURCE_REMOVE)[1])
         if old is not None:
             target=self._ids.get(old) or (next((w for i,w in self._ids.items() if i.startswith(old)),None) if old==wanted else None)
             if target is not None and usable(target): target.grab_focus()
@@ -131,9 +135,9 @@ class Page:
             if ident is not None: self._ids[f"{ident}#{k}"]=w
         return g
 
-    def row(self, label, value="", on_activate=None, detail="", icon=None, fallback="", ident=None, extras=(), value_css="setting-value"):
-        """One row: an optional icon, its name (and a detail line under it), its value on the right; square extra
-        buttons follow it on the same row. ← / → move between them."""
+    def row(self, label, value="", on_activate=None, detail="", icon=None, fallback="", ident=None, extras=(), value_css="setting-value", swatch=None):
+        """One row: an optional icon, its name (and a detail line under it), its value on the right (after a square of
+        the colour `swatch`); square extra buttons follow it on the same row. ← / → move between them."""
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4))
         b=Gtk.Button(); b.add_css_class("launch-row"); b.set_hexpand(True)
         if on_activate is None: b.add_css_class("info-row")
@@ -145,6 +149,7 @@ class Page:
         if detail:
             d=Gtk.Label(label=detail); d.add_css_class("row-detail"); d.set_xalign(0); d.set_ellipsize(Pango.EllipsizeMode.END); text.append(d)
         inner.append(text)
+        if swatch: inner.append(colour_swatch(swatch))
         if value:
             v=Gtk.Label(label=value); v.add_css_class(value_css); v.set_xalign(1); inner.append(v)
         b.set_child(inner)
@@ -176,20 +181,17 @@ def tell_tvwcs(request):
         os.kill(pid,signal.SIGWINCH); return True
     except (OSError,ValueError): return False   # not running: it reads its options when it starts
 
-class OptionsPage(Page):
-    """TVWCS's options: the Quick Menu's buttons, the interface size, behaviour, what opens at login, hotkeys and
-    TVWCS's own updates. Each change is saved to TVWCS's config file, read fresh first so nothing TVWCS saved
-    meanwhile is lost, and the running TVWCS is asked to read it again."""
-    key="options"; title="Options"; icon="preferences-other-symbolic"; fallback="⚙"; refreshable=False
-    def __init__(self, win):
-        super().__init__(win); self.update_text=""; self.updating=False
+class _ConfigPage(Page):
+    """A page of TVWCS's own options. Each change is saved to TVWCS's config file, read fresh first so nothing TVWCS
+    saved meanwhile is lost, and the running TVWCS is asked to read it again; so is this Settings window."""
+    refreshable=False
     def read(self): return ConfigStore()
     def summary(self): return f"TVWCS {__version__}"
     def change(self, edit, notice=""):
         """edit(store) changes a freshly read store; it is saved, and TVWCS reads it again."""
         store=ConfigStore(); edit(store); store.save(); self.state=store; self.redraw()
-        tell_tvwcs("reload")
-        if notice: self.win.notice("Options",notice)
+        tell_tvwcs("reload"); self.win.settings_changed(store.settings)
+        if notice: self.win.notice(self.title,notice)
     def toggle(self, key):
         def edit(store): store.settings[key]=not store.settings[key]
         return lambda:self.change(edit)
@@ -197,6 +199,13 @@ class OptionsPage(Page):
         on=bool(self.state.settings[key])!=invert
         self.row(label,_on_off(on),self.toggle(key),ident=f"opt:{key}")
         if hint: self.note(hint)
+    def note(self, text, css=None):
+        l=super().note(text,css); l.set_margin_bottom(S(6)); return l
+
+class OptionsPage(_ConfigPage):
+    """TVWCS's options: the Quick Menu's buttons, how it looks (size, colour, edge margin, motion), where apps open and
+    what opens at login. Hotkeys have their own page; TVWCS's own updates are on Software updates."""
+    key="options"; title="Options"; icon="preferences-other-symbolic"; fallback="⚙"
 
     def draw(self, store):
         st=store.settings
@@ -205,20 +214,25 @@ class OptionsPage(Page):
         self.option("Close button (✕)","quick_close_button","Esc and the remote's Back key close the Quick Menu too.")
         locker=command_for("lock",st)
         self.option("Lock in the power menu","quick_lock_button",
-                    "The power menu (⏻) always has Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
+                    "The power menu always has Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
                     ". It has no Log out here: without a login screen, logging out would only leave a text console.")
                     +("" if locker else " No screen locker is installed (such as i3lock, or swaylock on sway), so Lock would not work yet."))
-        self.option("Options buttons on rows (☰)","hide_options_buttons","Even hidden, a row's options open by pressing ← on it, or by right-clicking it.",invert=True)
+        self.option("Options buttons on rows (⋮)","hide_options_buttons","Even hidden, a row's options open by pressing ← on it, or by right-clicking it.",invert=True)
         self.option("Button hints","button_hints","Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
 
         self.section("DISPLAY")
         self.row("Used on",{"tv":"A TV","desktop":"A desktop monitor"}.get(st["use"],"Not chosen"),self.choose_use,ident="opt:use")
-        self.note("A TV: TV Mode size, every app opens in a workspace of its own, and an app alone on its workspace has no border. "
-                  "A desktop monitor: Desktop size, and apps open tiled in the current workspace. Size and workspaces can still be "
-                  "changed one by one below.")
+        self.note("A TV: TV Mode size, every app opens full screen in a workspace of its own, and button hints are on. "
+                  "A desktop monitor: Desktop size, and apps open side by side. Each can still be changed below.")
         has_4k=self.has_4k()
         self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
         self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
+        self.row("Accent colour",accent_name(st["accent"]),self.choose_accent,ident="opt:accent",swatch=st["accent"])
+        self.note("The colour of the selection, of switched-on things and of the tiles.")
+        self.row("Screen edge margin",f"{st['margin']} px",self.choose_margin,ident="opt:margin")
+        self.note("Space between the Quick Menu and the edges of the screen. Many TVs cut off the edges of the picture "
+                  "(overscan): if the edges of TVWCS are missing, make this larger, or turn overscan off in the TV's own picture settings.")
+        self.option("Reduce motion","reduce_motion","On: pages change at once, without fading. Suits a slow TV box.")
         if st["use"]=="tv":
             self.option("Hide the i3 bar","tv_hide_bar","On a TV the bottom of the Quick Menu shows the time, the network, the volume, "
                         "Bluetooth and waiting updates instead. Off: the bar shows as your i3 or sway config sets it.")
@@ -227,10 +241,11 @@ class OptionsPage(Page):
 
         self.section("BEHAVIOR")
         self.option("Close when clicking outside","close_on_click_outside")
-        self.option("Always open apps in a new workspace","always_new_workspace",
-                    "On: every app, whether you launch it or select it while it is open, gets a workspace of its own, whatever its profile says.")
-        self.option("Open running apps in a new workspace","open_in_new_workspace",
-                    "On: selecting an open app gives it a workspace of its own. Off: it is tiled into the current workspace.")
+        where=apps_open(st)
+        self.row("Where apps open",APPS_OPEN[where],self.choose_apps_open,ident="opt:apps_open")
+        self.note({"fullscreen":"Every app, opened or selected while it is open, gets a workspace of its own, full screen.",
+                   "side":"Apps open beside what is on screen, sharing it.",
+                   "profile":"Each app opens where its own setting says: “Always launch in a new workspace”, under ✎ Edit on it in Applications."}[where])
 
         self.section("AT LOGIN")
         names={p.id:p.name for p in store.profiles}
@@ -242,7 +257,50 @@ class OptionsPage(Page):
         self.note({"none":"Nothing opens by itself when you log in.","menu":"The Quick Menu opens when you log in.",
                    "last":"Whichever application you used most recently opens when you log in.",
                    "app":"The application chosen above opens when you log in."}[mode]+" It happens once per login, a moment after TVWCS starts.")
+        self.note("Hotkeys and the remote's keys are under Remote and hotkeys; TVWCS's own updates under Software updates.")
 
+    # ---------------------------------------------------------- choices
+    def has_4k(self):
+        gd=Gdk.Display.get_default(); monitors=gd.get_monitors() if gd else None
+        for i in range(monitors.get_n_items() if monitors is not None else 0):
+            m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
+            if is_4k(g.width*f,g.height*f): return True
+        return False
+    def pick_scale(self, key): self.change(lambda s:s.settings.update(scale=key))   # settings_changed redraws Settings at it
+    def choose_use(self):
+        self.win.choose_option("Used on",[("tv","A TV, across the room"),("desktop","A desktop monitor, at arm's length")],self.state.settings["use"],
+                               lambda use:self.change(lambda s:apply_use(s.settings,use)))
+    def choose_apps_open(self):
+        self.win.choose_option("Where apps open",list(APPS_OPEN.items()),apps_open(self.state.settings),
+                               lambda choice:self.change(lambda s:set_apps_open(s.settings,choice)))
+    def choose_accent(self):
+        current=self.state.settings["accent"].lower()
+        options=[(c,accent_name(c)) for c in METRO_COLORS]+([] if current in METRO_COLORS else [(current,f"{current} (set in config.json)")])
+        self.win.choose_option("Accent colour",options,current,lambda c:self.change(lambda s:s.settings.update(accent=c)),swatches=True)
+    def choose_margin(self):
+        m=self.state.settings["margin"]; choices=sorted(set(MARGIN_CHOICES)|{m})
+        self.win.choose_option("Screen edge margin",[(str(v),f"{v} px"+(" (none)" if v==0 else " (the default)" if v==DEFAULT_SETTINGS["margin"] else "")) for v in choices],
+                               str(m),lambda v:self.change(lambda s:s.settings.update(margin=int(v))))
+    def pick_startup(self, store, mode):
+        if mode=="app" and store.get(store.settings["startup"]["profile_id"]) is None: self.choose_app(store); return   # pick which one first
+        self.change(lambda s:s.settings["startup"].update(mode=mode))
+    def choose_app(self, store):
+        options=[]
+        for heading,profiles in startup_choices(store.profiles):
+            for p in profiles: options.append((p.id,(f"{p.channel:03d}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
+        if not options: self.win.notice("Chosen application","There are no applications to choose from yet."); return
+        def picked(pid): self.change(lambda s:s.settings["startup"].update(profile_id=pid,mode="app"))
+        self.win.choose_option("Open at login",options,store.settings["startup"]["profile_id"],picked)
+
+# ====================================================================== Remote and hotkeys
+class HotkeysPage(_ConfigPage):
+    """The keys that open the Quick Menu and Applications from a keyboard, a remote or a gamepad (TVWCS writes
+    hotkeys.conf when it reads them again), and the apps that have a hotkey of their own."""
+    key="hotkeys"; title="Remote and hotkeys"; icon="input-keyboard-symbolic"; fallback="⌨"
+    def summary(self): return ""
+
+    def draw(self, store):
+        st=store.settings
         hints={"keyboard":"A modifier tapped on its own (such as Super) triggers when it is released, so Super combinations keep working.",
                "remote":"Most remotes send ordinary keys; F2 suits many of them. Fullscreen switches the app you are using in and out of fullscreen.",
                "gamepad":"A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys; then choose those keys here."}
@@ -256,46 +314,8 @@ class OptionsPage(Page):
         self.section("APPLICATION HOTKEYS")
         n=len(store.hotkey_profiles())
         self.row("Applications with a hotkey","None" if n==0 else f"{n} mapped",self.app_hotkeys,ident="key:apps")
-        self.note("Give an application a hotkey in its launch profile (✎ in the applications guide). Open this to change or remove them.")
+        self.note(APP_HOTKEY_HINT+" Open this to change or remove them.")
 
-        self.section("TVWCS UPDATES")
-        self.row("Check for updates",self.update_text or f"Version {__version__}",None if self.updating else self.check_updates,ident="opt:update")
-        self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
-        self.option("Include prereleases","update_prereleases",
-                    "Every change is released as a prerelease first, and marked as the latest release once it has been tested "
-                    "on a TV computer. On: Check for updates offers prereleases too.")
-        self.row("Roll back to the latest release","",None if self.updating else self.roll_back,ident="opt:rollback")
-        self.note("Installs the release marked latest, even when it is older than this version: the way back from a prerelease.")
-
-    def note(self, text, css=None):
-        l=super().note(text,css); l.set_margin_bottom(S(6)); return l
-
-    # ---------------------------------------------------------- choices
-    def has_4k(self):
-        gd=Gdk.Display.get_default(); monitors=gd.get_monitors() if gd else None
-        for i in range(monitors.get_n_items() if monitors is not None else 0):
-            m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
-            if is_4k(g.width*f,g.height*f): return True
-        return False
-    def pick_scale(self, key):
-        self.change(lambda s:s.settings.update(scale=key),"TVWCS uses the new size now. Settings uses it the next time it opens.")
-    def choose_use(self):
-        def picked(use):
-            old=self.state.settings["scale"]; self.change(lambda s:apply_use(s.settings,use))
-            if self.state.settings["scale"]!=old: self.win.notice("Options","TVWCS uses the new size now. Settings uses it the next time it opens.")
-        self.win.choose_option("Used on",[("tv","A TV, across the room"),("desktop","A desktop monitor, at arm's length")],self.state.settings["use"],picked)
-    def pick_startup(self, store, mode):
-        if mode=="app" and store.get(store.settings["startup"]["profile_id"]) is None: self.choose_app(store); return   # pick which one first
-        self.change(lambda s:s.settings["startup"].update(mode=mode))
-    def choose_app(self, store):
-        options=[]
-        for heading,profiles in startup_choices(store.profiles):
-            for p in profiles: options.append((p.id,(f"{p.channel:03d}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
-        if not options: self.win.notice("Chosen application","There are no applications to choose from yet."); return
-        def picked(pid): self.change(lambda s:s.settings["startup"].update(profile_id=pid,mode="app"))
-        self.win.choose_option("Open at login",options,store.settings["startup"]["profile_id"],picked)
-
-    # ---------------------------------------------------------- hotkeys (TVWCS writes hotkeys.conf when it reads them again)
     def change_hotkey(self, store, device, name):
         label=f"{DEVICE_LABELS[device]}: {ACTION_LABELS[name]}"
         self.win.assign_hotkey(store,("slot",device,name),label,lambda spec:self.change(lambda s:s.set_slot_hotkey(device,name,spec)))
@@ -307,7 +327,7 @@ class OptionsPage(Page):
     def app_hotkeys(self):
         store=ConfigStore(); profiles=store.hotkey_profiles()
         if not profiles:
-            self.win.notice("Application hotkeys","No application has a hotkey yet. Give one a hotkey in its launch profile (✎ in the applications guide)."); return
+            self.win.notice("Application hotkeys","No application has a hotkey yet. "+APP_HOTKEY_HINT); return
         def chosen(pid):
             p=store.get(pid)
             def set_key(spec): self.change(lambda s:s.set_profile_hotkey(pid,spec)); self.app_hotkeys()
@@ -316,7 +336,25 @@ class OptionsPage(Page):
                                    back=self.app_hotkeys)
         self.win.choose_option("Application hotkeys",[(p.id,f"{p.name}  ·  {describe(p.hotkey)}") for p in profiles],None,chosen)
 
-    # ---------------------------------------------------------- TVWCS's own updates
+APP_HOTKEY_HINT="Give an app a hotkey with ✎ Edit on it in Applications."
+
+# ====================================================================== TVWCS's own updates (on the Software updates page)
+class _SelfUpdate:
+    """TVWCS updates: a newer release from GitHub, prereleases, and the way back to the latest release."""
+    update_text=""; updating=False
+    def draw_self_update(self):
+        self.section("TVWCS UPDATES")
+        self.row("Check for TVWCS updates",self.update_text or f"Version {__version__}",None if self.updating else self.check_updates,ident="opt:update",
+                 icon="view-refresh-symbolic",fallback="⟳")
+        self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
+        pre=ConfigStore().settings["update_prereleases"]
+        self.row("Include prereleases",_on_off(pre),self.toggle_prereleases,ident="opt:update_prereleases")
+        self.note("Every change is released as a prerelease first, and marked as the latest release once it has been tested "
+                  "on a TV computer. On: Check for TVWCS updates offers prereleases too.")
+        self.row("Roll back to the latest release","",None if self.updating else self.roll_back,ident="opt:rollback")
+        self.note("Installs the release marked latest, even when it is older than this version: the way back from a prerelease.")
+    def toggle_prereleases(self):
+        store=ConfigStore(); store.settings["update_prereleases"]=not store.settings["update_prereleases"]; store.save(); tell_tvwcs("reload"); self.redraw()
     def check_updates(self):
         self.updating=True; self.update_text="Checking…"; self.redraw()
         def failed(exc): self.updating=False; self.update_text="Check failed"; self.redraw(); self.win.notice("TVWCS updates",f"Could not check for updates: {exc}")
@@ -361,6 +399,7 @@ class OptionsPage(Page):
         in_background(lambda:selfupdate.install_release(release,target,migrate=moving),done,failed)
 
 # ====================================================================== Power and sleep
+LOCK_SCREENS={True:"TVWCS lock screen",False:"The system's screen locker"}
 class PowerPage(Page):
     """After how long without input the screen turns off, the computer locks and it sleeps (TVWCS keeps these times,
     see power.py), and what the system does by itself: X's blanking and DPMS, logind's idle action and the lid."""
@@ -383,9 +422,15 @@ class PowerPage(Page):
                  icon="weather-clear-night-symbolic",fallback="☾",ident="idle:sleep")
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
+        self.section("LOCKING")
+        own=bool(ConfigStore().settings["tvwcs_lock_screen"])
+        self.row("Lock screen",LOCK_SCREENS[own],self.choose_lock_screen,icon="system-lock-screen-symbolic",fallback="🔒",ident="lock:screen")
+        self.note("TVWCS's lock screen says the TV is locked and asks for your password. It uses i3lock (or swaylock on sway), "
+                  "and xss-lock uses it too when it locks the screen."
+                  if own else "Lock (after the time above, or from the power menu) uses the screen locker the system has, such as i3lock or swaylock.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
-                      "TVWCS cannot tell how long the computer has been idle: install libxss1 (or xprintidle).","error")
+                      "TVWCS cannot tell how long the computer has been idle: install libxss1 (libXss1 on openSUSE), or xprintidle.","error")
         self.section("WHAT THE SYSTEM DOES BY ITSELF")
         if s.session=="X11":
             x=s.xtimers
@@ -397,7 +442,7 @@ class PowerPage(Page):
                          detail="DPMS power saving",ident="sys:dpms")
             if s.xss_lock:
                 self.row("Locks when the screen turns off","Yes",self.stop_xss_lock if s.xss_lock!="?" else None,
-                         detail="xss-lock is running"+(", started by your i3 config. Choose this to stop it" if s.xss_lock!="?" else
+                         detail="xss-lock is running"+((", started by TVWCS's session config" if os.environ.get("TVWCS_SESSION") else ", started by your i3 config")+". Choose this to stop it" if s.xss_lock!="?" else
                                                        ". Remove it from the file that starts it to stop the screen locking"),
                          icon="system-lock-screen-symbolic",fallback="🔒",ident="sys:xss")
         l=s.logind
@@ -418,6 +463,19 @@ class PowerPage(Page):
                          f"to a password prompt. TVWCS will turn it off in {path.replace(str(Path.home()),'~',1)} (keeping a copy of the file as "
                          f"{os.path.basename(path)}.before-tvwcs) and stop it now. “Lock after” still locks when you choose a time.",
                          "Stop it",lambda:self.act(lambda:power.stop_xss_lock(path),"Stopping xss-lock…","Power and sleep"),danger=False)
+
+    def choose_lock_screen(self):
+        def picked(key):
+            store=ConfigStore(); store.settings["tvwcs_lock_screen"]=key=="tvwcs"; store.save(); tell_tvwcs("reload")
+            path=getattr(self.state,"xss_lock","")
+            if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
+            if path and path!="?":   # xss-lock (locking when the screen turns off) shows the same lock screen
+                from tvwcs.lockscreen import launcher
+                why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if key=="tvwcs" else "")
+                if why: self.win.notice("Lock screen",why)
+            self.redraw()
+        self.win.choose_option("Lock screen",[("tvwcs",LOCK_SCREENS[True]),("system",LOCK_SCREENS[False])],
+                               "tvwcs" if ConfigStore().settings["tvwcs_lock_screen"] else "system",picked)
 
     @staticmethod
     def system_screen_text(s):
@@ -709,7 +767,8 @@ class _Console:
         if buf.get_line_count()>2000: buf.delete(buf.get_start_iter(),buf.get_iter_at_line(buf.get_line_count()-2000)[1])
         GLib.idle_add(lambda:(self.log_scroll.get_vadjustment().set_value(self.log_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
 
-class UpdatesPage(_Console, Page):
+class UpdatesPage(_SelfUpdate, _Console, Page):
+    """TVWCS's own updates, then the system's packages and Flatpak apps."""
     key="updates"; title="Software updates"; icon="software-update-available-symbolic"; fallback="⇩"
     MAX_ROWS=300
     def __init__(self, win):
@@ -725,11 +784,13 @@ class UpdatesPage(_Console, Page):
         age=updates.age_text(s.checked)
         return s.manager.label+(f" · package lists from {age}" if age else "")
     def draw(self, s):
-        if not s.available: self.note(s.message); return
         if self.running:
             self.row(self.running,"Working…",None,icon="emblem-synchronizing-symbolic",fallback="⟳",ident="running")
             self.note("Leave this running until it finishes. Settings can be closed; the update carries on.")
             self.add(self.console()); return
+        self.draw_self_update()
+        self.section("SYSTEM AND APPS")
+        if not s.available: self.note(s.message); return
         self.row("Check for updates",f"{s.total} available" if s.total else "Up to date",self.refresh,ident="check",
                  icon="view-refresh-symbolic",fallback="⟳")
         m=s.manager
@@ -976,7 +1037,7 @@ class AppsPage(_Console, Page):
     def install(self, a):
         self.win.close_modal(); s=self.state
         steps=([] if "user" in s.remote else [(flatpak.setup_argv()[0],False)])+[(flatpak.install_argv(a.id),False)]
-        self.run_steps(f"Installing {a.name}",steps,f"{a.name} is installed. Open it here, or from the applications guide.",a.id)
+        self.run_steps(f"Installing {a.name}",steps,f"{a.name} is installed. Open it here, or from Applications.",a.id)
     def remove(self, a, inst):
         argv,root=flatpak.uninstall_argv(inst)
         self.win.confirm(f"Remove {a.name}?",f"{a.name} is removed from this computer"+(" for everyone, and this asks for your password" if root else "")
@@ -1059,7 +1120,7 @@ class SystemPage(Page):
         self.win.confirm("Install the SSH server?","This installs OpenSSH's server with the package manager. Turn it on here afterwards.",
                          "Install",lambda:self.as_root(ssh.install_argv(),"Installing the SSH server","Installing the SSH server…"),danger=False)
     def switch_ssh(self, s):
-        if not s.unit: self.win.notice("SSH","Without systemd, start and stop the SSH server with your init system's own tools."); return
+        if not s.unit: self.win.notice("SSH","The SSH server has no systemd service here (ssh or sshd), so Settings cannot start or stop it."); return
         if s.active:
             self.win.confirm("Turn SSH off?","Nobody can sign in from another computer until it is turned on again. "
                              "Connections open now stay open.","Turn off",lambda:self.as_root(ssh.service_argv(s,False),"Turning SSH off","Turning SSH off…"))
@@ -1355,4 +1416,4 @@ class DateTimePage(Page):
             store=ConfigStore(); store.settings["clock_24h"]=key=="24"; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
         self.win.choose_option("Quick Menu clock",[("12","12-hour (2:05 PM)"),("24","24-hour (14:05)")],"24" if self.state[1] else "12",picked)
 
-PAGES=(OptionsPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)
+PAGES=(OptionsPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)

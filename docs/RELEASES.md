@@ -1,32 +1,24 @@
-# Release process (beta -> publish)
+# Releases
 
-Everything below works with the GitHub Actions in `.github/workflows/release.yml`, but nothing
-requires GitHub: you can build a beta zip locally any time.
+Releases are built by `.github/workflows/release.yml`. You can also build a zip locally without GitHub.
 
-## 1. Make your list of requests / changes
-Commit them on a `beta` branch (or just work on `main` and skip to step 2 if you prefer).
+## Usual flow
 
-## 2. Get a beta you can download
-- **On GitHub:** push to the `beta` branch. The *Release* workflow runs the tests, builds
-  `TVWCS-<version>-beta.<n>.zip` and attaches it both as a workflow artifact and as a
-  **pre-release** on the Releases page. Download, unzip, run `install.sh`, live with it.
-- **Locally (no GitHub needed):**
+1. **Bump the version.** Change `VERSION` and add a dated section at the top of `CHANGELOG.md`.
+2. **Merge to `main`.** If no release exists yet for that version, the Release workflow runs the tests, builds `TVWCS-<version>.zip` and publishes it as the **prerelease** `v<version>`. TVWCS offers it only to people who turned on **Include prereleases**.
+3. **Test it on a TV computer.**
+4. **Promote it.** Run the **Promote** workflow (Actions tab) with the tag, such as `v3.0.0`. It marks that release as **latest**, which **Check for TVWCS updates** installs by default and **Roll back to the latest release** goes back to.
+
+## Other ways
+
+- **Beta build:** push to the `beta` branch. The workflow builds a prerelease tagged `beta-<run number>`.
+- **Publish at once:** push a tag such as `v3.0.0` by hand. That release is marked latest straight away.
+- **Local build:**
   ```sh
-  ./scripts/make-release.sh --beta     # -> resources/TVWCS-<version>-beta.<n>.zip
+  ./scripts/make-release.sh          # resources/TVWCS-<version>.zip
+  ./scripts/make-release.sh --beta   # resources/TVWCS-<version>-beta.<n>.zip
   ```
 
-## 3. Iterate
-Repeat steps 1-2 as often as you like; each beta is numbered automatically.
+## Version numbers
 
-## 4. Publish when happy
-```sh
-# update VERSION and add a dated section to CHANGELOG.md first
-git add -A && git commit -m "Release v2.6.0"
-git tag v2.6.0 && git push origin v2.6.0
-```
-Pushing a `v*` tag makes the workflow run the tests again and create the **published**
-(non-prerelease) GitHub Release containing `TVWCS-2.6.0.zip`. Locally: `./scripts/make-release.sh`.
-
-## Version numbers (semver)
-`MAJOR.MINOR.PATCH` — breaking changes / big features bump MAJOR or MINOR, fixes bump PATCH.
-Betas are tied to the version they are about to become (`2.6.0-beta.3` -> `v2.6.0`).
+`MAJOR.MINOR.PATCH`. Bump MAJOR for big or breaking changes, MINOR for new features, PATCH for fixes.
