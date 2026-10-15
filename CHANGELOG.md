@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+**Settings app**
+- New **Apps** page, a store for Flatpak apps from Flathub: a grid of tiles with icons, names and summaries; Featured apps that suit a TV first, then categories (Video & music, Games, Internet, Graphics & photos, Office & education, Utilities), a search typed on the on-screen keyboard, and the installed apps. A tile opens the app's description with Install, or Open and Remove. Apps are installed for the user (`flatpak install --user`, no password); one installed system-wide is removed as root. The page offers to install Flatpak with the package manager and to set up Flathub for the user, and reads the catalog flatpak downloads (`flatpak update --appstream`), so it works with the remote alone. `tvwcs settings apps` opens it.
+- The applications guide finds Flatpak apps even when the session's `XDG_DATA_DIRS` does not include Flatpak's folders (as right after installing Flatpak, before logging in again).
+
 ## 2.10.0 — 2026-10-14
 
 **Settings app**

@@ -1,6 +1,7 @@
-import tempfile, unittest
+import os, tempfile, unittest
+from unittest import mock
 from pathlib import Path
-from tvwcs.applications import _parse_desktop_file, match_window, Application
+from tvwcs.applications import _application_directories, _parse_desktop_file, match_window, Application
 
 def app(desktop_id,name,wm_class=None,icon=None):
     return Application(desktop_id,name,None,None,icon,("Other",),"/x",name.lower(),(),wm_class)
@@ -26,4 +27,11 @@ class ApplicationTests(unittest.TestCase):
         apps=[app("firefox.desktop","Firefox Web Browser")]
         self.assertEqual(match_window({"class":"firefox","instance":"Navigator","title":"x"},apps).desktop_id,"firefox.desktop")
         self.assertIsNone(match_window({"class":"zzz","instance":"zzz","title":"nothing"},apps))
+    def test_flatpak_apps_are_found_without_their_xdg_data_dirs(self):
+        with mock.patch.dict(os.environ,{"XDG_DATA_HOME":"/h","XDG_DATA_DIRS":"/usr/share"}):
+            self.assertEqual(_application_directories(),[Path("/h/applications"),Path("/usr/share/applications"),
+                             Path("/h/flatpak/exports/share/applications"),Path("/var/lib/flatpak/exports/share/applications")])
+        with mock.patch.dict(os.environ,{"XDG_DATA_HOME":"/h","XDG_DATA_DIRS":"/var/lib/flatpak/exports/share:/usr/share"}):
+            self.assertEqual(_application_directories()[1:],[Path("/var/lib/flatpak/exports/share/applications"),Path("/usr/share/applications"),
+                             Path("/h/flatpak/exports/share/applications")])   # already listed: its place is kept
 if __name__=="__main__": unittest.main()
