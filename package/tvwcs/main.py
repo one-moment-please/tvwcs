@@ -96,7 +96,7 @@ class StatusWatcher:
     UPDATES_EVERY=3*3600   # seconds between update checks (the package lists, Flathub)
     def __init__(self, app):
         self.app=app; self.source=0; self.reading=False; self.last_read=0.0; self.last_bar=0.0; self.updates=0
-        self.updates_due=time.monotonic()+90; self.checking_updates=False; self.bar_hidden=False
+        self.updates_due=time.monotonic()+90; self.checking_updates=False; self.bar_hidden=False; self.kept_open=False
     def start(self):
         if not self.source: self.source=GLib.timeout_add_seconds(self.TICK,self._tick)
         self.apply_bar(); self.read_now()
@@ -110,10 +110,17 @@ class StatusWatcher:
         if visible:
             w.tick_clock()
             if now-self.last_read>=self.READ_EVERY: self.read_now()
-        if app.tv_option("tv_keep_menu_open") and not visible:
+        if app.tv_option("tv_keep_menu_open"):
             has_windows=app.wm.has_windows()
-            if has_windows: app.grace_until=0.0   # an app is open: whatever was launched has arrived
-            elif tv_mode.should_show_menu(True,visible,has_windows,now,app.grace_until) and not app.has_dialogs(): app.show_mode("toggle")
+            if not visible:
+                self.kept_open=False
+                if has_windows: app.grace_until=0.0   # an app is open: whatever was launched has arrived
+                elif tv_mode.should_show_menu(True,visible,has_windows,now,app.grace_until) and not app.has_dialogs(): app.show_mode("toggle")
+            elif not has_windows: self.kept_open=True
+            elif self.kept_open and tv_mode.should_step_aside(True,w.is_active(),has_windows,w._popovers>0 or app.has_dialogs()):
+                # kept open over an empty screen, and a window opened from elsewhere (Settings from a shell, an app
+                # started by a hotkey) took the focus: it would be hidden under the floating menu
+                self.kept_open=False; app.hide_window(launched=True)
         if now-self.last_bar>=self.BAR_EVERY: self.apply_bar()
         if now>=self.updates_due and not self.checking_updates: self._check_updates()
         return GLib.SOURCE_CONTINUE
