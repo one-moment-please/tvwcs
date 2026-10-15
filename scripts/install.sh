@@ -748,7 +748,7 @@ choose_use() {
     USE=$(config_py 'from tvwcs.model import ConfigStore; print(ConfigStore().settings["use"])') || return 0
     [ -z "$USE" ] && [ -t 0 ] || return 0
     echo
-    printf "Will TVWCS be used on a TV or on a desktop monitor?\n  1) A TV: TV Mode size, and each app opens in a workspace of its own\n  2) A desktop monitor: Desktop size, and apps open tiled in the current workspace\nChoose 1 or 2 [1]: "
+    printf "Will TVWCS be used on a TV or on a desktop monitor?\n  1) A TV: TV Mode size, and each app opens in a workspace of its own\n  2) A desktop monitor: Desktop size, and apps open tiled in the current workspace\nChoose 1 (TV) or 2 (desktop) [1]: "
     read -r ANSWER || ANSWER=n
     case "$ANSWER" in ""|1*|[Tt]*) USE=tv; ON="a TV" ;; 2*|[Dd]*) USE=desktop; ON="a desktop monitor" ;;
         *) echo "Left as it is; choose it later in Settings > Options > Used on."; return 0 ;; esac
