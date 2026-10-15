@@ -108,6 +108,11 @@ class TVModeTests(unittest.TestCase):
     def test_a_bar_hidden_by_its_config_is_left_alone(self):
         with tempfile.TemporaryDirectory() as d:
             wm=FakeWM({"bar-0":"invisible"}); self.assertEqual(tv_mode.hide_bars(wm,Path(d)/"b.json"),0); self.assertEqual(wm.calls,[])
+    def test_the_kept_open_menu_steps_aside_for_a_window_opened_elsewhere(self):
+        self.assertTrue(tv_mode.should_step_aside(True,False,True,False))
+        self.assertFalse(tv_mode.should_step_aside(True,True,True,False))     # the menu still has the focus
+        self.assertFalse(tv_mode.should_step_aside(True,False,False,False))   # nothing opened
+        self.assertFalse(tv_mode.should_step_aside(True,False,True,True))     # its own popover or dialog
     def test_when_the_menu_comes_back(self):
         self.assertTrue(tv_mode.should_show_menu(True,False,False,100,50))
         self.assertFalse(tv_mode.should_show_menu(True,False,False,100,150))   # an app was just launched

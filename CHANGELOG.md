@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.11.2 — 2026-10-15
+
+- TV mode: when the Quick Menu is kept open over an empty screen and a window opens from elsewhere (Settings started from a terminal or a hotkey, an app started by its hotkey), the menu now steps aside for it. Before, the new window opened hidden under the menu while taking the keyboard.
+
 ## 2.11.1 — 2026-10-15
 
 - Hotkeys set to a remote's media keys (such as Search, Mail or Tools) work: GTK names those keys without the "XF86" that i3 needs, so i3 ignored the bindings ("Could not translate string to key symbol"). They are now written as XF86Search and so on; no need to set them again.

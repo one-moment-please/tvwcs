@@ -46,3 +46,8 @@ def restore_bars(wm, saved_path):
 def should_show_menu(keep_open, visible, has_windows, now, grace_until):
     """The Quick Menu comes back when TV mode keeps it open, it is hidden, no application is open and nothing was just launched."""
     return keep_open and not visible and not has_windows and now>=grace_until
+
+def should_step_aside(keep_open, active, has_windows, busy):
+    """The kept-open Quick Menu hides when a window opened behind it and took the focus (not while a popover or dialog
+    of TVWCS's own has it)."""
+    return keep_open and has_windows and not active and not busy
