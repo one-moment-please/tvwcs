@@ -237,11 +237,22 @@ class InstallTests(unittest.TestCase):
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'
             f'case "$*" in *install*) for p in i3 startx; do printf "#!/bin/sh\\n" > "{bin_}/$p"; chmod +x "{bin_}/$p"; done ;; esac\n')
         (bin_/"apt-get").chmod(0o755)
-        out=self.converse(["","n","n","n","y"],TVWCS_WMS="",**env)   # Enter: i3; not the other packages; no i3 config; no power rule; yes to the automatic login
+        out=self.converse(["","n","n","n","y"],TVWCS_WMS="",TVWCS_X_SERVER="",**env)   # Enter: i3; not the other packages; no i3 config; no power rule; yes to the automatic login
         apt=(bin_/"apt").read_text()
         self.assertIn("apt-get update -q\n",apt); self.assertIn("install -y i3 xserver-xorg xinit xdotool x11-xserver-utils",apt)
         self.assertIn("1) i3 with Xorg (recommended)",out); self.assertIn("Installed i3.",out)
         self.assertTrue(override.exists(),out); self.assertIn("exec startx",(self.home/".profile").read_text())
+    def test_installs_i3_without_xorg_when_xlibre_is_installed(self):
+        """XLibre is a fork of Xorg that replaces it: i3 is installed for it, and the Xorg server is neither offered nor installed."""
+        env,_override=self.autologin_tools()
+        bin_=Path(env["PATH"].split(":")[0]); etc=Path(self.env["TVWCS_ETC"]); self.without_gtk(bin_)
+        (etc/"os-release").write_text("ID=debian\n")
+        (bin_/"Xlibre").write_text("#!/bin/sh\necho 'XLibre X Server 25.0'\n"); (bin_/"Xlibre").chmod(0o755)
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
+        out=self.converse(["","n","n","n","n"],TVWCS_WMS="",**env)
+        self.assertIn("1) i3, for the XLibre already installed (recommended)",out); self.assertNotIn("with Xorg",out)
+        apt=(bin_/"apt").read_text()
+        self.assertIn("install -y i3 xinit xdotool x11-xserver-utils\n",apt); self.assertNotIn("xserver-xorg ",apt)
     def test_install_offer_can_be_declined_and_sway_chosen(self):
         env,_override=self.autologin_tools()
         bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=arch\n"); self.without_gtk(bin_)

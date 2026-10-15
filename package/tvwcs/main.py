@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TVWCS — Metro-style TV launcher and workspace switcher for i3 and sway. Application controller and command line."""
 from __future__ import annotations
-import os, shlex, signal, subprocess, sys, threading
+import os, shlex, signal, subprocess, sys, threading, time
 from pathlib import Path
 from tvwcs.flatpak_env import with_flatpak_data_dirs
 # Before GLib reads it: Flatpak apps' launchers and icons, also when this session's login did not add them.
@@ -17,7 +17,7 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs import power, privilege
+from tvwcs import power, privilege, quick_status, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfilesWindow, ProfileEditor
@@ -33,6 +33,7 @@ STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # records the login the start-u
 PASSWORD_TRIES=3                                  # wrong administrator passwords before TVWCS gives up
 REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a line here, then signals the running TVWCS
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
+BAR_MODES_FILE=RUNTIME/"tvwcs-bar-modes.json"    # the modes the bars had before TV mode hid them (see tv_mode.py)
 def _find_launcher():
     """Locate the tvwcs launcher script next to the package (works in the repo layout, the
     install.sh layout ~/.local/share/tvwcs, and a zip extracted anywhere)."""
@@ -85,6 +86,73 @@ class IdleWatcher:
             else: self.app.run_system_action(a)
     def stop(self): self.swayidle.stop()
 
+class StatusWatcher:
+    """Keeps the bottom of the Quick Menu current (the clock, and the network, volume, Bluetooth and updates icons) and
+    does TV mode's housekeeping: the bar stays hidden, and the Quick Menu comes back once no application is open.
+    Everything that runs a command runs on a worker thread."""
+    TICK=2            # seconds between looks
+    READ_EVERY=4      # seconds between reads of the status while the Quick Menu is on screen
+    BAR_EVERY=10      # seconds between checks that the bar is still hidden (an i3 reload shows it again)
+    UPDATES_EVERY=3*3600   # seconds between update checks (the package lists, Flathub)
+    def __init__(self, app):
+        self.app=app; self.source=0; self.reading=False; self.last_read=0.0; self.last_bar=0.0; self.updates=0
+        self.updates_due=time.monotonic()+90; self.checking_updates=False; self.bar_hidden=False
+    def start(self):
+        if not self.source: self.source=GLib.timeout_add_seconds(self.TICK,self._tick)
+        self.apply_bar(); self.read_now()
+    def stop(self):
+        if self.source: GLib.source_remove(self.source); self.source=0
+        if self.bar_hidden: tv_mode.restore_bars(self.app.wm,BAR_MODES_FILE); self.bar_hidden=False
+    def _tick(self):
+        app=self.app; w=app.window; now=time.monotonic()
+        if w is None: return GLib.SOURCE_CONTINUE
+        visible=w.is_visible()
+        if visible:
+            w.tick_clock()
+            if now-self.last_read>=self.READ_EVERY: self.read_now()
+        if app.tv_option("tv_keep_menu_open") and not visible:
+            has_windows=app.wm.has_windows()
+            if has_windows: app.grace_until=0.0   # an app is open: whatever was launched has arrived
+            elif tv_mode.should_show_menu(True,visible,has_windows,now,app.grace_until) and not app.has_dialogs(): app.show_mode("toggle")
+        if now-self.last_bar>=self.BAR_EVERY: self.apply_bar()
+        if now>=self.updates_due and not self.checking_updates: self._check_updates()
+        return GLib.SOURCE_CONTINUE
+    def read_now(self):
+        if self.reading: return
+        self.reading=True; self.last_read=time.monotonic(); updates=self.updates
+        def work():
+            try: status=quick_status.read(updates)
+            except Exception: status=None   # a status icon must never break the menu
+            GLib.idle_add(lambda:(self._got(status),GLib.SOURCE_REMOVE)[1])
+        threading.Thread(target=work,daemon=True).start()
+    def _got(self, status):
+        self.reading=False
+        if status is None or status==self.app.status: return
+        self.app.status=status
+        if self.app.window is not None: self.app.window.show_status(status)
+    def _check_updates(self):
+        self.checking_updates=True
+        def work():
+            n=quick_status.count_updates()
+            GLib.idle_add(lambda:(self._got_updates(n),GLib.SOURCE_REMOVE)[1])
+        threading.Thread(target=work,daemon=True).start()
+    def _got_updates(self, n):
+        self.checking_updates=False; self.updates=n; self.updates_due=time.monotonic()+self.UPDATES_EVERY; self.read_now()
+    def updates_changed(self):
+        """Updates were installed or checked in Settings: count them again soon."""
+        self.updates_due=min(self.updates_due,time.monotonic()+5)
+    def apply_bar(self):
+        """Hide the bar in TV mode (when the option is on), or give it back."""
+        self.last_bar=time.monotonic(); app=self.app
+        if not app.wm.available: return
+        hide=app.tv_option("tv_hide_bar")
+        if not hide and not self.bar_hidden and not BAR_MODES_FILE.exists(): return
+        def work():
+            if hide: tv_mode.hide_bars(app.wm,BAR_MODES_FILE)
+            else: tv_mode.restore_bars(app.wm,BAR_MODES_FILE)
+        self.bar_hidden=hide
+        threading.Thread(target=work,daemon=True).start()
+
 def idle_action(action):
     """`tvwcs idle screen_off|lock|sleep|resume`: what swayidle runs when a Power and sleep time is reached on sway."""
     if action=="resume": power.screen_on(); return 0
@@ -102,9 +170,15 @@ class TVWCSApp(Gtk.Application):
         self.pin_gate=PinGate(); self.owners=WindowOwners()
         self._fullscreen=set()   # windows that were fullscreen when TVWCS was shown; they are made fullscreen again when it hides
         self.idle=IdleWatcher(self)
+        self.status=quick_status.Status(); self.watch=StatusWatcher(self)
+        self.grace_until=time.monotonic()+10   # TV mode: the start-up action may be about to open an app
 
     @property
     def scale_factor(self): return SCALE_PRESETS[self.store.settings["scale"]]
+    def tv_option(self,key):
+        """One of TV mode's options (tv_hide_bar, tv_keep_menu_open): on only while TVWCS is used on a TV, under i3 or sway."""
+        s=self.store.settings
+        return s["use"]=="tv" and bool(s.get(key)) and self.wm.available
 
     # ---------------------------------------------------------- lifecycle
     def do_startup(self):
@@ -133,10 +207,10 @@ class TVWCSApp(Gtk.Application):
         self.refresh_data(rebuild=False)
         if first:
             self._update_layout(False,False,focus_output=False); self.window=TVWCSWindow(self)
-            self.apply_hotkeys(); self.idle.apply(); GLib.timeout_add(1500,self._run_startup_action)
+            self.apply_hotkeys(); self.idle.apply(); self.watch.start(); GLib.timeout_add(1500,self._run_startup_action)
         self.window.set_visible(False)
     def do_shutdown(self):
-        self.idle.stop(); self._release_pid(); Gtk.Application.do_shutdown(self)
+        self.idle.stop(); self.watch.stop(); self._release_pid(); Gtk.Application.do_shutdown(self)
     def _claim_pid(self):
         try:
             PID_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -178,6 +252,11 @@ class TVWCSApp(Gtk.Application):
         """Hide TVWCS, then make fullscreen again whatever was fullscreen when it was shown. `launched`: an app was just
         started, so nothing on the current workspace is made fullscreen over it."""
         if self.window is None: return
+        if launched: self.grace_until=time.monotonic()+tv_mode.LAUNCH_GRACE
+        elif self.window.is_visible() and self.tv_option("tv_keep_menu_open") and time.monotonic()>=self.grace_until and not self.wm.has_windows():
+            # TV mode with nothing open: there is nothing to go back to, so the Quick Menu stays (the Guide still closes)
+            if self.window.guide_open: self.show_panels(False,False,focus="quick")
+            return
         shown=self.window.is_visible(); self.window.set_visible(False); self.window.note_shown()
         if shown and self._fullscreen:
             ids=self._fullscreen; self._fullscreen=set()
@@ -456,6 +535,7 @@ class TVWCSApp(Gtk.Application):
         if old!=text:
             try:
                 HOTKEYS_FILE.parent.mkdir(parents=True,exist_ok=True); HOTKEYS_FILE.write_text(text,encoding="utf-8"); self.wm.reload()
+                GLib.timeout_add(800,lambda:(self.watch.apply_bar(),GLib.SOURCE_REMOVE)[1])   # a reload shows the bar again
             except OSError as exc: self.notify_message(f"Could not save the hotkeys: {exc}")
     @staticmethod
     def _modifier_keycodes():
@@ -476,19 +556,21 @@ class TVWCSApp(Gtk.Application):
             parts=line.split()
             if len(parts)==2 and parts[0]=="launch": self.launch_by_hotkey(parts[1])
             elif parts==["reload"]: self.reload_options()
+            elif parts==["status"]: self.watch.updates_changed()
             elif parts[:1]==["restart"]: self.restart(Path(line.split(" ",1)[1].strip()) if len(parts)>1 else None)
     def reload_options(self):
         """The Settings app changed TVWCS's options (the Options page): read them again, and apply the interface size
         and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
         old=self.store.settings["scale"]; self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
-        self.apply_hotkeys(); self.idle.apply()
+        self.apply_hotkeys(); self.idle.apply(); self.watch.apply_bar(); self.watch.updates_changed()
         if self.window is None: return
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
         if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
-    def open_settings(self):
-        """The Quick Menu's ⚙: the Settings app (a separate application, so it opens as a window of its own)."""
-        self.hide_window()
-        try: subprocess.Popen([str(LAUNCHER),"settings"],start_new_session=True,stdin=subprocess.DEVNULL)
+    def open_settings(self,page=None):
+        """The Quick Menu's ⚙ (or a status icon, opening its page): the Settings app, a separate application, so it opens
+        as a window of its own."""
+        self.hide_window(launched=True)
+        try: subprocess.Popen([str(LAUNCHER),"settings",*([page] if page else [])],start_new_session=True,stdin=subprocess.DEVNULL)
         except OSError as exc: self.notify_message(f"Could not open Settings: {exc}")
     def launch_by_hotkey(self,profile_id):
         profile=self.store.get(profile_id)

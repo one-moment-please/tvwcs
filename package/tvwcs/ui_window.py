@@ -6,6 +6,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk
 
+from tvwcs import quick_status
+from tvwcs.control_datetime import clock_text, date_text
 from tvwcs.hotkeys import HotkeyCapture, describe
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.system_actions import power_menu
@@ -107,8 +109,49 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); scroll.set_child(content); self.quick_content=content
         self._build_quick_content(content)
         footer=Gtk.Label(label="↑ ↓ ← →  Navigate    Enter  Select    Esc  Back    Just type to search"); footer.add_css_class("muted"); footer.set_xalign(0); footer.set_wrap(True)
-        footer.set_margin_start(S(20)); footer.set_margin_end(S(20)); footer.set_margin_top(S(8)); footer.set_margin_bottom(S(12)); pane.append(footer)
+        footer.set_margin_start(S(20)); footer.set_margin_end(S(20)); footer.set_margin_top(S(8)); footer.set_margin_bottom(S(8)); pane.append(footer)
+        pane.append(self._build_status_bar())
         return pane
+
+    # ---------------------------------------------------------- the bottom: clock and status icons
+    STATUS_PAGES=(("updates","updates"),("network","network"),("volume","sound"),("bluetooth","bluetooth"))
+    def _build_status_bar(self):
+        """The time and date, then icons for waiting updates, the network, the volume and Bluetooth. Each opens its
+        page of the Settings app. The icons are refreshed by main.StatusWatcher."""
+        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); bar.add_css_class("quick-status")
+        clock=Gtk.Button(); clock.add_css_class("clock-button"); clock.set_hexpand(True); clock.set_tooltip_text("Date and time")
+        text=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); text.set_halign(Gtk.Align.START)
+        self.clock_time=Gtk.Label(); self.clock_time.add_css_class("clock-time"); self.clock_time.set_xalign(0); text.append(self.clock_time)
+        self.clock_date=Gtk.Label(); self.clock_date.add_css_class("clock-date"); self.clock_date.set_xalign(0); text.append(self.clock_date)
+        clock.set_child(text); clock.connect("clicked",lambda *_:self.app.open_settings("datetime")); bar.append(clock)
+        self._status_buttons={}
+        for key,page in self.STATUS_PAGES:
+            b=Gtk.Button(); b.add_css_class("square"); b.add_css_class("status-icon"); b.set_valign(Gtk.Align.CENTER)
+            b.connect("clicked",lambda _b,p=page:self.app.open_settings(p)); bar.append(b); self._status_buttons[key]=b
+        self._status_group=NavGroup([clock,*self._status_buttons.values()])
+        self._status_shown=None; self.tick_clock(); self.show_status(self.app.status)
+        return bar
+    def tick_clock(self):
+        if getattr(self,"clock_time",None) is None: return
+        t=clock_text(None,self.app.store.settings.get("clock_24h",False)); d=date_text()
+        if self.clock_time.get_text()!=t: self.clock_time.set_text(t)
+        if self.clock_date.get_text()!=d: self.clock_date.set_text(d)
+    def show_status(self,status):
+        buttons=getattr(self,"_status_buttons",None)
+        if not buttons or status==self._status_shown: return
+        self._status_shown=status
+        looks={"network":quick_status.network_icon(status),"volume":quick_status.volume_icon(status),
+               "bluetooth":quick_status.bluetooth_icon(status),"updates":quick_status.updates_icon(status)}
+        shown={"network":True,"volume":status.volume is not None,"bluetooth":bool(status.bluetooth),"updates":status.updates>0}
+        for key,b in buttons.items():
+            icon,fallback,tip=looks[key]
+            if key=="updates":
+                child=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); child.set_halign(Gtk.Align.CENTER)
+                child.append(glyph(icon,fallback,22)); n=Gtk.Label(label=str(status.updates)); n.add_css_class("status-count"); child.append(n)
+                b.add_css_class("status-wide")
+            else: child=glyph(icon,fallback,22)
+            if key=="bluetooth": (b.add_css_class if status.bluetooth=="off" else b.remove_css_class)("status-off")
+            b.set_child(child); b.set_tooltip_text(tip); b.set_visible(shown[key])
 
     def _build_quick_content(self,content):
         content.append(section_title("OPEN APPLICATIONS"))
@@ -476,7 +519,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _ordered_groups(self,pane):
         if self._modal_groups: return self._modal_groups
         if pane!="quick": return list(self._groups[pane])
-        return [self._header_group,[self.search_entry]]+list(self._result_groups)+list(self._groups["quick"])
+        return [self._header_group,[self.search_entry]]+list(self._result_groups)+list(self._groups["quick"])+[getattr(self,"_status_group",[])]
     @staticmethod
     def _contains(widget,focused): return focused is not None and (focused is widget or focused.is_ancestor(widget))
     def _in_search(self,focused): return self._contains(self.search_entry,focused)   # focus sits on the entry's inner text widget

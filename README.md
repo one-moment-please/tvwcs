@@ -2,6 +2,8 @@
 
 TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and window switcher for ordinary Linux desktop applications on i3 or sway. It is not a media center and needs no app-specific plugins. See `PROJECT_OVERVIEW.md` for the goals behind it.
 
+**New in 2.11:** the time, date, network, volume, Bluetooth and updates at the bottom of the Quick Menu; a Date and time page in Settings; on a TV, no i3 bar and a Quick Menu that stays open while nothing else is; the installer leaves XLibre alone.
+
 **New in 2.10.3:** Flatpak apps open from the Quick Menu, with their icons, even when the login did not set them up.
 
 **New in 2.10.2:** updates can include prereleases, with a way to roll back to the latest release; screen-off no longer locks the screen through xss-lock; Wi-Fi names with any characters; Wi-Fi no longer takes over from a wired connection.

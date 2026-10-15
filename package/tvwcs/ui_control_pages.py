@@ -8,7 +8,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
-from tvwcs import control_bluetooth as bluetooth, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
+from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
 from tvwcs import __version__, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
@@ -219,6 +219,11 @@ class OptionsPage(Page):
         has_4k=self.has_4k()
         self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
         self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
+        if st["use"]=="tv":
+            self.option("Hide the i3 bar","tv_hide_bar","On a TV the bottom of the Quick Menu shows the time, the network, the volume, "
+                        "Bluetooth and waiting updates instead. Off: the bar shows as your i3 or sway config sets it.")
+            self.option("Keep the Quick Menu open","tv_keep_menu_open","While no application is open, the Quick Menu stays on screen "
+                        "(Esc does not close it) and comes back when the last application closes.")
 
         self.section("BEHAVIOR")
         self.option("Close when clicking outside","close_on_click_outside")
@@ -779,7 +784,7 @@ class UpdatesPage(_Console, Page):
             self.running=None; self.set_status(""); self.redraw()
             if problem: self._append(f"\n✗ Stopped: {problem}"); self.win.notice(label,problem)
             else: self.finished=label   # said once the page has been read again, with what it found
-            self.refresh()
+            self.refresh(); tell_tvwcs("status")   # the Quick Menu's updates icon counts again
         def next_step(i):
             if i>=len(steps):
                 if fetch: self.fetched=time.time()
@@ -1288,4 +1293,66 @@ class NetworkPage(Page):
                       "Automatic (DHCP) asks the router for the address, gateway and DNS servers; choose the first row to switch. "
                       "Saving reconnects, so the connection drops for a moment.",error)
 
-PAGES=(OptionsPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)
+# ====================================================================== Date and time
+class DateTimePage(Page):
+    """The time zone (a region, then a city), the clock set from the network, and the Quick Menu's 12/24-hour clock."""
+    key="datetime"; title="Date and time"; icon="preferences-system-time-symbolic"; fallback="🕓"; poll=20
+    def read(self): return timedate.read_state(),ConfigStore().settings["clock_24h"]
+    def summary(self):
+        return timedate.zone_label(self.state[0].timezone) if self.state else ""
+    def draw(self, state):
+        s,hours24=state; now=time.time()
+        self.section("NOW")
+        self.row("Time",timedate.clock_text(now,hours24),None,detail=timedate.date_text(now),icon="preferences-system-time-symbolic",fallback="🕓",ident="dt:now")
+        self.section("TIME ZONE")
+        region,city=timedate.split_zone(s.timezone)
+        self.row("Region",region,self.choose_region,ident="dt:region")
+        self.row("City",city,lambda:self.choose_city(region),ident="dt:city")
+        self.note("Choosing a city sets the time zone for the whole computer. It may ask for your password.")
+        self.section("NETWORK TIME")
+        if s.timedatectl:
+            self.row("Set the time from the network",_on_off(s.ntp),self.switch_ntp,
+                     detail=("Synchronized" if s.synced else "Not synchronized yet") if s.ntp else
+                            ("Turn it on to keep the clock right by itself" if s.can_ntp else "No network time service is installed (such as systemd-timesyncd or chrony)"),
+                     ident="dt:ntp",value_css="state-on" if s.ntp else "setting-value")
+        else: self.row("Set the time from the network","Unknown",None,detail="Needs systemd's timedatectl",ident="dt:ntp")
+        self.section("QUICK MENU CLOCK")
+        self.row("Clock",'24-hour (14:05)' if hours24 else "12-hour (2:05 PM)",self.choose_clock,ident="dt:clock")
+        self.note("How the time at the bottom of the Quick Menu is written.")
+
+    def as_root_if_needed(self, argv, label, status):
+        """timedatectl as the user first (polkit may allow it), then as root when polkit wants a password."""
+        self.set_status(status); lines=[]
+        def finish(code, tail):
+            self.set_status("")
+            if code: self.win.notice("Date and time",("\n".join(lines[-6:]) or tail or f"{label} did not work.").strip())
+            self.refresh(quiet=True)
+        def first(code, tail):
+            if code and (argv[0]!="timedatectl" or privilege.polkit_refused(tail)): self.win.run_as_root(argv,label,lines.append,finish)
+            else: finish(code,tail)
+        if argv[0]=="timedatectl": StreamedRun(argv,lambda _l:None,first)
+        else: self.win.run_as_root(argv,label,lines.append,finish)
+    def switch_ntp(self):
+        s=self.state[0]
+        if not s.ntp and not s.can_ntp:
+            self.win.notice("Network time","Install a network time service first, such as systemd-timesyncd (or chrony), with your package manager."); return
+        self.focus_after="dt:ntp"
+        self.as_root_if_needed(timedate.ntp_argv(not s.ntp),"Network time","Turning network time "+("off…" if s.ntp else "on…"))
+    def choose_region(self):
+        s=self.state[0]; groups=timedate.regions(s.zones); current,_city=timedate.split_zone(s.timezone)
+        if not groups: self.win.notice("Time zone","No time zones were found on this computer (/usr/share/zoneinfo is empty)."); return
+        self.win.choose_option("Region",[(r,f"{r}  ·  {len(c)} cit{'ies' if len(c)!=1 else 'y'}") for r,c in groups.items()],current,
+                               lambda r:GLib.idle_add(lambda:(self.choose_city(r),GLib.SOURCE_REMOVE)[1]))
+    def choose_city(self, region):
+        s=self.state[0]; cities=timedate.regions(s.zones).get(region,[])
+        if not cities: self.choose_region(); return
+        def picked(zone):
+            if zone==s.timezone or not timedate.valid_zone(zone,s.zones): return
+            self.as_root_if_needed(timedate.timezone_argv(zone,s.timedatectl),"Time zone",f"Setting the time zone to {timedate.zone_label(zone)}…")
+        self.win.choose_option(f"City · {region}",cities,s.timezone if s.timezone in dict(cities) else None,picked)
+    def choose_clock(self):
+        def picked(key):
+            store=ConfigStore(); store.settings["clock_24h"]=key=="24"; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
+        self.win.choose_option("Quick Menu clock",[("12","12-hour (2:05 PM)"),("24","24-hour (14:05)")],"24" if self.state[1] else "12",picked)
+
+PAGES=(OptionsPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)

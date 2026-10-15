@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.11.0 — 2026-10-15
+
+**Quick Menu**
+- The bottom of the Quick Menu shows the time and date, and icons for the network (wired, Wi-Fi with its signal strength, or offline), the volume, Bluetooth and waiting updates (only when there are some). Each opens its page of Settings; the clock opens Date and time. They are reached with ↑ from the top of the menu, or ↓ past its last row.
+
+**TV mode**
+- The i3 (or sway) bar is hidden, since the Quick Menu now shows the time and status. It comes back as it was when TVWCS stops, or when Options › Hide the i3 bar is turned off.
+- While no application is open, the Quick Menu stays on screen (Esc does not close it), and it comes back by itself when the last application closes. Options › Keep the Quick Menu open turns this off.
+
+**Settings app**
+- A **Date and time** page: the time zone, chosen as a region and then a city; setting the time from the network; and a 12-hour or 24-hour clock for the Quick Menu. Changes go through `timedatectl`, asking for your password when polkit needs one.
+- After installing updates, the Quick Menu's updates icon counts them again.
+
+**Installer**
+- When an X server is already installed, such as XLibre, `install.sh` offers i3 for it and no longer installs the Xorg server over it.
+
 ## 2.10.4 — 2026-10-15
 
 - Updating from Settings restarts TVWCS again. Updating 2.10.2 to 2.10.3 installed it but left the old TVWCS running, with nothing said: Settings imported the new `main.py` to send the restart, and that needed a name the old modules still loaded in Settings did not have. Settings now sends the request itself, and the new start-up code lives in a module of its own, so an update from 2.10.2 or 2.10.3 restarts properly.

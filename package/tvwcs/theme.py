@@ -52,6 +52,17 @@ separator { background: #333333; min-height: 1px; }
 checkbutton check { border-radius: 0; background: #2d2d2d; border: 2px solid #7a7a7a; box-shadow: none; background-image: none; -gtk-icon-source: none; min-width: 22px; min-height: 22px; }
 checkbutton check:checked { background: @ACCENT@; border-color: @ACCENT@; -gtk-icon-source: -gtk-icontheme("object-select-symbolic"); color: #ffffff; }
 dropdown > button, dropdown button { border-radius: 0; }
+.quick-status { background: #141414; padding: 6px 14px 8px 14px; }
+button.clock-button, button.status-icon { background: transparent; }
+button.clock-button { padding: 4px 8px; }
+button.clock-button:hover, button.status-icon:hover { background: #2d2d2d; }
+button.clock-button:focus, button.clock-button:focus-visible, button.status-icon:focus, button.status-icon:focus-visible { background: @ACCENT@; outline: 3px solid #ffffff; outline-offset: -3px; }
+.clock-time { font-size: 30px; font-weight: 200; }
+.clock-date { color: #9a9a9a; font-size: 13px; }
+button:focus .clock-date { color: #ffffff; }
+button.status-wide { padding: 0 8px; }
+.status-count { font-size: 14px; font-weight: 700; }
+button.status-off { color: #7d7d7d; }
 """
 
 def render_css(accent, scale=1.0, extra=""):
