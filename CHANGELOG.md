@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.3 — 2026-10-15
+
+- The install command in the README and the Debian guide now downloads the latest release instead of the development version on `main`. Every release includes `tvwcs.tar.gz` for it. Installing from `main` is still described, for testing.
+
 ## 3.0.2 — 2026-10-15
 
 - openSUSE is no longer supported: TVWCS supports Debian and Debian-based systems (Debian, Ubuntu, Mint, Pop!_OS, Raspberry Pi OS) with systemd. The installer no longer installs packages with zypper, and Settings no longer offers zypper updates. `TODO.md` lists what bringing openSUSE back would take.

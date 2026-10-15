@@ -66,4 +66,6 @@ jobs:
           prerelease: ${{ steps.kind.outputs.kind != 'tag' }}
           make_latest: ${{ steps.kind.outputs.kind == 'tag' && 'true' || 'false' }}
           generate_release_notes: true
-          files: ${{ steps.build.outputs.file }}
+          files: |
+            ${{ steps.build.outputs.file }}
+            resources/tvwcs.tar.gz

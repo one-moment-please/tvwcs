@@ -45,19 +45,19 @@ Other distributions and systems without systemd are not supported. [TODO.md](TOD
 
 ## Install
 
-Download TVWCS into a temporary folder and run its installer. It installs into `~/.local/share/tvwcs`. Your own data (channels, favorites, settings, hotkeys) is kept separately in `~/.config/tvwcs/`.
+Download the latest release of TVWCS into a temporary folder and run its installer. It installs into `~/.local/share/tvwcs`. Your own data (channels, favorites, settings, hotkeys) is kept separately in `~/.config/tvwcs/`.
 
 ```bash
 cd "$(mktemp -d)"
-wget -qO- https://github.com/one-moment-please/tvwcs/archive/refs/heads/main.tar.gz | tar -xz
-./tvwcs-main/scripts/install.sh
+wget -qO- https://github.com/one-moment-please/tvwcs/releases/latest/download/tvwcs.tar.gz | tar -xz
+./tvwcs/install.sh
 ```
 
 Other ways:
 
 - **With curl:** replace `wget -qO-` with `curl -fsSL`.
-- **From a release zip** ([Releases](https://github.com/one-moment-please/tvwcs/releases)): `unzip TVWCS-*.zip`, then `./tvwcs/install.sh`.
-- **With git:** `git clone https://github.com/one-moment-please/tvwcs && cd tvwcs && ./scripts/install.sh`
+- **A specific release or a prerelease:** download `TVWCS-<version>.zip` from [Releases](https://github.com/one-moment-please/tvwcs/releases), `unzip TVWCS-*.zip`, then `./tvwcs/install.sh`.
+- **The development version (`main`), for testing:** `git clone https://github.com/one-moment-please/tvwcs && cd tvwcs && ./scripts/install.sh`. It can include changes that have not been tested on a TV yet.
 - **Over SSH:** sign in with `ssh -t` so the installer can ask its questions.
 
 You can delete the downloaded folder afterwards.
