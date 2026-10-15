@@ -1,7 +1,7 @@
-"""TVWCS Settings: Sound, Bluetooth, Apps, Software updates, System information, Terminal and Network, as
-vertical tabs on the left with the chosen page beside them. It is an ordinary application (it has its own launcher,
-so it is in the applications guide under System), drawn with the TVWCS Metro theme at the interface size chosen in
-TVWCS's Settings, and it works with a D-pad alone:
+"""TVWCS Settings: Options, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Apps, Software updates and
+more, as vertical tabs on the left with the chosen page beside them. It is an ordinary application (it has its own
+launcher, so it is in Applications under System), drawn with the TVWCS Metro theme at the interface size and accent
+colour chosen in its Options (a change to them is drawn at once), and it works with a D-pad alone:
 
 - ↑ / ↓ on the tabs changes page at once; → (or Enter) goes into the page, ← from a page's left edge comes back.
 - In a page, ↑ / ↓ move between rows and ← / → along a row; Esc (or the remote's Back key) goes back to the tabs,
@@ -10,7 +10,7 @@ TVWCS's Settings, and it works with a D-pad alone:
   the on-screen keyboard with the D-pad.
 - In the terminal every key goes to the shell; Esc (or Back) goes up to the buttons above it."""
 from __future__ import annotations
-import os, subprocess, sys, threading
+import os, signal, subprocess, sys, threading
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -19,13 +19,14 @@ from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
 from tvwcs import privilege
 from tvwcs.hotkeys import HotkeyCapture, describe
-from tvwcs.model import SCALE_PRESETS, ConfigStore
+from tvwcs.model import SCALE_PRESETS, ConfigStore, key_hints
 from tvwcs.theme import render_css
-from tvwcs.widgets import NavGroup, S, clear_box, glyph, held_modifiers, icon_button, set_scale, usable
+from tvwcs.widgets import METRO_COLORS, NavGroup, S, clear_box, glyph, held_modifiers, icon_button, set_scale, usable
 
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
 PASSWORD_TRIES=3
+PAGE_FADE_MS=150   # pages cross-fade (unless Options > Reduce motion), so it is clear what changed
 
 CONTROL_CSS="""
 .tab-column { background: #1b1b1b; }
@@ -40,7 +41,11 @@ button.info-row:focus .setting-value { color: #ffffff; }
 .display-box.primary { background: @ACCENT@; }
 .display-number { font-size: 30px; font-weight: 700; color: #ffffff; }
 .display-name { font-size: 12px; color: #ffffff; }
-.row-detail { color: #8a8a8a; font-size: 12px; }
+/* secondary text: the theme’s #8a8a8a at 12px is about 4:1 on a #2d2d2d row, too faint from a sofa */
+.row-detail, .description { color: #b5b5b5; font-size: 13px; }
+.muted { color: #b5b5b5; font-size: 14px; }
+.accent-swatch { min-width: 26px; min-height: 26px; border: 2px solid alpha(#ffffff, 0.7); }
+.accent-current { background: @ACCENT@; }
 button:focus .row-detail { color: #e3eefa; }
 .state-on { color: #6ccb5f; font-weight: 700; }
 button:focus .state-on { color: #ffffff; }
@@ -62,6 +67,19 @@ button.app-tile { padding: 16px 10px 12px 10px; min-height: 170px; }
 button:focus .app-name { font-weight: 700; }
 .app-summary { font-size: 17px; }
 """
+
+def colour_swatch(colour):
+    """A square of `colour` (a Metro colour, or the current accent): theme.render_css paints .tile-N in METRO_COLORS[N]."""
+    c=(colour or "").lower(); box=Gtk.Box(); box.add_css_class("accent-swatch"); box.set_valign(Gtk.Align.CENTER)
+    box.add_css_class(f"tile-{METRO_COLORS.index(c)}" if c in METRO_COLORS else "accent-current"); return box
+
+def scroll_to_show(scroll, widget):
+    """Scroll as little as needed for the widget to be wholly in sight (the tabs: moving down them never jumps)."""
+    ok,point=widget.compute_point(scroll.get_child(),Graphene.Point())
+    if not ok: return
+    adj=scroll.get_vadjustment(); top=point.y; bottom=top+widget.get_height(); value=adj.get_value()
+    if top<value: adj.set_value(max(adj.get_lower(),top))
+    elif bottom>value+adj.get_page_size(): adj.set_value(min(adj.get_upper()-adj.get_page_size(),bottom-adj.get_page_size()))
 
 def scroll_into_view(scroll, widget):
     """Scroll so the widget is in the middle of the ScrolledWindow: focusing a row before the list has its size
@@ -126,8 +144,39 @@ class ControlWindow(Gtk.ApplicationWindow):
         self.connect("notify::focus-widget",self._focus_changed)
         self._provider=Gtk.CssProvider(); display=Gdk.Display.get_default()
         if display: Gtk.StyleContext.add_provider_for_display(display,self._provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        self._provider.load_from_data(render_css(app.accent,app.scale,CONTROL_CSS).encode("utf-8"))
-        self._build()
+        self._load_css(); self._build()
+
+    def _load_css(self): self._provider.load_from_data(render_css(self.app.accent,self.app.scale,CONTROL_CSS).encode("utf-8"))
+
+    def settings_changed(self, settings):
+        """Options saved a change: draw this window with its accent, size, key names and motion too."""
+        app=self.app; scale=SCALE_PRESETS.get(settings.get("scale"),1.0); resized=scale!=app.scale
+        app.accent=settings.get("accent",app.accent); app.use=settings.get("use",""); app.reduce_motion=bool(settings.get("reduce_motion"))
+        if resized and self._running():   # rebuilding would lose the run's output: the new size waits for the next time
+            self._load_css(); self._apply_settings()
+            self.notice("Interface size","TVWCS uses the new size now. Settings uses it the next time it opens, once what is running here has finished."); return
+        app.scale=scale; self._load_css(); self._apply_settings()
+        if resized: GLib.idle_add(lambda:(self._rebuild(),GLib.SOURCE_REMOVE)[1])   # after the dialog that chose it has gone
+    def _apply_settings(self):
+        self.footer.set_text(key_hints(self.app.use))
+        self.stack.set_transition_type(Gtk.StackTransitionType.NONE if self.app.reduce_motion else Gtk.StackTransitionType.CROSSFADE)
+    def _running(self):
+        return any(getattr(p,"running",None) for p in self.pages) or any(
+            getattr(p,"process",None) is not None and p.process.proc is not None and p.process.proc.poll() is None for p in self.pages)
+    def _rebuild(self):
+        """Every widget again at the new interface size (S() is read as they are made), on the same page and row."""
+        page=self.page; focused=self.get_focus()
+        ident=next((i for i,w in page._ids.items() if w is focused),None) if page is not None and self._area(focused)=="page" else None
+        for p in self.pages:
+            p.hidden(); child=getattr(p,"child",None)   # the terminal's shell goes with its widget
+            if child:
+                try: os.kill(child,signal.SIGHUP)
+                except OSError: pass
+        self.pages=[]; self.page=None; self.tab_buttons={}; self._last_page_focus={}; self._modal_groups=[]; self._text=None
+        set_scale(self.app.scale); self.set_default_size(S(1180),S(760)); self._build()
+        new=self.page_by_key(page.key if page is not None else "") or self.pages[0]
+        if ident: new.focus_ident=ident   # taken by its first redraw
+        self.select_tab(new.key)
 
     # ================================================================== construction
     def _build(self):
@@ -143,9 +192,9 @@ class ControlWindow(Gtk.ApplicationWindow):
         self.close_button.connect("clicked",lambda *_:self.close()); header.append(self.close_button); column.append(header)
         tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2))
         tab_scroll=Gtk.ScrolledWindow(); tab_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); tab_scroll.set_vexpand(True)
-        tab_scroll.set_child(tabs); column.append(tab_scroll)   # in TV Mode on a 1080p screen the tabs can be taller than it; they scroll
+        tab_scroll.set_child(tabs); column.append(tab_scroll); self.tab_scroll=tab_scroll   # in TV Mode on a 1080p screen the tabs can be taller than it; they scroll
         # ---- the page, beside them
-        self.stack=Gtk.Stack(); self.stack.set_hexpand(True); self.stack.set_vexpand(True); self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self.stack=Gtk.Stack(); self.stack.set_hexpand(True); self.stack.set_vexpand(True); self.stack.set_transition_duration(PAGE_FADE_MS)
         self.stack.add_css_class("pane"); self.stack.set_margin_start(S(12)); panes.append(self.stack)
         for cls in PAGES:
             page=cls(self); self.pages.append(page)
@@ -154,7 +203,7 @@ class ControlWindow(Gtk.ApplicationWindow):
             label=Gtk.Label(label=page.title); label.set_xalign(0); label.set_hexpand(True); line.append(label); b.set_child(line)
             b.connect("clicked",lambda _b,p=page:self.enter_page(p)); tabs.append(b); self.tab_buttons[page.key]=b
             self.stack.add_named(page.widget(),page.key)
-        footer=Gtk.Label(label="↑ ↓ ← →  Navigate    Enter  Select\nEsc  Back"); footer.add_css_class("muted"); footer.set_xalign(0); footer.set_wrap(True)
+        footer=Gtk.Label(); footer.add_css_class("muted"); footer.set_xalign(0); footer.set_wrap(True); self.footer=footer
         footer.set_margin_start(S(20)); footer.set_margin_end(S(20)); footer.set_margin_top(S(8)); footer.set_margin_bottom(S(12)); column.append(footer)
         # ---- dialogs, drawn over everything
         self.modal_layer=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.modal_layer.add_css_class("modal-scrim"); self.modal_layer.set_visible(False)
@@ -162,6 +211,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         self.modal_card.set_halign(Gtk.Align.CENTER); self.modal_card.set_valign(Gtk.Align.CENTER); self.modal_card.set_hexpand(True); self.modal_card.set_vexpand(True)
         self.modal_card.set_size_request(S(520),-1)
         self.modal_layer.append(self.modal_card); overlay.add_overlay(self.modal_layer)
+        self._apply_settings()
 
     def page_by_key(self, key): return next((p for p in self.pages if p.key==key),None)
 
@@ -192,7 +242,8 @@ class ControlWindow(Gtk.ApplicationWindow):
         for page in self.pages:
             if self._in(w,page.root): self._last_page_focus[page.key]=w; return
         for key,b in self.tab_buttons.items():   # moving along the tabs shows each page straight away
-            if w is b: self.show_page(self.page_by_key(key)); return
+            if w is b:
+                self.show_page(self.page_by_key(key)); GLib.idle_add(lambda:(scroll_to_show(self.tab_scroll,b),GLib.SOURCE_REMOVE)[1]); return
     def _area(self, focused):
         if self._modal_groups: return "modal"
         if self.page is not None and self._in(focused,self.page.root): return "page"
@@ -320,8 +371,9 @@ class ControlWindow(Gtk.ApplicationWindow):
         cancel,go=self._buttons(("Cancel",cancel_action,None),(label,lambda:(self.close_modal(),on_confirm()),"danger" if danger else "active"))
         self._finish_modal([[cancel,go]],cancel_action,cancel)
 
-    def choose_option(self, title, options, current, callback, back=None):
-        """A list of choices with the current one ticked. A long list scrolls, following the selection."""
+    def choose_option(self, title, options, current, callback, back=None, swatches=False):
+        """A list of choices with the current one ticked. A long list scrolls, following the selection. With swatches,
+        each key is a colour, shown beside its name."""
         self._begin_modal(title); groups=[]; focus=None; holder=self.modal_card
         if len(options)>8:
             scroll=Gtk.ScrolledWindow(); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
@@ -331,6 +383,7 @@ class ControlWindow(Gtk.ApplicationWindow):
             chosen=key==current
             b=Gtk.Button(); b.add_css_class("dialog-button"); row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14))
             mark=glyph("object-select-symbolic","✓",24) if chosen else Gtk.Label(); mark.set_size_request(S(28),-1); row.append(mark)
+            if swatches: row.append(colour_swatch(key))
             l=Gtk.Label(label=label); l.set_xalign(0); l.set_hexpand(True); l.set_wrap(True); row.append(l); b.set_child(row)
             b.connect("clicked",lambda _b,k=key:(self.close_modal(),callback(k))); holder.append(b); groups.append([b])
             if chosen: focus=b
@@ -496,8 +549,9 @@ class ControlWindow(Gtk.ApplicationWindow):
 class ControlPanelApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
-        settings=ConfigStore().settings   # TVWCS's interface size and accent colour; the panel never writes them
+        settings=ConfigStore().settings   # TVWCS's interface size, accent colour, use and motion; Options changes them (settings_changed)
         self.scale=SCALE_PRESETS.get(settings.get("scale"),1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
+        self.use=settings.get("use",""); self.reduce_motion=bool(settings.get("reduce_motion"))
     def do_startup(self):
         Gtk.Application.do_startup(self); set_scale(self.scale)
     def do_command_line(self, command_line):

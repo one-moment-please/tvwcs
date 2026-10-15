@@ -14,7 +14,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
-from tvwcs.model import CONFIG_HOME, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
+from tvwcs.model import CONFIG_HOME, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import power, privilege, quick_status, tv_mode
@@ -333,11 +333,14 @@ class TVWCSApp(Gtk.Application):
         """How selecting a running app places it: its own workspace, or tiled here. An app set to always launch in a new
         workspace always gets one; otherwise the 'open running apps in a new workspace' setting decides."""
         app=self.match_application_window(window); profile=self.default_profile(app) if app else None
+        if apps_open(self.store.settings)=="side": return LAUNCH_SAME   # Where apps open: Side by side, whatever the profile says
         if self.store.settings["always_new_workspace"] or (profile and profile.launch_mode==LAUNCH_NEW_WORKSPACE): return LAUNCH_NEW_WORKSPACE
         return LAUNCH_NEW_WORKSPACE if self.store.settings["open_in_new_workspace"] else LAUNCH_SAME
     def launch_mode(self,profile):
-        """Where a profile opens: its own setting, unless Settings says every app opens in a new workspace."""
-        if self.store.settings["always_new_workspace"]: return LAUNCH_NEW_WORKSPACE
+        """Where a profile opens: Settings > Where apps open (full screen, side by side), or with "As each app's profile says", the profile's own setting."""
+        choice=apps_open(self.store.settings)
+        if choice=="fullscreen": return LAUNCH_NEW_WORKSPACE
+        if choice=="side": return LAUNCH_SAME
         return profile.launch_mode if profile else LAUNCH_SAME
     # PIN protection. A profile's PIN is asked when it is launched; if its scope is "launch and show" it is also asked
     # when an open window of it would be brought up from a workspace that is not on screen.
