@@ -65,6 +65,8 @@ DEFAULT_SETTINGS={
     "clock_24h":False,              # the Quick Menu's clock shows 14:05 instead of 2:05 PM
     "tv_hide_bar":True,             # TV mode: hide the i3 / sway bar (the Quick Menu shows the time and status instead)
     "tv_keep_menu_open":True,       # TV mode: keep the Quick Menu on screen while no application is open
+    "tvwcs_lock_screen":False,      # lock with TVWCS's own lock screen (i3lock / swaylock showing a TVWCS-style picture)
+    "reduce_motion":False,          # no sliding or fading when panels and pages change
     "idle":{"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},   # mode: STARTUP_MODES
@@ -108,7 +110,7 @@ def _clean_settings(raw) -> dict:
     if raw.get("use") in USES: s["use"]=raw["use"]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
                 "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
-                "clock_24h","tv_hide_bar","tv_keep_menu_open"):
+                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","reduce_motion"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle"))
