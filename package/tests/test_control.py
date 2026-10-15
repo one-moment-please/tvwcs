@@ -222,15 +222,12 @@ class UpdatesTests(unittest.TestCase):
     def test_apt(self):
         text="Listing...\nbash/noble-updates,noble-security 5.2.21-2ubuntu4.1 amd64 [upgradable from: 5.2.21-2ubuntu4]\nfirefox/noble 129.0 amd64\n"
         self.assertEqual(upd.parse_apt(text),[upd.Update("bash","5.2.21-2ubuntu4.1","5.2.21-2ubuntu4","noble-updates"),upd.Update("firefox","129.0","","noble")])
-    def test_zypper_and_flatpak(self):
-        self.assertEqual(upd.parse_zypper("S | Repository | Name | Current Version | Available Version | Arch\n--+---\nv | Main Repository | bash | 5.2.26-1.1 | 5.2.32-1.1 | x86_64\n"),
-                         [upd.Update("bash","5.2.32-1.1","5.2.26-1.1","Main Repository")])
+    def test_flatpak(self):
         self.assertEqual(upd.parse_flatpak("org.mozilla.firefox\t129.0\tflathub\norg.gnome.Platform\t\tflathub\n"),
                          [upd.Update("org.mozilla.firefox","129.0","","flathub"),upd.Update("org.gnome.Platform","","","flathub")])
     def test_detect_uses_the_first_manager_found(self):
-        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","flatpak") else None).id,"zypper")
-        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("apt-get","zypper") else None).id,"apt")
-        self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("pacman","dnf","xbps-install","apk") else None))   # not supported (TODO.md)
+        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("apt-get","flatpak") else None).id,"apt")
+        self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","pacman","dnf","xbps-install","apk") else None))   # not supported (TODO.md)
         self.assertIsNone(upd.detect(which=lambda c:None))
     def test_age_and_reboot(self):
         self.assertEqual([upd.age_text(t,1000000) for t in (999990,1000000-300,1000000-7200,1000000-86400*3)],["just now","5 minutes ago","2 hours ago","3 days ago"])
@@ -242,7 +239,7 @@ class UpdatesTests(unittest.TestCase):
 class SysinfoTests(unittest.TestCase):
     def test_parsers(self):
         self.assertEqual(info.parse_os_release('NAME="Linux Mint"\nVERSION="22 (Wilma)"\nPRETTY_NAME="Linux Mint 22"\n'),"Linux Mint 22")
-        self.assertEqual(info.parse_os_release('NAME="openSUSE Leap"\nVERSION="15.6"\n'),"openSUSE Leap 15.6")
+        self.assertEqual(info.parse_os_release('NAME="Debian GNU/Linux"\nVERSION="13 (trixie)"\n'),"Debian GNU/Linux 13 (trixie)")
         self.assertEqual(info.parse_cpu("processor\t: 0\nmodel name\t: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz\n"),"Intel Core i5-8250U CPU @ 1.60GHz")
         self.assertEqual(info.parse_cpu("processor\t: 0\nBogoMIPS\t: 108.00\n\nHardware\t: BCM2835\nModel\t: Raspberry Pi 4\n"),"Raspberry Pi 4")
         self.assertEqual(info.parse_meminfo("MemTotal:  8000000 kB\nMemFree: 100 kB\nMemAvailable:  4000000 kB\n"),(8192000000,4096000000))

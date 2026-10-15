@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.2 — 2026-10-15
+
+- openSUSE is no longer supported: TVWCS supports Debian and Debian-based systems (Debian, Ubuntu, Mint, Pop!_OS, Raspberry Pi OS) with systemd. The installer no longer installs packages with zypper, and Settings no longer offers zypper updates. `TODO.md` lists what bringing openSUSE back would take.
+
 ## 3.0.1 — 2026-10-15
 
 - Displays: the resolution kept under i3 and the one kept under sway are saved separately, so one never overwrites the other. The first time sway runs, it uses the resolution kept under i3 (X calls the TV's port HDMI-1, sway calls it HDMI-A-1).

@@ -31,7 +31,7 @@ CATEGORIES=(("featured","Featured",frozenset()),
             ("utilities","Utilities",frozenset({"Utility","System","Settings","Development","FileManager"})))
 CATEGORY_LABELS={k:label for k,label,_ in CATEGORIES}
 
-INSTALL_FLATPAK={"apt-get":["apt-get","install","-y","flatpak"],"zypper":["zypper","--non-interactive","install","flatpak"]}
+INSTALL_FLATPAK={"apt-get":["apt-get","install","-y","flatpak"]}
 
 @dataclass(frozen=True)
 class App:

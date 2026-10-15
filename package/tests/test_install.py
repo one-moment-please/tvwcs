@@ -265,12 +265,12 @@ class InstallTests(unittest.TestCase):
         self.assertIn("install -y i3 xinit xdotool x11-xserver-utils\n",apt); self.assertNotIn("xserver-xorg ",apt)
     def test_install_offer_can_be_declined_and_sway_chosen(self):
         env,_override=self.autologin_tools()
-        bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text('ID="opensuse-tumbleweed"\nID_LIKE="opensuse suse"\n'); self.without_gtk(bin_)
-        (bin_/"zypper").write_text(f'#!/bin/sh\necho "zypper $*" >> "{bin_}/zypper.log"\n'); (bin_/"zypper").chmod(0o755)
+        bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n"); self.without_gtk(bin_)
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt.log"\n'); (bin_/"apt-get").chmod(0o755)
         self.assertIn("Nothing was installed.",self.converse(["3","n","n","n"],TVWCS_WMS="",**env))
-        self.assertFalse((bin_/"zypper.log").exists())
+        self.assertFalse((bin_/"apt.log").exists())
         self.converse(["2","n","n","n"],TVWCS_WMS="",**env)
-        self.assertEqual((bin_/"zypper.log").read_text().split("\n")[0].split(),["zypper","--non-interactive","install","sway"])
+        self.assertIn("install -y sway\n",(bin_/"apt.log").read_text())
     def test_unsupported_distribution_says_what_to_install_by_hand(self):
         """Arch, Fedora and the rest are not supported: nothing is installed, and it says what to install and where to read more."""
         env,_override=self.autologin_tools()
@@ -287,8 +287,6 @@ class InstallTests(unittest.TestCase):
         shutil.rmtree(self.share/"icons"); shutil.rmtree(self.share/"fonts")
         out=self.run_install(**env)
         self.assertRegex(out,r"adwaita-icon-theme +icons for apps and buttons"); self.assertRegex(out,r"fonts-open-sans +Open Sans: the font")
-        os_release.write_text('ID="opensuse-leap"\nID_LIKE="suse opensuse"\n')
-        out=self.run_install(**env); self.assertRegex(out,r"To install them:  sudo zypper install .*adwaita-icon-theme google-opensans-fonts")
         papirus=self.home/".local"/"share"/"icons"/"Papirus"; papirus.mkdir(parents=True); (papirus/"index.theme").write_text("")   # the user's own theme counts
         self.assertNotIn("icons for apps",self.run_install(**env))
     def test_lists_missing_packages_with_their_use_and_installs_them(self):

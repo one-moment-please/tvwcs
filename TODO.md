@@ -215,8 +215,8 @@ them.
 
 ## 3. Supporting other distributions (removed)
 
-TVWCS now supports Debian and its family (Ubuntu, Mint, Pop!_OS, Raspberry Pi OS) through apt, and openSUSE through zypper, both with systemd, plus Flatpak. Everything below was removed in the commit after
-`9e7ef12`. To bring a distribution back, restore its rows in each place listed, add its tests back, and test the
+TVWCS now supports Debian and its family (Ubuntu, Mint, Pop!_OS, Raspberry Pi OS) through apt, with systemd, plus Flatpak. Everything below was removed in the commit after
+`9e7ef12`, except openSUSE, which was removed in 3.0.2 (its last commit is `a6a81ca`; see 3.10). To bring a distribution back, restore its rows in each place listed, add its tests back, and test the
 installer end to end on it.
 
 ### 3.1 What a distribution needs, place by place
@@ -432,3 +432,33 @@ Still needed to support them properly (never done):
 - `control_display.py`: "x11-xserver-utils, or xorg-xrandr" (`xorg-xrandr` is Arch's).
 - `control_ssh.py` docstring: sshd_config reads its drop-ins at its top "on Debian, Ubuntu, Fedora and Arch".
 - `system_actions.py` and `privilege.py` docstrings about elogind, Artix, Gentoo, Void and Devuan.
+
+### 3.10 openSUSE (removed in 3.0.2)
+
+openSUSE was supported in 3.0.0 and 3.0.1, but never run on a real openSUSE system. Its code is in `a6a81ca`:
+
+- `install.sh` `distro()`: `opensuse*|suse|sles) echo suse`.
+- `install.sh` `pkg()`: gtk `python3-gobject gtk4`, pactl `pulseaudio-utils`, xss `libXss1`, vte `typelib-1_0-Vte-3_91`,
+  font `google-opensans-fonts`; the rest used the generic names (`NetworkManager`, `bluez`, `pipewire
+  pipewire-pulseaudio wireplumber`, `unclutter`, `xrandr`, `adwaita-icon-theme`).
+- `install.sh` `wm_packages()`: `i3 xorg-x11-server xinit xdotool xrandr`; `without_x_server()` left out `xorg-x11-server`.
+- `install.sh` `install_hint()` / `pkg_install()`: `sudo zypper install`, `zypper --non-interactive install`.
+- `install.sh` `current_layout()`: read `XkbLayout`/`XkbVariant` from `/etc/X11/xorg.conf.d/*keyboard*.conf`.
+- `control_updates.py`: `parse_zypper` (`zypper -q list-updates`: 'v | Repo | name | current | available | arch'),
+  upgrade `zypper --non-interactive update`, refresh `zypper --non-interactive refresh`, lists `/var/cache/zypp/raw`.
+- `control_ssh.py`: the `sshd` unit (Debian's is `ssh`); `INSTALL` and `control_flatpak.py` `INSTALL_FLATPAK` used
+  `zypper --non-interactive install`.
+- Hint strings in `control_sound.py`, `control_display.py` and `ui_control_pages.py` named openSUSE's packages.
+
+What it still lacked, found by reading the code (none of it was tested):
+- Tumbleweed upgrades with `zypper dup`, not `zypper update` (that only fits Leap); `list-updates` misses dup changes.
+- Reboot detection: openSUSE keeps old kernels, so the "running kernel's modules folder is gone" check never fires;
+  use `zypper needs-rebooting`.
+- sudo asks for the root password by default (`Defaults targetpw`), but TVWCS's dialog asks for the user's own.
+- Installing a package does not enable its service: `bluetooth`, `sshd` and `NetworkManager` (Leap may run wicked,
+  which leaves the Network page read-only) need `systemctl enable --now`.
+- firewalld is on by default: turning SSH on must also open the `ssh` service in the firewall.
+- PackageKit can hold the zypp lock ("System management is locked").
+- Unverified package names: `gtk4` (PyGObject needs `typelib-1_0-Gtk-4_0`), `unclutter`, `xinit`.
+- Leap 15.6's python3 is 3.6 (TVWCS needs 3.9+): only Tumbleweed and Leap 16 can work.
+- Test it end to end in a Tumbleweed VM (the HTPC has libvirt).
