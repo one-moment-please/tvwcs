@@ -9,7 +9,7 @@
 #      and your shell's profile are never touched, and adding TVWCS to your usual i3 / sway config is only an option.
 # It also moves an install from the old location (~/.config/i3/tvwcs) over. Every change to a config of yours is
 # asked first, and the file is backed up as <config>.tvwcs-backup. Safe to re-run to upgrade; your settings in
-# ~/.config/tvwcs are untouched. Supported: Debian and its family (apt) and openSUSE (zypper), with systemd.
+# ~/.config/tvwcs are untouched. Supported: Debian and its family (apt), with systemd.
 #
 # Environment: TVWCS_SETUP=dedicated|alongside answers the first question (default without a terminal: the choice
 # made last time, else dedicated). TVWCS_DEST=<folder> installs somewhere else. TVWCS_ASSUME_YES=1 answers yes to
@@ -162,14 +162,13 @@ elif [ -n "$MIGRATING" ] && grep -qF "$LEGACY/bin/tvwcs" "$HK"; then
 fi
 
 # ------------------------------------------------------------------ what else is needed, in this distribution's terms
-# TVWCS supports Debian and its family (apt) and openSUSE (zypper), both with systemd. Anything else is "unknown": the
+# TVWCS supports Debian and its family (apt), with systemd. Anything else is "unknown": the
 # installer then only lists what to install by hand. TODO.md has the package names and commands other distributions
 # had before, and what they would need again.
 # distro -> the family whose package manager and names apply, from /etc/os-release (ID, then ID_LIKE)
 distro() {
     ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi; for D in ${ID:-} ${ID_LIKE:-}; do
         case "$D" in
-            opensuse*|suse|sles) echo suse; exit ;;
             debian|ubuntu|linuxmint|pop|raspbian) echo debian; exit ;;
         esac
     done; echo unknown )
@@ -177,10 +176,10 @@ distro() {
 # pkg <need>: that need's package name here (gtk = GTK 4 and PyGObject). On an unknown distribution, the usual name.
 pkg() {
     case "$(distro):$1" in
-        debian:gtk) echo "python3-gi gir1.2-gtk-4.0" ;;      suse:gtk) echo "python3-gobject gtk4" ;;
+        debian:gtk) echo "python3-gi gir1.2-gtk-4.0" ;;
         *:gtk) echo "PyGObject GTK4" ;;
         # the Settings app's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
-        debian:pactl|suse:pactl) echo pulseaudio-utils ;;
+        debian:pactl) echo pulseaudio-utils ;;
         *:bluetoothctl) echo bluez ;;
         debian:nmcli) echo network-manager ;;                *:nmcli) echo NetworkManager ;;
         # sound: PipeWire with its PulseAudio layer (the Sound page talks to it with pactl) and its session manager
@@ -189,29 +188,29 @@ pkg() {
         # hides the mouse pointer while it is still (i3; sway does it itself)
         debian:unclutter) echo unclutter-xfixes ;;
         # Power and sleep: the idle time on X11 (libXss), or swayidle on sway
-        debian:xss) echo libxss1 ;;   suse:xss) echo libXss1 ;;   *:xss) echo libXScrnSaver ;;
+        debian:xss) echo libxss1 ;;   *:xss) echo libXScrnSaver ;;
         debian:xrandr) echo x11-xserver-utils ;;
-        debian:vte) echo gir1.2-vte-3.91 ;;                  suse:vte) echo typelib-1_0-Vte-3_91 ;;
+        debian:vte) echo gir1.2-vte-3.91 ;;
         *:vte) echo "VTE-for-GTK-4" ;;
         # the look: an icon theme (without one, apps show letter tiles and buttons text symbols), and Open Sans, the
         # first font of TVWCS's Metro theme that distributions package (Segoe UI and Selawik are not packaged)
         *:icons) echo adwaita-icon-theme ;;
-        debian:font) echo fonts-open-sans ;;                 suse:font) echo google-opensans-fonts ;;
+        debian:font) echo fonts-open-sans ;;
         *:font) echo "Open-Sans" ;;
         *) echo "$1" ;;
     esac
 }
 install_hint() {
     case "$(distro)" in
-        debian) echo "sudo apt install $1" ;;   suse) echo "sudo zypper install $1" ;;
+        debian) echo "sudo apt install $1" ;;
         *) echo "install with your package manager: $1 (the usual names; yours may differ)" ;;
     esac
 }
 UNSUPPORTED_SAID=""
 unsupported_note() {   # said once, before the first thing this installer cannot install here
     [ -z "$UNSUPPORTED_SAID" ] || return 0; UNSUPPORTED_SAID=1
-    echo "This installer can only install packages on Debian and its family (Debian, Ubuntu, Mint, Pop!_OS, Raspberry Pi OS)"
-    echo "and on openSUSE. Here, install what is listed with your own package manager; TODO.md (in $DEST) has the"
+    echo "This installer can only install packages on Debian and its family (Debian, Ubuntu, Mint, Pop!_OS, Raspberry Pi OS)."
+    echo "Here, install what is listed with your own package manager; TODO.md (in $DEST) has the"
     echo "package names other distributions use."
 }
 as_root() {   # run a command as root, asking for the password on this terminal
@@ -282,7 +281,6 @@ if [ "$SETUP" = alongside ]; then echo "Setting TVWCS up next to your other desk
 wm_packages() {   # wm_packages <i3|sway>: what to install for it here, or "" when this distribution is not supported
     case "$(distro):$1" in
         debian:i3) echo "i3 xserver-xorg xinit xdotool x11-xserver-utils" ;;
-        suse:i3) echo "i3 xorg-x11-server xinit xdotool xrandr" ;;
         unknown:*) echo "" ;;
         *:sway) echo sway ;;
     esac
@@ -299,13 +297,12 @@ x_server() {   # the X server already installed: XLibre, Xorg, or "" for none
 }
 without_x_server() {   # the packages given, less the X server's (XLibre replaces Xorg; installing Xorg over it would undo that)
     for P in "$@"; do
-        case "$P" in xserver-xorg|xorg-x11-server) ;; *) printf '%s ' "$P" ;; esac
+        case "$P" in xserver-xorg) ;; *) printf '%s ' "$P" ;; esac
     done
 }
 pkg_install() {   # pkg_install <packages>: install them with this distribution's package manager, as root
     case "$(distro)" in
         debian) as_root apt-get update -q && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
-        suse) as_root zypper --non-interactive install "$@" ;;
         *) return 1 ;;
     esac
 }
@@ -462,14 +459,6 @@ current_layout() {   # "layout variant" of the keyboard in use now, best guess; 
     fi
     if [ -z "$L" ] && [ -f "$ETC/default/keyboard" ]; then   # Debian and its family
         L=$(sed -n 's/^XKBLAYOUT="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ETC/default/keyboard"); V=$(sed -n 's/^XKBVARIANT="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ETC/default/keyboard")
-    fi
-    if [ -z "$L" ]; then   # openSUSE (and localectl without a running systemd) write the X keyboard settings here
-        for F in "$ETC"/X11/xorg.conf.d/*keyboard*.conf; do
-            [ -f "$F" ] || continue
-            L=$(awk 'tolower($0) ~ /option[ \t]+"xkblayout"/ { gsub(/"/, ""); print $3; exit }' "$F")
-            V=$(awk 'tolower($0) ~ /option[ \t]+"xkbvariant"/ { gsub(/"/, ""); print $3; exit }' "$F")
-            [ -n "$L" ] && break
-        done
     fi
     echo "${L:-us} $V"
 }

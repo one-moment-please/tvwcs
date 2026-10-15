@@ -110,11 +110,11 @@ The optional **TVWCS lock screen** (`lockscreen.py`) does not draw a lock itself
 
 A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Options, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network. Each page is also a `.desktop` action, so it can be a channel or favorite.
 
-It drives standard tools rather than services: `pactl` (PipeWire/PulseAudio), `xrandr` or `swaymsg`, `bluetoothctl`, `nmcli` (read-only `ip` fallback), `timedatectl`, apt or zypper plus Flatpak, OpenSSH via `systemctl`, and VTE for the terminal. A page whose tool is missing says what to install. Changes TVWCS needs to know about are sent with `tvwcs reload`.
+It drives standard tools rather than services: `pactl` (PipeWire/PulseAudio), `xrandr` or `swaymsg`, `bluetoothctl`, `nmcli` (read-only `ip` fallback), `timedatectl`, apt plus Flatpak, OpenSSH via `systemctl`, and VTE for the terminal. A page whose tool is missing says what to install. Changes TVWCS needs to know about are sent with `tvwcs reload`.
 
 ## Supported systems
 
-Debian and its family (apt) and openSUSE (zypper), with systemd. Support for Arch, Fedora, Void, Alpine, Gentoo and non-systemd init systems was removed in 3.0. [TODO.md](TODO.md) lists, place by place, what bringing them back would take (the last commit with that code is `9e7ef12`), and holds researched but unstarted work on a tablet mode and a dedicated passwordless TV user.
+Debian and its family (apt), with systemd. Support for Arch, Fedora, Void, Alpine, Gentoo and non-systemd init systems was removed in 3.0, and openSUSE in 3.0.2. [TODO.md](TODO.md) lists, place by place, what bringing them back would take (the last commit with that code is `9e7ef12`), and holds researched but unstarted work on a tablet mode and a dedicated passwordless TV user.
 
 ## Installer
 

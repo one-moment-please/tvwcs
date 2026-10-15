@@ -34,7 +34,7 @@ It works with normal desktop apps. It is not a media center and needs no plugins
 
 ## What you need
 
-- **Debian or a Debian-based system** (Ubuntu, Linux Mint, Pop!_OS, Raspberry Pi OS), or **openSUSE**.
+- **Debian or a Debian-based system** (Ubuntu, Linux Mint, Pop!_OS, Raspberry Pi OS).
 - **systemd.**
 - i3 4.20 or newer, or sway. The installer can install i3 for you.
 - Python 3.9 or newer with GTK 4 (PyGObject). The installer lists and installs anything missing.

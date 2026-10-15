@@ -168,7 +168,7 @@ def server_label(server):
 
 def read_state():
     if not have("pactl"):
-        return SoundState(False,"Sound settings need pactl, from PulseAudio or PipeWire (the pulseaudio-utils or pipewire-pulse package; pulseaudio-utils or pipewire-pulseaudio on openSUSE).")
+        return SoundState(False,"Sound settings need pactl, from PulseAudio or PipeWire (the pulseaudio-utils or pipewire-pulse package).")
     info=run(["pactl","info"],timeout=5)
     if not info.ok:
         return SoundState(False,f"No sound server is answering ({info.message}). Is PipeWire or PulseAudio running?")

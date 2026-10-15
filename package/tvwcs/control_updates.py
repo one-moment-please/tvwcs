@@ -1,4 +1,4 @@
-"""Software updates for Settings: the distribution's package manager (apt or zypper), plus Flatpak. No GTK dependency.
+"""Software updates for Settings: the distribution's package manager (apt), plus Flatpak. No GTK dependency.
 
 Listing the waiting updates never needs root. Installing them does: the panel runs the `install` command through
 sudo or doas (see privilege.py and ui_control.py), and Flatpak's own update as the user."""
@@ -48,14 +48,6 @@ def parse_apt(text):
         if m: found.append(Update(m.group(1),m.group(3),(m.group(4) or "").strip(),m.group(2).split(",")[0]))
     return found
 
-def parse_zypper(text):
-    """`zypper -q list-updates`: 'v | Main Repository | bash | 5.2.26-1.1 | 5.2.32-1.1 | x86_64'."""
-    found=[]
-    for line in text.splitlines():
-        cols=[c.strip() for c in line.split("|")]
-        if len(cols)>=6 and cols[0]=="v": found.append(Update(cols[2],cols[4],cols[3],cols[1]))
-    return found
-
 def parse_flatpak(text):
     """`flatpak remote-ls --updates --columns=application,version,origin` (tab separated)."""
     found=[]
@@ -69,12 +61,10 @@ _APT_INSTALL=("env","DEBIAN_FRONTEND=noninteractive","sh","-c",
               "apt-get update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade --with-new-pkgs")
 MANAGERS=(
     Manager("apt","APT",("apt","list","--upgradable"),parse_apt,_APT_INSTALL,refresh_argv=("apt-get","update")),
-    Manager("zypper","zypper",("zypper","--non-interactive","--quiet","list-updates"),parse_zypper,("zypper","--non-interactive","update"),
-            refresh_argv=("zypper","--non-interactive","refresh")),
 )
 FLATPAK=Manager("flatpak","Flatpak",("flatpak","remote-ls","--updates","--columns=application,version,origin"),parse_flatpak,
                 ("flatpak","update","-y","--noninteractive"),needs_root=False)
-_TOOL={"apt":"apt-get","zypper":"zypper"}
+_TOOL={"apt":"apt-get"}
 
 def detect(which=None):
     """The system's package manager (the first found), or None."""
@@ -90,7 +80,7 @@ def age_text(checked, now=None):
             n=int(seconds//size); return f"{n} {unit}{'s' if n!=1 else ''} ago"
     return "just now"
 
-_LISTS={"apt":("/var/lib/apt/lists","/var/cache/apt/pkgcache.bin"),"zypper":("/var/cache/zypp/raw",)}
+_LISTS={"apt":("/var/lib/apt/lists","/var/cache/apt/pkgcache.bin")}
 def lists_checked(manager):
     times=[]
     for path in _LISTS.get(manager.id,()):
@@ -112,7 +102,7 @@ def _list(manager):
 def read_state():
     manager=detect(); flatpak=have("flatpak")
     if manager is None and not flatpak:
-        return UpdatesState(False,"No supported package manager was found (apt on Debian and its family, zypper on openSUSE, or Flatpak).")
+        return UpdatesState(False,"No supported package manager was found (apt on Debian and its family, or Flatpak).")
     state=UpdatesState(True,"",manager)
     if manager is not None:
         state.updates,problem=_list(manager); state.checked=lists_checked(manager)
