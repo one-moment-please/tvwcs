@@ -4,7 +4,7 @@ current install folder and clean up. Each merged change is released as a prerele
 it has been tested, so "the latest release" is also what a prerelease rolls back to.
 No GTK here, so it can be tested without a display; the Settings panel runs these calls on a worker thread."""
 from __future__ import annotations
-import json, os, re, subprocess, tempfile, urllib.error, urllib.request, zipfile
+import json, os, re, shutil, subprocess, tempfile, urllib.error, urllib.request, zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -106,24 +106,65 @@ def _download(url,target):
     except (urllib.error.URLError,OSError) as exc:
         raise UpdateError(f"Download failed: {getattr(exc,'reason',exc)}") from exc
 
-def install_release(release,dest,migrate=False):
-    """Download the release zip into a temporary folder, run its install.sh into `dest`, and delete the
-    temporary folder whatever happens. `migrate`: the user agreed to move TVWCS from its old location, so install.sh
-    updates the include line in the window manager config and deletes the old copy. Returns install.sh's output."""
-    with tempfile.TemporaryDirectory(prefix="tvwcs-update-") as tmp:
-        tmp=Path(tmp); archive=tmp/"release.zip"; unpacked=tmp/"unpacked"
+def download_release(release):
+    """Download the release zip and unpack it in a new temporary folder. Returns the folder; the caller deletes it
+    (discard) once it has been installed or the update was cancelled."""
+    tmp=Path(tempfile.mkdtemp(prefix="tvwcs-update-"))
+    try:
+        archive=tmp/"release.zip"; unpacked=tmp/"unpacked"
         _download(release.zip_url,archive)
         try:
             with zipfile.ZipFile(archive) as z: z.extractall(unpacked)   # extractall drops absolute and ".." paths
         except zipfile.BadZipFile as exc: raise UpdateError("The downloaded file is not a valid zip.") from exc
-        script=unpacked/"tvwcs"/"install.sh"
-        if not script.is_file() or not (unpacked/"tvwcs"/"tvwcs"/"main.py").is_file():
+        if not (unpacked/"tvwcs"/"install.sh").is_file() or not (unpacked/"tvwcs"/"tvwcs"/"main.py").is_file():
             raise UpdateError("The downloaded zip does not look like a TVWCS release.")
-        env={**os.environ,"TVWCS_DEST":str(dest),"TVWCS_NO_RESTART":"1"}   # TVWCS restarts itself afterwards
-        if migrate: env["TVWCS_MIGRATE"]="1"
-        try:
-            done=subprocess.run(["sh",str(script)],cwd=str(unpacked/"tvwcs"),env=env,stdin=subprocess.DEVNULL,
-                                capture_output=True,text=True,timeout=120)
-        except (OSError,subprocess.TimeoutExpired) as exc: raise UpdateError(f"Could not run install.sh: {exc}") from exc
-        if done.returncode!=0: raise UpdateError("install.sh failed:\n"+(done.stderr or done.stdout).strip()[-600:])
-        return done.stdout
+    except BaseException:
+        discard(tmp); raise
+    return tmp
+
+def discard(folder): shutil.rmtree(folder,ignore_errors=True)
+
+def parse_missing(text):
+    """install.sh --missing output -> [(packages, what for)]."""
+    out=[]
+    for line in (text or "").splitlines():
+        parts=line.split("\t")
+        if len(parts)==3 and parts[0]=="need" and parts[1].strip(): out.append((parts[1].strip(),parts[2].strip()))
+    return out
+
+def missing_packages(folder):
+    """The packages the downloaded release needs that are not installed here, so they can be installed first.
+    Releases before 3.1 cannot say ([]): their install.sh has no --missing and would install instead of answering."""
+    script=Path(folder)/"unpacked"/"tvwcs"/"install.sh"
+    try:
+        if "--missing" not in script.read_text(errors="replace"): return []
+        done=subprocess.run(["sh",str(script),"--missing"],cwd=str(script.parent),stdin=subprocess.DEVNULL,
+                            capture_output=True,text=True,timeout=60)
+    except (OSError,subprocess.TimeoutExpired): return []
+    return parse_missing(done.stdout) if done.returncode==0 else []
+
+def install_packages_argv(packages):
+    """The root command that installs the packages a release needs (apt; Debian is the supported system)."""
+    names=[p for group in packages for p in group.split()]
+    if not names or not all(re.fullmatch(r"[a-z0-9][a-z0-9+.-]*",n) for n in names): raise ValueError("Unexpected package name.")
+    return ["env","DEBIAN_FRONTEND=noninteractive","sh","-c",'apt-get update -q && apt-get install -y "$@"',"sh",*names]
+
+def install_downloaded(folder,dest,migrate=False):
+    """Run the downloaded release's install.sh into `dest`. Returns install.sh's output."""
+    unpacked=Path(folder)/"unpacked"
+    env={**os.environ,"TVWCS_DEST":str(dest),"TVWCS_NO_RESTART":"1"}   # TVWCS restarts itself afterwards
+    if migrate: env["TVWCS_MIGRATE"]="1"
+    try:
+        done=subprocess.run(["sh",str(unpacked/"tvwcs"/"install.sh")],cwd=str(unpacked/"tvwcs"),env=env,stdin=subprocess.DEVNULL,
+                            capture_output=True,text=True,timeout=120)
+    except (OSError,subprocess.TimeoutExpired) as exc: raise UpdateError(f"Could not run install.sh: {exc}") from exc
+    if done.returncode!=0: raise UpdateError("install.sh failed:\n"+(done.stderr or done.stdout).strip()[-600:])
+    return done.stdout
+
+def install_release(release,dest,migrate=False):
+    """Download the release zip into a temporary folder, run its install.sh into `dest`, and delete the
+    temporary folder whatever happens. `migrate`: the user agreed to move TVWCS from its old location, so install.sh
+    updates the include line in the window manager config and deletes the old copy. Returns install.sh's output."""
+    folder=download_release(release)
+    try: return install_downloaded(folder,dest,migrate)
+    finally: discard(folder)

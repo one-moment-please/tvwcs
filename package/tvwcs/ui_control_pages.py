@@ -411,14 +411,40 @@ class _SelfUpdate:
                          "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
                          lambda:self.install(release,target,moving),danger=False)
     def install(self, release, target, moving):
+        """Download the release, install the packages it needs that are missing here (asked first), then install it."""
+        self.updating=True; self.update_text="Downloading…"; self.redraw()
+        def failed(exc): self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
+        def downloaded(result):
+            folder,missing=result
+            if not missing: self.install_downloaded(release,folder,target,moving,""); return
+            listing="\n".join(f"• {packages}: {why}" for packages,why in missing)
+            def cancel(): self.win.close_modal(); selfupdate.discard(folder); self.updating=False; self.update_text=""; self.redraw()
+            def install_them():
+                try: argv=selfupdate.install_packages_argv([p for p,_w in missing])
+                except ValueError as exc: self.install_downloaded(release,folder,target,moving,str(exc)); return
+                self.update_text="Installing packages…"; self.redraw(); lines=[]
+                def after(code,tail):
+                    problem="" if code==0 else ("\n".join(lines[-3:]) or tail or "apt-get did not finish.").strip()
+                    self.install_downloaded(release,folder,target,moving,problem)
+                self.win.run_as_root(argv,"Installing packages",lines.append,after)
+            self.win.confirm(f"TVWCS {release.version} needs more packages",
+                             f"These packages are not installed yet:\n{listing}\n\nInstall them first? It asks for your password. "
+                             "Cancel stops the update.","Install and update",install_them,danger=False,back=cancel)
+        def fetch():
+            folder=selfupdate.download_release(release)
+            return folder,selfupdate.missing_packages(folder)
+        in_background(fetch,downloaded,failed)
+    def install_downloaded(self, release, folder, target, moving, package_problem):
         self.updating=True; self.update_text="Installing…"; self.redraw()
         def done(_out):
+            selfupdate.discard(folder)
             self.updating=False; self.update_text=f"Installed {release.version}"; self.redraw()
             restarted=tell_tvwcs(f"restart {target/'bin'/'tvwcs'}")
+            note=f" Some packages could not be installed: {package_problem}" if package_problem else ""
             self.win.notice("TVWCS updated",f"TVWCS {release.version} is installed"+(" and has restarted." if restarted else ".")+
-                            " Close Settings and open it again to use the new version.")
-        def failed(exc): self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
-        in_background(lambda:selfupdate.install_release(release,target,migrate=moving),done,failed)
+                            " Close Settings and open it again to use the new version."+note)
+        def failed(exc): selfupdate.discard(folder); self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
+        in_background(lambda:selfupdate.install_downloaded(folder,target,migrate=moving),done,failed)
 
 # ====================================================================== Power and sleep
 LOCK_SCREENS={True:"TVWCS lock screen",False:"The system's screen locker"}

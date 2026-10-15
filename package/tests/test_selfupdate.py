@@ -79,4 +79,38 @@ class InstallTests(unittest.TestCase):
             with patch.object(selfupdate,"_download",lambda _u,t:Path(t).write_bytes(src.read_bytes())):
                 with self.assertRaisesRegex(UpdateError,"broken"): selfupdate.install_release(Release("2.6.0","v2.6.0","x",""),Path(d))
 
+    def test_missing_packages_are_asked_of_the_new_release_before_installing(self):
+        with tempfile.TemporaryDirectory() as d:
+            src=Path(d)/"src.zip"; dest=Path(d)/"dest"; dest.mkdir()
+            script='[ "$1" = --missing ] && { printf "need\\tudisks2\\tSettings: storage\\n"; exit 0; }\necho installed > "$TVWCS_DEST/ran"\n'
+            self._zip(src,{"tvwcs/install.sh":script,"tvwcs/tvwcs/main.py":""})
+            with patch.object(selfupdate,"_download",lambda _u,t:Path(t).write_bytes(src.read_bytes())):
+                folder=selfupdate.download_release(Release("3.1.0","v3.1.0","x",""))
+            self.assertEqual(selfupdate.missing_packages(folder),[("udisks2","Settings: storage")])
+            self.assertFalse((dest/"ran").exists())   # asking installs nothing
+            selfupdate.install_downloaded(folder,dest); self.assertTrue((dest/"ran").exists())
+            selfupdate.discard(folder); self.assertFalse(folder.exists())
+    def test_an_older_release_is_not_asked(self):
+        # Before 3.1 install.sh had no --missing: running it with that would install, so it is not run at all.
+        with tempfile.TemporaryDirectory() as d:
+            src=Path(d)/"src.zip"
+            self._zip(src,{"tvwcs/install.sh":'touch "$(dirname "$0")/../ran"\n',"tvwcs/tvwcs/main.py":""})
+            with patch.object(selfupdate,"_download",lambda _u,t:Path(t).write_bytes(src.read_bytes())):
+                folder=selfupdate.download_release(Release("3.0.3","v3.0.3","x",""))
+            self.assertEqual(selfupdate.missing_packages(folder),[]); self.assertFalse((folder/"unpacked"/"ran").exists())
+            selfupdate.discard(folder)
+    def test_a_bad_download_leaves_nothing_behind(self):
+        made=[]
+        real=tempfile.mkdtemp
+        def mkdtemp(**kw): made.append(real(**kw)); return made[-1]
+        with patch.object(selfupdate,"_download",lambda _u,t:Path(t).write_bytes(b"not a zip")), patch.object(selfupdate.tempfile,"mkdtemp",mkdtemp):
+            with self.assertRaises(UpdateError): selfupdate.download_release(Release("3.1.0","v3.1.0","x",""))
+        self.assertFalse(Path(made[0]).exists())
+    def test_parse_missing_and_the_apt_command(self):
+        self.assertEqual(selfupdate.parse_missing("need\tudisks2\tstorage\nnoise\nneed\t\tx\n"),[("udisks2","storage")])
+        argv=selfupdate.install_packages_argv(["udisks2","xdg-desktop-portal xdg-desktop-portal-gtk"])
+        self.assertEqual(argv[-3:],["udisks2","xdg-desktop-portal","xdg-desktop-portal-gtk"]); self.assertEqual(argv[:2],["env","DEBIAN_FRONTEND=noninteractive"])
+        with self.assertRaises(ValueError): selfupdate.install_packages_argv(["evil; rm -rf /"])
+        with self.assertRaises(ValueError): selfupdate.install_packages_argv([])
+
 if __name__=="__main__": unittest.main()

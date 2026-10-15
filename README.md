@@ -140,7 +140,7 @@ A page whose tool is missing says what to install.
 
 ## Update and uninstall
 
-**Update:** **Settings › Software updates › Check for TVWCS updates**, or run a newer installer. Your data is never changed. If you edited `~/.local/share/tvwcs/tvwcs.conf`, your copy is saved as `tvwcs.conf.bak`.
+**Update:** **Settings › Software updates › Check for TVWCS updates**, or run a newer installer. When a new version needs packages that are not installed, Settings lists them and offers to install them first. Your data is never changed. If you edited `~/.local/share/tvwcs/tvwcs.conf`, your copy is saved as `tvwcs.conf.bak`.
 
 **Uninstall:**
 

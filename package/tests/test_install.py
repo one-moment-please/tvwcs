@@ -38,6 +38,20 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(p.returncode,0,p.stderr); return p.stdout
     def write_i3(self,text): self.i3.parent.mkdir(parents=True,exist_ok=True); self.i3.write_text(text)
 
+    def test_missing_only_lists_what_is_needed_and_changes_nothing(self):
+        bin_=Path(self.tmp.name)/"fakebin"; bin_.mkdir()
+        (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
+        (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        p=subprocess.run(["sh",str(SCRIPT),"--missing"],env={**self.env,"PATH":f"{bin_}:{self.env['PATH']}"},stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+        self.assertEqual(p.returncode,0,p.stderr)
+        self.assertIn("need\tpython3-gi gir1.2-gtk-4.0\tGTK 4 for Python: TVWCS's windows (required)\n",p.stdout)
+        self.assertTrue(all(line.startswith("need\t") for line in p.stdout.splitlines()),p.stdout)
+        self.assertFalse(self.dest.exists()); self.assertFalse((self.home/".config").exists())
+    def test_help_and_unknown_options_install_nothing(self):
+        p=subprocess.run(["sh",str(SCRIPT),"--help"],env=self.env,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+        self.assertEqual(p.returncode,0); self.assertIn("--missing",p.stdout); self.assertNotIn("set -eu",p.stdout)
+        p=subprocess.run(["sh",str(SCRIPT),"--bogus"],env=self.env,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+        self.assertEqual(p.returncode,2); self.assertFalse(self.dest.exists())
     def test_installs_into_local_share_and_points_the_fragment_at_it(self):
         out=self.run_install()
         self.assertTrue((self.dest/"bin"/"tvwcs").is_file() and (self.dest/"tvwcs"/"main.py").is_file(),out)
