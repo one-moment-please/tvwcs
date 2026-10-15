@@ -206,7 +206,7 @@ class ConfigStore:
         if profile.hotkey and not valid_spec(profile.hotkey): raise ValueError("The hotkey is not valid.")
         profile.description=_clean_text(profile.description)
         profile.name=profile.name.strip()
-        if not profile.name: raise ValueError("Profile name cannot be empty.")
+        if not profile.name: raise ValueError("The name cannot be empty.")
         if profile.command.strip():
             try: parts=shlex.split(profile.command)
             except ValueError as exc: raise ValueError(f"Command quoting is invalid: {exc}")
@@ -225,7 +225,7 @@ class ConfigStore:
         self.save(); return p.launch_mode
     def save_settings(self): self.save()
     def set_app_description(self, desktop_id, text):
-        """Override an application's description in the Guide. Empty restores the one from its .desktop file."""
+        """Override an application's description in Applications. Empty restores the one from its .desktop file."""
         text=_clean_text(text)
         if text: self.app_descriptions[desktop_id]=text
         else: self.app_descriptions.pop(desktop_id,None)
