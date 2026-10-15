@@ -66,8 +66,8 @@ The rest is done from the other computer.
 
    ```bash
    cd "$(mktemp -d)"
-   wget -qO- https://github.com/one-moment-please/tvwcs/archive/refs/heads/main.tar.gz | tar -xz
-   ./tvwcs-main/scripts/install.sh
+   wget -qO- https://github.com/one-moment-please/tvwcs/releases/latest/download/tvwcs.tar.gz | tar -xz
+   ./tvwcs/install.sh
    ```
 
 4. Answer its questions. For a TV computer:
