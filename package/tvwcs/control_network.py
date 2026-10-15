@@ -212,7 +212,10 @@ def _outcome(result):
 def set_wifi(on): return _outcome(run(["nmcli","radio","wifi","on" if on else "off"],timeout=10))
 def connect_device(device): return _outcome(run(["nmcli","device","connect",device],timeout=45))
 def disconnect_device(device): return _outcome(run(["nmcli","device","disconnect",device],timeout=20))
-def activate(uuid): return _outcome(run(["nmcli","connection","up",uuid],timeout=45))
+def activate(uuid):
+    problem=_outcome(run(["nmcli","connection","up",uuid],timeout=45))
+    if not problem: keep_wired_first()
+    return problem
 def forget(uuid): return _outcome(run(["nmcli","connection","delete",uuid],timeout=15))
 
 def join_wifi(ssid, password=None):
@@ -224,7 +227,32 @@ def join_wifi(ssid, password=None):
     if problem:
         for _n,u,_t,_d in parse_connections(run(["nmcli","-t","-f","NAME,UUID,TYPE,DEVICE","connection","show"],timeout=8).out):
             if u not in before: run(["nmcli","connection","delete",u],timeout=15)
+    else: keep_wired_first()
     return problem
+
+def _wireless(name): return os.path.isdir(f"/sys/class/net/{name}/wireless")
+
+def wifi_metric(route_json, wifi_device, wireless=_wireless):
+    """The route metric that keeps a wired connection first when Wi-Fi joins the same computer, or None when nothing
+    needs changing. NetworkManager gives Wi-Fi metric 600, but a wired connection it does not manage (ifupdown on
+    Debian, metric 1002 for a second one…) can have a higher one, and then Wi-Fi quietly takes over all traffic."""
+    try: routes=json.loads(route_json or "[]")
+    except ValueError: return None
+    defaults=[r for r in routes if r.get("dst")=="default" and r.get("dev")]
+    wired=[r.get("metric",0) for r in defaults if not wireless(r["dev"])]
+    wifi=[r.get("metric",0) for r in defaults if r["dev"]==wifi_device]
+    if not wired or not wifi or min(wifi)>min(wired): return None
+    return min(wired)+100
+
+def keep_wired_first():
+    """After Wi-Fi connects: if its default route beats a wired one, raise the Wi-Fi connection's route metric so
+    the wired connection stays in use (Wi-Fi remains as a backup) and re-apply it without dropping the connection."""
+    for _name,uuid,kind,device in parse_connections(run(["nmcli","-t","-f","NAME,UUID,TYPE,DEVICE","connection","show","--active"],timeout=8).out):
+        if "wireless" not in kind or not device: continue
+        metric=wifi_metric(run(["ip","-j","route","show","default"],timeout=5).out,device)
+        if metric is None: continue
+        if run(["nmcli","connection","modify",uuid,"ipv4.route-metric",str(metric),"ipv6.route-metric",str(metric)],timeout=15).ok:
+            run(["nmcli","device","reapply",device],timeout=15)
 
 def apply_ipv4(uuid, settings):
     """Save the IPv4 settings on a connection and re-activate it so they take effect."""

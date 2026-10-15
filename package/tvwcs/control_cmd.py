@@ -1,12 +1,12 @@
 """Running the command-line tools Settings talks to. No GTK dependency.
 
-Every tool runs with the C locale, so its output can be parsed whatever language the user reads, and every call
+Every tool runs with the C locale (in UTF-8, so names like "Taylor’s Wi-Fi" survive), so its output can be parsed whatever language the user reads, and every call
 returns a Result instead of raising: a missing tool, a timeout or a refusal is something to show, not a crash."""
 from __future__ import annotations
 import os, re, shutil, subprocess
 from dataclasses import dataclass
 
-C_LOCALE={"LC_ALL":"C","LANG":"C","LANGUAGE":""}
+C_LOCALE={"LC_ALL":"C.UTF-8","LANG":"C.UTF-8","LANGUAGE":""}
 _ANSI=re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x01|\x02|\r")
 
 @dataclass(frozen=True)

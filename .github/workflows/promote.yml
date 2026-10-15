@@ -1,0 +1,26 @@
+name: Promote
+
+# Marks a tested prerelease as the latest release: TVWCS's updater offers it to everyone, and "Roll back to the
+# latest release" goes back to it. Run it from the Actions tab (or the API) with the tag, such as v2.10.2.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The prerelease to mark as latest (such as v2.10.2)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark the release as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]] || { echo "Not a release tag: $TAG"; exit 1; }
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease,url

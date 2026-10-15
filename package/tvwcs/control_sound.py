@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from tvwcs.control_cmd import have, key_values, run
 
 VOLUME_STEP=5      # percent per press of − / +
-MAX_VOLUME=100     # pactl allows more (amplified, distorting); the panel stops at 100 %
+MAX_VOLUME=100     # pactl allows more (amplified, distorting); − and + stop at 100 %, or where it already is above that
+LOUDEST=150        # the most a volume is ever set to
 
 @dataclass
 class Port:
@@ -179,12 +180,13 @@ def read_state():
                       other_outputs(parse_cards(cards.out)),count_alsa_cards())
 
 def stepped(volume, step):
-    """The next volume a − / + press lands on: a multiple of VOLUME_STEP, within 0..MAX_VOLUME."""
+    """The next volume a − / + press lands on: a multiple of VOLUME_STEP, within 0..MAX_VOLUME. A volume already
+    above MAX_VOLUME (set by another program) goes down from where it is, not straight to MAX_VOLUME."""
     target=(volume//VOLUME_STEP+1)*VOLUME_STEP if step>0 else max(0,volume-1)//VOLUME_STEP*VOLUME_STEP
-    return max(0,min(MAX_VOLUME,target))
+    return max(0,min(max(MAX_VOLUME,volume),target))
 
 def set_volume(device, percent):
-    return run(["pactl",f"set-{device.kind}-volume",device.name,f"{max(0,min(MAX_VOLUME,int(percent)))}%"],timeout=5)
+    return run(["pactl",f"set-{device.kind}-volume",device.name,f"{max(0,min(LOUDEST,int(percent)))}%"],timeout=5)
 
 def set_muted(device, muted):
     return run(["pactl",f"set-{device.kind}-mute",device.name,"1" if muted else "0"],timeout=5)

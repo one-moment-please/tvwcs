@@ -47,7 +47,7 @@ class Page:
     def content(self):
         scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
         self.body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); self.body.set_margin_start(S(24)); self.body.set_margin_end(S(24)); self.body.set_margin_bottom(S(16))
-        scroll.set_child(self.body); return scroll
+        scroll.set_child(self.body); self.scroll=scroll; return scroll
 
     def nav_groups(self):
         return ([NavGroup(self.header)] if self.header else [])+self.groups
@@ -98,15 +98,20 @@ class Page:
         if focused is not None and self.root is not None and (focused is self.root or focused.is_ancestor(self.root)):
             old=next((i for i,w in self._ids.items() if w is focused or focused.is_ancestor(w)),None)
         stale={id(w):i for i,w in self._ids.items()}
+        wanted=getattr(self,"focus_after",None); self.focus_after=None   # the row a change turns the focused one into
+        if wanted is not None and old is not None: old=wanted
+        scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
         clear_box(self.body); self.groups=[]; self._ids={}
-        self.draw(self.state); self.subtitle.set_text(self.status or self.summary())
+        self.draw(self.state)
+        if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
+            GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
             w=getattr(self.win,widget_ref,None)
             if w is not None and id(w) in stale and stale[id(w)] in self._ids: setattr(self.win,widget_ref,self._ids[stale[id(w)]])
         last=self.win._last_page_focus.get(self.key)
         if last is not None and id(last) in stale and stale[id(last)] in self._ids: self.win._last_page_focus[self.key]=self._ids[stale[id(last)]]
         if old is not None:
-            target=self._ids.get(old)
+            target=self._ids.get(old) or (next((w for i,w in self._ids.items() if i.startswith(old)),None) if old==wanted else None)
             if target is not None and usable(target): target.grab_focus()
             elif not self.win._focus_first(self.groups): self.win.tab_buttons[self.key].grab_focus()
     def draw(self, state): pass
@@ -246,6 +251,11 @@ class OptionsPage(Page):
         self.section("TVWCS UPDATES")
         self.row("Check for updates",self.update_text or f"Version {__version__}",None if self.updating else self.check_updates,ident="opt:update")
         self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
+        self.option("Include prereleases","update_prereleases",
+                    "Every change is released as a prerelease first, and marked as the latest release once it has been tested "
+                    "on a TV computer. On: Check for updates offers prereleases too.")
+        self.row("Roll back to the latest release","",None if self.updating else self.roll_back,ident="opt:rollback")
+        self.note("Installs the release marked latest, even when it is older than this version: the way back from a prerelease.")
 
     def note(self, text, css=None):
         l=super().note(text,css); l.set_margin_bottom(S(6)); return l
@@ -300,7 +310,22 @@ class OptionsPage(Page):
     def check_updates(self):
         self.updating=True; self.update_text="Checking…"; self.redraw()
         def failed(exc): self.updating=False; self.update_text="Check failed"; self.redraw(); self.win.notice("TVWCS updates",f"Could not check for updates: {exc}")
-        in_background(selfupdate.latest_release,self.checked,failed)
+        prereleases=bool(ConfigStore().settings["update_prereleases"])
+        in_background(lambda:selfupdate.latest_release(prereleases),self.checked,failed)
+    def roll_back(self):
+        self.updating=True; self.update_text="Checking…"; self.redraw()
+        def failed(exc): self.updating=False; self.update_text="Check failed"; self.redraw(); self.win.notice("TVWCS updates",f"Could not check for updates: {exc}")
+        def found(release):
+            self.updating=False; self.update_text=""; self.redraw()
+            if selfupdate.parse_version(release.version)==selfupdate.parse_version(__version__):
+                self.win.notice("TVWCS updates",f"This is already the latest release, TVWCS {__version__}."); return
+            dest=selfupdate.install_dir(Path(selfupdate.__file__).parent)
+            if dest is None: self.win.notice("TVWCS updates","This copy runs from a source checkout: change its version with git."); return
+            target=selfupdate.update_target(dest)
+            self.win.confirm("Roll back TVWCS?",f"Install TVWCS {release.version}, the latest release, in place of {__version__}? "
+                             "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install "+release.version,
+                             lambda:self.install(release,target,target!=dest),danger=False)
+        in_background(selfupdate.latest_release,found,failed)
     def checked(self, release):
         self.updating=False
         if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
@@ -311,7 +336,8 @@ class OptionsPage(Page):
         target=selfupdate.update_target(dest); moving=target!=dest
         move=(f" It also moves TVWCS from {dest} to {target} and updates the include line in your i3 / sway config to match "
               "(the config is backed up first)." if moving else "")
-        self.win.confirm("Update TVWCS?",f"TVWCS {release.version} is available (you have {__version__}). Download and install it now?{move} "
+        kind=" prerelease" if release.prerelease else ""
+        self.win.confirm("Update TVWCS?",f"TVWCS {release.version}{kind} is available (you have {__version__}). Download and install it now?{move} "
                          "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
                          lambda:self.install(release,target,moving),danger=False)
     def install(self, release, target, moving):
@@ -359,6 +385,11 @@ class PowerPage(Page):
                          detail="X's own screen saver" + (" (switched off while TVWCS turns the screen off)" if screen is not None else ""),ident="sys:saver")
                 self.row("X switches the monitor off after",power.duration_text(x.dpms_off) if x.dpms_off else "Never",None,
                          detail="DPMS power saving",ident="sys:dpms")
+            if s.xss_lock:
+                self.row("Locks when the screen turns off","Yes",self.stop_xss_lock if s.xss_lock!="?" else None,
+                         detail="xss-lock is running"+(", started by your i3 config. Choose this to stop it" if s.xss_lock!="?" else
+                                                       ". Remove it from the file that starts it to stop the screen locking"),
+                         icon="system-lock-screen-symbolic",fallback="🔒",ident="sys:xss")
         l=s.logind
         if l.available:
             action={"ignore":"Nothing","suspend":"Sleep","hibernate":"Hibernate","hybrid-sleep":"Hybrid sleep","suspend-then-hibernate":"Sleep, then hibernate",
@@ -369,6 +400,14 @@ class PowerPage(Page):
                                detail="logind's HandleLidSwitch",ident="sys:lid")
         self.note("Change “Turn off the screen after” to let TVWCS decide instead of X. "
                   "logind's settings are changed in /etc/systemd/logind.conf, as root.")
+
+    def stop_xss_lock(self):
+        path=self.state.xss_lock
+        self.win.confirm("Stop locking when the screen turns off",
+                         "xss-lock locks the screen every time it turns off, even with “Lock after” set to Never, so a TV wakes up "
+                         f"to a password prompt. TVWCS will turn it off in {path.replace(str(Path.home()),'~',1)} (keeping a copy of the file as "
+                         f"{os.path.basename(path)}.before-tvwcs) and stop it now. “Lock after” still locks when you choose a time.",
+                         "Stop it",lambda:self.act(lambda:power.stop_xss_lock(path),"Stopping xss-lock…","Power and sleep"),danger=False)
 
     @staticmethod
     def system_screen_text(s):
@@ -429,8 +468,10 @@ class SoundPage(Page):
     def card_output_row(self, o):
         """An output of a profile the card is not using now (often its HDMI output): choosing it switches the card over."""
         detail=f"{o.card_label} · "+("switches the sound card to this output" if o.available else "nothing seems plugged in here, but it can be tried")
-        self.row(o.label,"",lambda o=o:self.act(lambda:_outcome(sound.use_card_output(o),f"Could not switch {o.card_label} to {o.label}."),
-                 f"Switching to {o.label}…","Sound"),detail=detail,icon="video-display-symbolic" if o.hdmi else "audio-speakers-symbolic",
+        def use(o=o):
+            self.act(lambda:_outcome(sound.use_card_output(o),f"Could not switch {o.card_label} to {o.label}."),f"Switching to {o.label}…",
+                     "Sound",after=lambda:setattr(self,"focus_after",f"sink:{sound.sink_for(o.card,o.output)}"))
+        self.row(o.label,"",use,detail=detail,icon="video-display-symbolic" if o.hdmi else "audio-speakers-symbolic",
                  fallback="🖵" if o.hdmi else "🔈",ident=f"card:{o.card}:{o.output}")
 
     def choose_port(self, d, ports):
@@ -453,8 +494,12 @@ class SoundPage(Page):
             mute.set_child(glyph("audio-volume-muted-symbolic" if d.muted else "audio-volume-high-symbolic","🔇" if d.muted else "🔊"))
             mute.set_tooltip_text(("Unmute " if d.muted else "Mute ")+d.label)
             (mute.add_css_class if d.muted else mute.remove_css_class)("active")
+        def applied(result, what):
+            if result.ok: return
+            self.win.notice("Sound",f"Could not {what} {d.label}: {result.message}"); self.refresh(quiet=True)
         def apply_volume():
-            pending[0]=0; level=d.volume; in_background(lambda:sound.set_volume(d,level),lambda _r:None); return GLib.SOURCE_REMOVE
+            pending[0]=0; level=d.volume
+            in_background(lambda:sound.set_volume(d,level),lambda r:applied(r,"change the volume of")); return GLib.SOURCE_REMOVE
         def step(direction):
             d.volume=sound.stepped(d.volume,direction); show()
             if pending[0]: GLib.source_remove(pending[0])
@@ -465,7 +510,8 @@ class SoundPage(Page):
             if pending[0]: GLib.source_remove(pending[0])
             pending[0]=GLib.timeout_add(120,apply_volume)
         def toggle_mute():
-            d.muted=not d.muted; show(); in_background(lambda:sound.set_muted(d,d.muted),lambda _r:None)
+            d.muted=not d.muted; show(); muted=d.muted
+            in_background(lambda:sound.set_muted(d,muted),lambda r:applied(r,"mute" if muted else "unmute"))
         scale.connect("value-changed",dragged); mute.connect("clicked",lambda *_:toggle_mute())
         for w in (minus,plus,mute): w.add_css_class("square")
         label=Gtk.Label(label="Volume"); label.set_xalign(0); label.set_size_request(S(110),-1)

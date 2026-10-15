@@ -118,13 +118,22 @@ def gtk_version():
         return f"{Gtk.get_major_version()}.{Gtk.get_minor_version()}.{Gtk.get_micro_version()}"
     except (ImportError,ValueError,AttributeError): return ""
 
+def session_type(env=None):
+    """X11, Wayland, or what XDG_SESSION_TYPE says. X started with startx from a console keeps the console's
+    login session, whose type is "tty", so the display variables decide first."""
+    env=os.environ if env is None else env
+    if env.get("WAYLAND_DISPLAY"): return "Wayland"
+    if env.get("DISPLAY"): return "X11"
+    session=env.get("XDG_SESSION_TYPE","")
+    return {"x11":"X11","wayland":"Wayland"}.get(session.lower(),session)
+
 def read_sections():
     """[(section title, [(label, value)])], every value already formatted. Empty values are left out."""
     total,free=parse_meminfo(_read("/proc/meminfo"))
     try: uptime=duration_text(float(_read("/proc/uptime").split()[0]))
     except (IndexError,ValueError): uptime=""
     cpus=os.cpu_count() or 0
-    session=os.environ.get("XDG_SESSION_TYPE",""); session={"x11":"X11","wayland":"Wayland"}.get(session.lower(),session)
+    session=session_type()
     cpu=parse_cpu(_read("/proc/cpuinfo"))
     gpus=(parse_lspci_gpus(run(["lspci"],timeout=5).out) if have("lspci") else []) or drm_gpus()
     disks=[]
