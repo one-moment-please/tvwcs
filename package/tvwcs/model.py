@@ -33,14 +33,25 @@ def scale_choices(current, has_4k_display):
 
 def is_4k(width, height) -> bool:
     return max(width,height)>=3840 and min(width,height)>=2160
-STARTUP_MODES=("none","last","app")
-STARTUP_LABELS={"none":"Nothing","last":"Reopen the last app","app":"A chosen app"}
+STARTUP_MODES=("none","menu","last","app")
+STARTUP_LABELS={"none":"None","menu":"TVWCS Quick Menu","last":"Last application","app":"Chosen application"}
+
+# How TVWCS is used, asked by install.sh and changeable in Settings > Options: it sets the interface size and where
+# apps open (TV: each in a workspace of its own, full screen; desktop: tiled beside what is open). "" = never chosen.
+USES={"tv":"TV","desktop":"Desktop"}
+def apply_use(settings, use):
+    if use not in USES: raise ValueError(f"Unknown use: {use}")
+    settings["use"]=use; tv=use=="tv"
+    if tv and settings["scale"]=="desktop": settings["scale"]="tenfoot"
+    if not tv: settings["scale"]="desktop"
+    settings["always_new_workspace"]=tv; settings["open_in_new_workspace"]=tv
 
 DEFAULT_SETTINGS={
     "margin":20,                    # px (at desktop scale) between the panels and the edges of the usable workspace
     "quick_width":460,              # px (at desktop scale) width of the Quick Menu; the Settings panel matches it
     "accent":"#0078d7",             # Metro accent colour
     "lock_command":"",              # empty = auto-detect a screen locker
+    "use":"",                       # "tv" or "desktop" (see USES), "" until chosen
     "scale":"desktop",              # key of SCALE_PRESETS
     "close_on_click_outside":False, # hide TVWCS when another window takes focus
     "open_in_new_workspace":False,  # selecting an open app gives it its own workspace instead of tiling it here
@@ -52,7 +63,7 @@ DEFAULT_SETTINGS={
     "quick_lock_button":False,      # a Lock button in the Quick Menu's power menu
     "idle":{"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
-    "startup":{"mode":"none","profile_id":"","last_profile_id":"","show_menu":False},   # show_menu: open the Quick Menu at login
+    "startup":{"mode":"none","profile_id":"","last_profile_id":""},   # mode: STARTUP_MODES
 }
 PIN_LAUNCH="launch"                  # the PIN is asked when the profile is launched
 PIN_LAUNCH_AND_SHOW="launch_and_show"  # ... and when an open app of it is shown from a workspace that is not on screen
@@ -90,6 +101,7 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
+    if raw.get("use") in USES: s["use"]=raw["use"]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
                 "quick_settings_button","quick_close_button","quick_lock_button"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
@@ -100,7 +112,7 @@ def _clean_settings(raw) -> dict:
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]
         for key in ("profile_id","last_profile_id"):
             if isinstance(st.get(key),str): s["startup"][key]=st[key]
-        if isinstance(st.get("show_menu"),bool): s["startup"]["show_menu"]=st["show_menu"]
+        if st.get("show_menu") is True and s["startup"]["mode"]=="none": s["startup"]["mode"]="menu"   # before 2.11 the menu was a separate switch
     return s
 
 class ConfigStore:

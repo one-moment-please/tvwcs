@@ -27,7 +27,6 @@ RUNTIME=runtime_dir()                            # XDG_RUNTIME_DIR, or ~/.cache/
 PID_FILE=RUNTIME/"tvwcs.pid"
 STARTUP_MARKER=RUNTIME/"tvwcs-startup-done"      # records the login the start-up action last ran in
 PASSWORD_TRIES=3                                  # wrong administrator passwords before TVWCS gives up
-STARTUP_MENU_DELAY=2500                           # ms between opening the login app and showing the Quick Menu over it
 REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a line here, then signals the running TVWCS
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
 def _find_launcher():
@@ -445,8 +444,9 @@ class TVWCSApp(Gtk.Application):
         """Set (or, with "", clear) the hotkey that launches a profile, taking the key from whatever had it."""
         self.store.set_profile_hotkey(profile_id,spec); self.apply_hotkeys()
     def apply_hotkeys(self):
-        """Write hotkeys.conf from the settings and the profiles' hotkeys, and ask i3 to reload if it changed."""
-        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes(),self.store.app_hotkeys())
+        """Write hotkeys.conf from the settings, the profiles' hotkeys and (on a TV) the border rules, and ask i3 to reload
+        if it changed."""
+        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes(),self.store.app_hotkeys(),self.store.settings["use"]=="tv")
         try: old=HOTKEYS_FILE.read_text(encoding="utf-8")
         except OSError: old=None
         if old!=text:
@@ -492,13 +492,12 @@ class TVWCSApp(Gtk.Application):
         if profile.pin_hash and self.window is not None and not self.window.is_visible(): self.show_mode("toggle")   # the PIN keypad is drawn in the window
         self.launch_profile(profile)
     def _run_startup_action(self):
-        """Once per login: open the chosen app, or whichever app was used last, and/or the Quick Menu."""
+        """Once per login: open the Quick Menu, the chosen app, or whichever app was used last."""
         if not first_time_this_login(STARTUP_MARKER): return GLib.SOURCE_REMOVE   # TVWCS was restarted during this login
         st=self.store.settings["startup"]
+        if st["mode"]=="menu": self._show_startup_menu(); return GLib.SOURCE_REMOVE
         profile=self.store.get(st["profile_id"]) if st["mode"]=="app" else self.store.get(st["last_profile_id"]) if st["mode"]=="last" else None
         if profile: self.launch_profile(profile,bypass_pin=True)   # chosen by the owner in Settings, so no PIN at login
-        if st["show_menu"]:   # after the app has had a moment to map, so the menu opens over it rather than under it
-            GLib.timeout_add(STARTUP_MENU_DELAY if profile else 0,self._show_startup_menu)
         return GLib.SOURCE_REMOVE
     def _show_startup_menu(self):
         if self.window is not None and not self.window.is_visible(): self.show_mode("toggle")
@@ -526,11 +525,12 @@ def main():
     if args==["toggle"]: return send_signal(signal.SIGUSR1)
     if args==["guide"]: return send_signal(signal.SIGUSR2)
     if args==["stop"]: return send_signal(signal.SIGTERM)
+    if args==["reload"]: return send_request("reload")   # read the options again (install.sh, after changing them)
     if len(args)==2 and args[0]=="idle" and args[1] in (*power.ACTIONS,"resume"): return idle_action(args[1])
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
-    if args: print("Usage: tvwcs [toggle|guide|stop|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    if args: print("Usage: tvwcs [toggle|guide|stop|reload|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())

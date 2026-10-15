@@ -56,6 +56,10 @@ def _application_directories() -> list[Path]:
     home=Path(os.environ.get("XDG_DATA_HOME", str(Path.home()/".local/share")))
     dirs=[home/"applications"]
     dirs.extend(Path(p)/"applications" for p in os.environ.get("XDG_DATA_DIRS","/usr/local/share:/usr/share").split(":") if p)
+    # Flatpak's apps, also when the session started without flatpak's profile script adding them to XDG_DATA_DIRS
+    # (an app installed from Settings' Apps page right after Flatpak itself was installed, say)
+    for flatpak in (home/"flatpak/exports/share/applications",Path("/var/lib/flatpak/exports/share/applications")):
+        if flatpak not in dirs: dirs.append(flatpak)
     return dirs
 
 def _desktop_files_in_precedence_order():

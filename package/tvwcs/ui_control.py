@@ -1,4 +1,4 @@
-"""TVWCS Settings: Sound, Bluetooth, Software updates, System information, Terminal and Network, as
+"""TVWCS Settings: Sound, Bluetooth, Apps, Software updates, System information, Terminal and Network, as
 vertical tabs on the left with the chosen page beside them. It is an ordinary application (it has its own launcher,
 so it is in the applications guide under System), drawn with the TVWCS Metro theme at the interface size chosen in
 TVWCS's Settings, and it works with a D-pad alone:
@@ -28,7 +28,7 @@ PASSWORD_TRIES=3
 
 CONTROL_CSS="""
 .tab-column { background: #1b1b1b; }
-button.tab-button { min-height: 56px; padding: 0 18px; font-size: 18px; font-weight: 300; background: transparent; }
+button.tab-button { min-height: 48px; padding: 0 18px; font-size: 18px; font-weight: 300; background: transparent; }
 button.tab-button:hover { background: #2d2d2d; }
 button.tab-button.active { background: #2d2d2d; box-shadow: inset 6px 0 0 @ACCENT@; }
 button.tab-button:focus, button.tab-button:focus-visible { background: @ACCENT@; box-shadow: none; }
@@ -54,6 +54,12 @@ textview.console, textview.console text { background: #0c0c0c; color: #d0d0d0; f
 button.key { min-height: 48px; min-width: 40px; padding: 0 6px; font-size: 18px; }
 button.key.wide { font-size: 15px; }
 entry.text-field { font-size: 22px; min-height: 52px; }
+button.app-tool { min-height: 48px; padding: 0 12px; }
+button.app-tool.current { box-shadow: inset 0 -4px 0 @ACCENT@; }
+button.app-tile { padding: 16px 10px 12px 10px; min-height: 170px; }
+.app-name { font-size: 16px; font-weight: 600; }
+button:focus .app-name { font-weight: 700; }
+.app-summary { font-size: 17px; }
 """
 
 def in_background(work, done, failed=None):
@@ -126,7 +132,9 @@ class ControlWindow(Gtk.ApplicationWindow):
         brand=Gtk.Label(label="Settings"); brand.add_css_class("brand"); brand.set_xalign(0); brand.set_hexpand(True); header.append(brand)
         self.close_button=icon_button("window-close-symbolic","✕","Close Settings"); self.close_button.add_css_class("close-button"); self.close_button.add_css_class("square")
         self.close_button.connect("clicked",lambda *_:self.close()); header.append(self.close_button); column.append(header)
-        tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); tabs.set_vexpand(True); column.append(tabs)
+        tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2))
+        tab_scroll=Gtk.ScrolledWindow(); tab_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); tab_scroll.set_vexpand(True)
+        tab_scroll.set_child(tabs); column.append(tab_scroll)   # in TV Mode on a 1080p screen the tabs can be taller than it; they scroll
         # ---- the page, beside them
         self.stack=Gtk.Stack(); self.stack.set_hexpand(True); self.stack.set_vexpand(True); self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
         self.stack.add_css_class("pane"); self.stack.set_margin_start(S(12)); panes.append(self.stack)

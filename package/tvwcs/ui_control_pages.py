@@ -2,17 +2,17 @@
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
-import os, time
+import os, subprocess, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
-from tvwcs import control_bluetooth as bluetooth, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
+from tvwcs import control_bluetooth as bluetooth, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
 from tvwcs import __version__, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, is_4k, scale_choices, startup_choices
+from tvwcs.model import SCALE_LABELS, STARTUP_LABELS, STARTUP_MODES, ConfigStore, apply_use, is_4k, scale_choices, startup_choices
 from tvwcs.system_actions import command_for, login_manager_installed
 from tvwcs.ui_control import StreamedRun, in_background
 from tvwcs.widgets import NavGroup, S, clear_box, glyph, muted_label, section_title, usable
@@ -202,6 +202,10 @@ class OptionsPage(Page):
         self.option("Button hints","button_hints","Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
 
         self.section("DISPLAY")
+        self.row("Used on",{"tv":"A TV","desktop":"A desktop monitor"}.get(st["use"],"Not chosen"),self.choose_use,ident="opt:use")
+        self.note("A TV: TV Mode size, every app opens in a workspace of its own, and an app alone on its workspace has no border. "
+                  "A desktop monitor: Desktop size, and apps open tiled in the current workspace. Size and workspaces can still be "
+                  "changed one by one below.")
         has_4k=self.has_4k()
         self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
         self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
@@ -215,12 +219,14 @@ class OptionsPage(Page):
 
         self.section("AT LOGIN")
         names={p.id:p.name for p in store.profiles}
-        self.row("Open at login",STARTUP_LABELS[st["startup"]["mode"]],lambda:self.win.choose_option("Open at login",[(m,STARTUP_LABELS[m]) for m in STARTUP_MODES],
-                 st["startup"]["mode"],lambda m:self.change(lambda s:s.settings["startup"].update(mode=m))),ident="opt:startup")
-        self.row("Chosen app",names.get(st["startup"]["profile_id"],"Not chosen"),lambda:self.choose_app(store),ident="opt:startup-app")
-        self.note("“Reopen the last app” starts whichever app you used most recently. Either runs once per login, a moment after TVWCS starts.")
-        self.row("Open the Quick Menu at login",_on_off(st["startup"]["show_menu"]),
-                 lambda:self.change(lambda s:s.settings["startup"].update(show_menu=not s.settings["startup"]["show_menu"])),ident="opt:startup-menu")
+        mode=st["startup"]["mode"]
+        self.row("Open at login",STARTUP_LABELS[mode],lambda:self.win.choose_option("Open at login",[(m,STARTUP_LABELS[m]) for m in STARTUP_MODES],
+                 mode,lambda m:self.pick_startup(store,m)),ident="opt:startup")
+        if mode=="app":
+            self.row("Application",names.get(st["startup"]["profile_id"],"Not chosen"),lambda:self.choose_app(store),ident="opt:startup-app")
+        self.note({"none":"Nothing opens by itself when you log in.","menu":"The Quick Menu opens when you log in.",
+                   "last":"Whichever application you used most recently opens when you log in.",
+                   "app":"The application chosen above opens when you log in."}[mode]+" It happens once per login, a moment after TVWCS starts.")
 
         hints={"keyboard":"A modifier tapped on its own (such as Super) triggers when it is released, so Super combinations keep working.",
                "remote":"Most remotes send ordinary keys; F2 suits many of them. Fullscreen switches the app you are using in and out of fullscreen.",
@@ -253,11 +259,19 @@ class OptionsPage(Page):
         return False
     def pick_scale(self, key):
         self.change(lambda s:s.settings.update(scale=key),"TVWCS uses the new size now. Settings uses it the next time it opens.")
+    def choose_use(self):
+        def picked(use):
+            old=self.state.settings["scale"]; self.change(lambda s:apply_use(s.settings,use))
+            if self.state.settings["scale"]!=old: self.win.notice("Options","TVWCS uses the new size now. Settings uses it the next time it opens.")
+        self.win.choose_option("Used on",[("tv","A TV, across the room"),("desktop","A desktop monitor, at arm's length")],self.state.settings["use"],picked)
+    def pick_startup(self, store, mode):
+        if mode=="app" and store.get(store.settings["startup"]["profile_id"]) is None: self.choose_app(store); return   # pick which one first
+        self.change(lambda s:s.settings["startup"].update(mode=mode))
     def choose_app(self, store):
         options=[]
         for heading,profiles in startup_choices(store.profiles):
             for p in profiles: options.append((p.id,(f"{p.channel:03d}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
-        if not options: self.win.notice("Chosen app","There are no applications to choose from yet."); return
+        if not options: self.win.notice("Chosen application","There are no applications to choose from yet."); return
         def picked(pid): self.change(lambda s:s.settings["startup"].update(profile_id=pid,mode="app"))
         self.win.choose_option("Open at login",options,store.settings["startup"]["profile_id"],picked)
 
@@ -624,7 +638,22 @@ class BluetoothPage(Page):
         in_background(lambda:bluetooth.scan(),done,lambda _e:done(None))
 
 # ====================================================================== Software updates
-class UpdatesPage(Page):
+class _Console:
+    """A read-only console under a page's rows, showing the output of what the page runs."""
+    def console(self):
+        if self.log is None:
+            self.log=Gtk.TextView(); self.log.set_editable(False); self.log.set_cursor_visible(False); self.log.set_focusable(False)
+            self.log.add_css_class("console"); self.log.set_wrap_mode(Gtk.WrapMode.WORD_CHAR); self.log.set_monospace(True)
+            self.log_scroll=Gtk.ScrolledWindow(); self.log_scroll.set_child(self.log); self.log_scroll.set_min_content_height(S(280))
+            self.log_scroll.add_css_class("console-frame"); self.log_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,Gtk.PolicyType.AUTOMATIC)
+        if self.log_scroll.get_parent() is not None: self.log_scroll.get_parent().remove(self.log_scroll)
+        return self.log_scroll
+    def _append(self, line):
+        buf=self.log.get_buffer(); buf.insert(buf.get_end_iter(),line+"\n")
+        if buf.get_line_count()>2000: buf.delete(buf.get_start_iter(),buf.get_iter_at_line(buf.get_line_count()-2000)[1])
+        GLib.idle_add(lambda:(self.log_scroll.get_vadjustment().set_value(self.log_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
+
+class UpdatesPage(_Console, Page):
     key="updates"; title="Software updates"; icon="software-update-available-symbolic"; fallback="⇩"
     MAX_ROWS=300
     def __init__(self, win):
@@ -669,19 +698,6 @@ class UpdatesPage(Page):
             for u in items[:self.MAX_ROWS]:
                 self.row(u.name,f"{u.old} → {u.new}" if u.old else u.new,lambda u=u:self.details(u),detail=u.source,ident=f"pkg:{title}:{u.name}")
             if len(items)>self.MAX_ROWS: self.note(f"… and {len(items)-self.MAX_ROWS} more.")
-
-    def console(self):
-        if self.log is None:
-            self.log=Gtk.TextView(); self.log.set_editable(False); self.log.set_cursor_visible(False); self.log.set_focusable(False)
-            self.log.add_css_class("console"); self.log.set_wrap_mode(Gtk.WrapMode.WORD_CHAR); self.log.set_monospace(True)
-            self.log_scroll=Gtk.ScrolledWindow(); self.log_scroll.set_child(self.log); self.log_scroll.set_min_content_height(S(280))
-            self.log_scroll.add_css_class("console-frame"); self.log_scroll.set_policy(Gtk.PolicyType.AUTOMATIC,Gtk.PolicyType.AUTOMATIC)
-        if self.log_scroll.get_parent() is not None: self.log_scroll.get_parent().remove(self.log_scroll)
-        return self.log_scroll
-    def _append(self, line):
-        buf=self.log.get_buffer(); buf.insert(buf.get_end_iter(),line+"\n")
-        if buf.get_line_count()>2000: buf.delete(buf.get_start_iter(),buf.get_iter_at_line(buf.get_line_count()-2000)[1])
-        GLib.idle_add(lambda:(self.log_scroll.get_vadjustment().set_value(self.log_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
 
     @staticmethod
     def outcome_text(label, s):
@@ -736,6 +752,210 @@ class UpdatesPage(Page):
                     elif code: self.win.notice("Restart",tail)
                 StreamedRun(command,lambda _l:None,done)
         self.win.confirm("Restart now?","Restart the computer now? Unsaved work in open applications may be lost.","Restart",go)
+
+# ====================================================================== Apps (Flatpak, from Flathub)
+def _shorten(text, limit):
+    """Text cut at a paragraph or sentence end near `limit` characters."""
+    if len(text)<=limit: return text
+    cut=text[:limit]; end=max(cut.rfind("\n\n"),cut.rfind(". ")+1)
+    return (cut[:end] if end>limit//2 else cut.rsplit(" ",1)[0]+" …").rstrip()
+
+class AppsPage(_Console, Page):
+    """A store of Flathub's apps: a grid of tiles with their icons, by category or found by a search typed on the
+    on-screen keyboard, and the installed apps. Selecting a tile shows the app, with Install, or Open and Remove."""
+    key="apps"; title="Apps"; icon="system-software-install-symbolic"; fallback="▦"
+    COLUMNS=4; STEP=24
+    def __init__(self, win):
+        super().__init__(win); self.log=None; self.view="featured"; self.query=""; self.limit=self.STEP
+        self.running=None; self.outcome=None; self.tiles_from=0; self.refresh_focus=None
+    def read(self): return flatpak.read_state()
+    def redraw(self):
+        super().redraw()
+        if self.refresh_focus and not self.busy and not self.win.modal_open:
+            self.focus_tiles(self.refresh_focus); self.refresh_focus=None
+    def summary(self):
+        s=self.state
+        if not s or not s.flatpak: return ""
+        return (f"{len(s.catalog)} apps on Flathub · " if s.catalog else "")+f"{len(s.installed)} installed"
+
+    def draw(self, s):
+        self.tiles_from=0
+        if self.running:
+            self.row(self.running,"Working…",None,icon="emblem-synchronizing-symbolic",fallback="⟳",ident="running")
+            self.note("Leave this running until it finishes."); self.add(self.console()); return
+        if not s.flatpak:
+            argv=flatpak.install_flatpak_argv()
+            self.row("Install Flatpak","",(lambda:self.run_steps("Installing Flatpak",[(argv,True)],"Flatpak is installed. Set up Flathub next.")) if argv else None,
+                     detail="Installs Flatpak with the package manager. Asks for your password.",icon="system-software-install-symbolic",fallback="⇩",ident="get-flatpak")
+            self.note("Apps here come from Flathub through Flatpak, which keeps each app with what it needs, apart from the system."
+                      +("" if argv else " No supported package manager was found to install Flatpak with."))
+            self.last_run(); return
+        if s.catalog is not None: self.toolbar(s)
+        if s.problem: self.note(s.problem,"error")
+        if self.outcome: self.note(self.outcome,"state-on")
+        if s.catalog is None:   # nothing to browse yet: setting Flathub up comes first; installed apps can still be removed
+            if "system" in s.remote:
+                self.row("Download Flathub's list of apps","",self.setup,detail="Flathub is set up on this computer, but its list of apps has not been downloaded.",
+                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
+                self.note("This also adds Flathub for you, so apps install for you without a password. Flathub is where most Linux apps are "
+                          "published, from Kodi and VLC to Steam and web browsers.")
+            else:
+                self.row("Set up Flathub","",self.setup,detail="Adds Flathub for you (no password needed) and downloads its list of apps.",
+                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
+                self.note("Flathub is where most Linux apps are published, from Kodi and VLC to Steam and web browsers.")
+            if s.installed: self.draw_apps(s,"installed")
+        else: self.draw_apps(s,self.view)
+        if s.catalog is not None and self.view!="installed":
+            age=updates.age_text(s.catalog.updated)
+            self.row("Download the list of apps again","",self.setup,detail=f"Downloaded {age}" if age else "",icon="view-refresh-symbolic",fallback="⟳",ident="setup")
+        self.last_run()
+
+    def last_run(self):
+        if self.log is not None and self.log.get_buffer().get_char_count(): self.section("LAST RUN"); self.add(self.console())
+
+    def toolbar(self, s):
+        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bar.set_homogeneous(True); bar.set_margin_bottom(S(4))
+        made=[]
+        for icon,fallback,label,handler,current in (
+                ("system-search-symbolic","🔍",f"“{self.query}”" if self.view=="search" else "Search",self.ask_search,self.view=="search"),
+                ("view-grid-symbolic","▦",flatpak.CATEGORY_LABELS.get(self.view,"Categories")+"  ▾",self.choose_category,self.view in flatpak.CATEGORY_LABELS),
+                ("emblem-ok-symbolic","✓",f"Installed ({len(s.installed)})",lambda:self.show("installed"),self.view=="installed")):
+            b=Gtk.Button(); b.add_css_class("app-tool")
+            if current: b.add_css_class("current")
+            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); line.set_halign(Gtk.Align.CENTER)
+            line.append(glyph(icon,fallback,20)); l=Gtk.Label(label=label); l.set_ellipsize(Pango.EllipsizeMode.END); line.append(l)
+            b.set_child(line); b.connect("clicked",lambda _b,h=handler:h()); bar.append(b); made.append(b)
+        self.add(bar); g=self.register(*made,ident="tool"); g.column=True
+
+    def listed(self, s, view):
+        if view=="installed":
+            known=s.catalog.by_id if s.catalog else {}
+            return sorted((known.get(i.id) or flatpak.App(i.id,i.name,version=i.version) for i in s.installed),key=lambda a:a.name.casefold())
+        if s.catalog is None: return []
+        return s.catalog.search(self.query) if view=="search" else s.catalog.category(view)
+
+    def draw_apps(self, s, view):
+        apps=self.listed(s,view)
+        if view=="installed": heading="INSTALLED"
+        elif view=="search": heading="RESULTS"
+        else: heading=flatpak.CATEGORY_LABELS[view].upper()
+        self.section(f"{heading} ({len(apps)})")
+        if not apps:
+            self.note({"installed":"No Flatpak apps are installed yet. Find one under Categories or Search.",
+                       "search":"Nothing on Flathub matches that. Try fewer or other words."}.get(view,"Nothing here yet.")); return
+        grid=Gtk.Grid(); grid.set_column_homogeneous(True); grid.set_row_spacing(S(8)); grid.set_column_spacing(S(8)); grid.set_margin_top(S(4))
+        shown=apps[:self.limit]; self.tiles_from=len(self.groups)
+        for start in range(0,len(shown),self.COLUMNS):
+            row=[]
+            for col,a in enumerate(shown[start:start+self.COLUMNS]):
+                t=self.tile(a,s.is_installed(a.id)); grid.attach(t,col,start//self.COLUMNS,1,1); row.append(t)
+            for col in range(len(row),self.COLUMNS): grid.attach(Gtk.Box(),col,start//self.COLUMNS,1,1)   # keeps the tiles their size
+            g=self.register(*row); g.column=True
+            for t,a in zip(row,shown[start:start+self.COLUMNS]): self._ids[f"app:{a.id}"]=t
+        self.add(grid)
+        if len(apps)>self.limit:
+            self.row(f"Show more ({len(apps)-self.limit} more)","",lambda:self.more(apps),icon="go-down-symbolic",fallback="↓",ident="more")
+
+    def app_icon(self, a, size):
+        paths=[a.icon] if a.icon else []
+        for base in (flatpak.user_dir(),flatpak.SYSTEM_DIR):   # an installed app's own icon, in whichever size it brought
+            paths+=[str(base/f"exports/share/icons/hicolor/{d}/apps/{a.id}.{ext}") for d,ext in
+                    (("128x128","png"),("256x256","png"),("scalable","svg"),("512x512","png"),("96x96","png"),("64x64","png"),("48x48","png"))]
+        path=next((p for p in paths if os.path.isfile(p)),None)
+        if path is None: return glyph("application-x-executable-symbolic","▦",size)
+        img=Gtk.Image.new_from_file(path); img.set_pixel_size(S(size)); return img
+
+    def tile(self, a, installed):
+        b=Gtk.Button(); b.add_css_class("app-tile")
+        box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); box.set_valign(Gtk.Align.START)
+        icon=self.app_icon(a,64); icon.set_margin_bottom(S(4)); box.append(icon)
+        name=Gtk.Label(label=a.name); name.add_css_class("app-name"); name.set_ellipsize(Pango.EllipsizeMode.END); name.set_max_width_chars(1); name.set_hexpand(True)
+        box.append(name)
+        summary=Gtk.Label(label=a.summary or (f"Version {a.version}" if a.version else a.id)); summary.add_css_class("row-detail"); summary.set_wrap(True); summary.set_wrap_mode(Pango.WrapMode.WORD_CHAR); summary.set_lines(2)
+        summary.set_ellipsize(Pango.EllipsizeMode.END); summary.set_max_width_chars(1); summary.set_justify(Gtk.Justification.CENTER); box.append(summary)
+        if installed: badge=Gtk.Label(label="Installed"); badge.add_css_class("state-on"); box.append(badge)
+        b.set_child(box); b.set_tooltip_text(a.name); b.connect("clicked",lambda *_:self.details(a)); return b
+
+    # ---------------------------------------------------------- choosing what is shown
+    def show(self, view):
+        self.view=view; self.limit=self.STEP; self.redraw(); GLib.idle_add(lambda:(self.focus_tiles(),GLib.SOURCE_REMOVE)[1])
+    def focus_tiles(self, ident=None):
+        target=self._ids.get(ident) if ident else None
+        if target is not None and usable(target): target.grab_focus(); return
+        if self.tiles_from: self.win._focus_first(self.groups[self.tiles_from:])
+        else: self.win._focus_first(self.groups)
+    def ask_search(self):
+        def search(text):
+            if not text.strip(): return
+            self.query=" ".join(text.split()); self.show("search")
+        self.win.ask_text("Search Flathub","Type an app's name, or what it does.",search,initial=self.query,ok_label="Search")
+    def choose_category(self):
+        s=self.state; options=[(k,f"{label} ({len(s.catalog.category(k))})" if s.catalog else label) for k,label,_c in flatpak.CATEGORIES]
+        self.win.choose_option("Categories",options,self.view,self.show)
+    def more(self, apps):
+        first=apps[self.limit] if len(apps)>self.limit else None
+        self.limit+=self.STEP; self.redraw()
+        if first is not None: self.focus_tiles(f"app:{first.id}")
+
+    # ---------------------------------------------------------- an app
+    def details(self, a):
+        s=self.state; inst=s.is_installed(a.id); win=self.win
+        win._begin_modal(a.name)
+        head=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(16)); head.set_margin_bottom(S(10))
+        head.append(self.app_icon(a,96))
+        facts=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); facts.set_valign(Gtk.Align.CENTER)
+        version=(inst.version if inst else "") or a.version
+        lines=[a.developer," · ".join(x for x in (f"Version {version}" if version else "",a.license) if x)]
+        if a.verified: lines.append("✓ Verified on Flathub")
+        for text in lines:
+            if text: l=Gtk.Label(label=text); l.set_xalign(0); l.add_css_class("muted"); facts.append(l)
+        if inst: l=Gtk.Label(label="Installed"+(" for everyone on this computer" if inst.installation=="system" else "")); l.set_xalign(0); l.add_css_class("state-on"); facts.append(l)
+        head.append(facts); win.modal_card.append(head)
+        if a.summary: win._message(a.summary,"app-summary")
+        if a.description: win._message(_shorten(a.description,600))
+        if inst: specs=[("Open",lambda:self.open_app(a),"active"),("Remove",lambda:self.remove(a,inst),"danger"),("Close",win.close_modal,None)]
+        else: specs=[("Install",lambda:self.install(a),"active"),("Close",win.close_modal,None)]
+        made=win._buttons(*specs)
+        win._finish_modal([made],win.close_modal,made[0] if inst else made[-1])   # Close first: a stray Enter never starts a download
+    def install(self, a):
+        self.win.close_modal(); s=self.state
+        steps=([] if "user" in s.remote else [(flatpak.setup_argv()[0],False)])+[(flatpak.install_argv(a.id),False)]
+        self.run_steps(f"Installing {a.name}",steps,f"{a.name} is installed. Open it here, or from the applications guide.",a.id)
+    def remove(self, a, inst):
+        argv,root=flatpak.uninstall_argv(inst)
+        self.win.confirm(f"Remove {a.name}?",f"{a.name} is removed from this computer"+(" for everyone, and this asks for your password" if root else "")
+                         +f". Its settings stay (in ~/.var/app/{a.id}), so installing it again keeps them.","Remove",
+                         lambda:self.run_steps(f"Removing {a.name}",[(argv,root)],f"{a.name} was removed.",a.id),
+                         back=lambda:self.details(a))
+    def open_app(self, a):
+        self.win.close_modal()
+        try: subprocess.Popen(flatpak.run_argv(a.id),start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except OSError as exc: self.win.notice(a.name,f"Could not open {a.name}: {exc}"); return
+        self.win.close()   # out of the way of the app
+    def setup(self):
+        self.run_steps("Setting up Flathub",[(argv,False) for argv in flatpak.setup_argv()],"Flathub is set up.")
+
+    def run_steps(self, label, steps, success, app_id=None):
+        """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
+        self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
+        self.win._focus_first(self.groups)
+        def finish(problem=""):
+            self.running=None; self.set_status("")
+            if problem: self._append(f"\n✗ Stopped: {problem}")
+            else: self.outcome=success; self._append(f"\n✓ {success}")
+            target=f"app:{app_id}" if app_id else "tiles"
+            self.redraw(); self.focus_tiles(target); self.refresh_focus=target   # and again once the page has been read again
+            if problem: self.win.notice(label,problem)
+            self.refresh(quiet=True)
+        def next_step(i):
+            if i>=len(steps): finish(); return
+            argv,root=steps[i]; self._append("$ "+" ".join(argv))
+            def done(code,tail):
+                if code!=0: finish(tail.strip().splitlines()[-1] if tail.strip() else f"It stopped with exit status {code}."); return
+                next_step(i+1)
+            if root: self.win.run_as_root(argv,label,self._append,done)
+            else: StreamedRun(argv,self._append,done)
+        next_step(0)
 
 # ====================================================================== System information
 class SystemPage(Page):
@@ -1017,4 +1237,4 @@ class NetworkPage(Page):
                       "Automatic (DHCP) asks the router for the address, gateway and DNS servers; choose the first row to switch. "
                       "Saving reconnects, so the connection drops for a moment.",error)
 
-PAGES=(OptionsPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)
+PAGES=(OptionsPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage)

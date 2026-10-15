@@ -677,10 +677,10 @@ setup_autologin() {
     echo "From now on, the computer logs in as $ME and starts $WM when it starts."
     AUTOLOGIN_WM=$WM
 }
-open_at_login() {   # TVWCS opens its Quick Menu when the session starts (Settings > At login), as a TV would
+open_at_login() {   # TVWCS opens its Quick Menu when the session starts (Settings > Options > Open at login), as a TV would
     if XDG_CONFIG_HOME="$CONFIG_HOME" PYTHONPATH="$DEST" python3 -c 'from tvwcs.model import ConfigStore
-s = ConfigStore(); s.settings["startup"]["show_menu"] = True; s.save()' 2>/dev/null; then
-        echo "TVWCS now opens its Quick Menu at log-in (Settings > At login changes that)."
+s = ConfigStore(); s.settings["startup"]["mode"] = "menu"; s.save()' 2>/dev/null; then
+        echo "TVWCS now opens its Quick Menu at log-in (Settings > Options > Open at login changes that)."
     else echo "Could not set TVWCS to open at log-in; turn it on in its Settings > At login." >&2; fi
 }
 # Once the install is done, the session the automatic login starts is started now rather than at the next boot.
@@ -739,6 +739,26 @@ restart_tvwcs() {
     done
     echo "TVWCS was stopped but did not come back; start it with: $DEST/bin/tvwcs" >&2
 }
+
+# ------------------------------------------------------------------ on a TV, or on a desktop monitor
+# Asked until it is answered (Settings > Options > Used on changes it later): sets TVWCS's interface size and
+# where apps open. A running TVWCS is told to read its options again, so it never saves over the choice.
+config_py() { XDG_CONFIG_HOME="$CONFIG_HOME" PYTHONPATH="$DEST" python3 -c "$@" 2>/dev/null; }
+choose_use() {
+    USE=$(config_py 'from tvwcs.model import ConfigStore; print(ConfigStore().settings["use"])') || return 0
+    [ -z "$USE" ] && [ -t 0 ] || return 0
+    echo
+    printf "Will TVWCS be used on a TV or on a desktop monitor?\n  1) A TV: TV Mode size, and each app opens in a workspace of its own\n  2) A desktop monitor: Desktop size, and apps open tiled in the current workspace\nChoose 1 (TV) or 2 (desktop) [1]: "
+    read -r ANSWER || ANSWER=n
+    case "$ANSWER" in ""|1*|[Tt]*) USE=tv; ON="a TV" ;; 2*|[Dd]*) USE=desktop; ON="a desktop monitor" ;;
+        *) echo "Left as it is; choose it later in Settings > Options > Used on."; return 0 ;; esac
+    if config_py 'import sys; from tvwcs.model import ConfigStore, apply_use
+s = ConfigStore(); apply_use(s.settings, sys.argv[1]); s.save()' "$USE"; then
+        echo "TVWCS is set up for $ON (Settings > Options > Used on changes it)."
+        if running "$PID"; then XDG_RUNTIME_DIR="$RUNTIME" "$DEST/bin/tvwcs" reload >/dev/null 2>&1 || true; fi
+    else echo "Could not save that; choose it in Settings > Options > Used on." >&2; fi
+}
+choose_use
 if [ "$SRC" != "$DEST" ] && [ -z "${TVWCS_NO_RESTART:-}" ] && running "$PID"; then
     echo
     if [ -t 0 ]; then

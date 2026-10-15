@@ -1,6 +1,6 @@
 import json, tempfile, unittest
 from pathlib import Path
-from tvwcs.model import (ConfigStore, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
+from tvwcs.model import (ConfigStore, apply_use, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
 from tvwcs.applications import Application
 
 class ModelTests(unittest.TestCase):
@@ -63,13 +63,27 @@ class SettingsAndProfileTests(unittest.TestCase):
             s=ConfigStore(path).settings
             self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"]),("desktop",True,False))
             self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1","guide":""},"remote":{"menu":"F2","guide":"","fullscreen":""},"gamepad":{"menu":"F7","guide":""}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
-    def test_open_quick_menu_at_login_setting(self):
+    def test_open_at_login_is_one_choice(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"
-            self.assertFalse(ConfigStore(path).settings["startup"]["show_menu"])
-            path.write_text(json.dumps({"settings":{"startup":{"show_menu":"yes"}}})); self.assertFalse(ConfigStore(path).settings["startup"]["show_menu"])
-            store=ConfigStore(path); store.settings["startup"]["show_menu"]=True; store.save()
-            self.assertTrue(ConfigStore(path).settings["startup"]["show_menu"])
+            self.assertEqual(ConfigStore(path).settings["startup"],{"mode":"none","profile_id":"","last_profile_id":""})
+            path.write_text(json.dumps({"settings":{"startup":{"show_menu":True}}}))   # written before 2.11
+            self.assertEqual(ConfigStore(path).settings["startup"]["mode"],"menu")
+            path.write_text(json.dumps({"settings":{"startup":{"mode":"last","show_menu":True}}}))
+            self.assertEqual(ConfigStore(path).settings["startup"]["mode"],"last")
+            store=ConfigStore(path); store.settings["startup"]["mode"]="menu"; store.save()
+            self.assertEqual(ConfigStore(path).settings["startup"]["mode"],"menu")
+            self.assertNotIn("show_menu",json.loads(path.read_text())["settings"]["startup"])
+    def test_use_on_a_tv_or_a_desktop(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"; store=ConfigStore(path); self.assertEqual(store.settings["use"],"")
+            apply_use(store.settings,"tv"); store.save(); s=ConfigStore(path).settings
+            self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("tv","tenfoot",True,True))
+            s["scale"]="tenfoot_4k"; apply_use(s,"tv"); self.assertEqual(s["scale"],"tenfoot_4k")   # a 4K TV keeps its size
+            apply_use(s,"desktop")
+            self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("desktop","desktop",False,False))
+            self.assertRaises(ValueError,apply_use,s,"phone")
+            path.write_text(json.dumps({"settings":{"use":"phone"}})); self.assertEqual(ConfigStore(path).settings["use"],"")
     def test_a_key_used_twice_keeps_only_its_first_use(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"remote":{"menu":"F5","guide":"F5"},"gamepad":{"menu":"Mod4"}}}}))
