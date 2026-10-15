@@ -1,8 +1,8 @@
 """Running a power action (sleep, reboot, shut down) as root when it needs that. No GTK dependency.
 
-Under systemd or elogind, polkit normally lets the user at the screen do these without a password; it refuses
+Under systemd, polkit normally lets the user at the screen do these without a password; it refuses
 ("Interactive authentication required") when, for instance, another user is logged in, because i3 and sway run no
-polkit agent to ask. Without either, the plain reboot / poweroff / zzz commands always need root. Then TVWCS tries,
+polkit agent to ask. A plain reboot or poweroff command always needs root. Then TVWCS tries,
 in order: doas -n and sudo -n (a no-password rule, such as the one install.sh offers), and finally sudo -S with a
 password typed into TVWCS's own dialog. The password goes to sudo through a pipe; it is never stored."""
 from __future__ import annotations
@@ -10,7 +10,7 @@ import os, shutil
 
 # Every child is run with these, so the messages below can be recognised whatever the user's language is.
 C_LOCALE={"LC_ALL":"C","LANG":"C","LANGUAGE":""}
-PLAIN_ROOT_COMMANDS={"reboot","poweroff","halt","shutdown","zzz","ZZZ","pm-suspend"}
+PLAIN_ROOT_COMMANDS={"reboot","poweroff","halt","shutdown"}
 
 def c_locale_env(env=None):
     return {**(os.environ if env is None else env),**C_LOCALE}

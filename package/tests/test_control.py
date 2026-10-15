@@ -222,20 +222,15 @@ class UpdatesTests(unittest.TestCase):
     def test_apt(self):
         text="Listing...\nbash/noble-updates,noble-security 5.2.21-2ubuntu4.1 amd64 [upgradable from: 5.2.21-2ubuntu4]\nfirefox/noble 129.0 amd64\n"
         self.assertEqual(upd.parse_apt(text),[upd.Update("bash","5.2.21-2ubuntu4.1","5.2.21-2ubuntu4","noble-updates"),upd.Update("firefox","129.0","","noble")])
-    def test_dnf(self):
-        text="\nfirefox.x86_64                 128.0-1.fc40               updates\nkernel.x86_64   6.9.7-200.fc40   updates\nObsoleting Packages\ngrub2.x86_64  1:2.06-1  updates\n"
-        self.assertEqual([u.name for u in upd.parse_dnf(text)],["firefox","kernel"])
-    def test_pacman_zypper_xbps_apk_flatpak(self):
-        self.assertEqual(upd.parse_pacman("linux 6.9.7.arch1-1 -> 6.9.8.arch1-1\nmesa 1 -> 2 [ignored]\n"),[upd.Update("linux","6.9.8.arch1-1","6.9.7.arch1-1")])
+    def test_zypper_and_flatpak(self):
         self.assertEqual(upd.parse_zypper("S | Repository | Name | Current Version | Available Version | Arch\n--+---\nv | Main Repository | bash | 5.2.26-1.1 | 5.2.32-1.1 | x86_64\n"),
                          [upd.Update("bash","5.2.32-1.1","5.2.26-1.1","Main Repository")])
-        self.assertEqual(upd.parse_xbps("firefox-128.0_1 update x86_64 https://repo-default.voidlinux.org/current 1234 5678\n"),[upd.Update("firefox","128.0_1")])
-        self.assertEqual(upd.parse_apk("Installed:                                Available:\nbusybox-1.36.1-r28  < 1.36.1-r29\nlibcrypto3-3.3.1-r0 < 3.3.1-r3\n"),
-                         [upd.Update("busybox","1.36.1-r29","1.36.1-r28"),upd.Update("libcrypto3","3.3.1-r3","3.3.1-r0")])
         self.assertEqual(upd.parse_flatpak("org.mozilla.firefox\t129.0\tflathub\norg.gnome.Platform\t\tflathub\n"),
                          [upd.Update("org.mozilla.firefox","129.0","","flathub"),upd.Update("org.gnome.Platform","","","flathub")])
     def test_detect_uses_the_first_manager_found(self):
-        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("pacman","flatpak") else None).id,"pacman")
+        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","flatpak") else None).id,"zypper")
+        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("apt-get","zypper") else None).id,"apt")
+        self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("pacman","dnf","xbps-install","apk") else None))   # not supported (TODO.md)
         self.assertIsNone(upd.detect(which=lambda c:None))
     def test_age_and_reboot(self):
         self.assertEqual([upd.age_text(t,1000000) for t in (999990,1000000-300,1000000-7200,1000000-86400*3)],["just now","5 minutes ago","2 hours ago","3 days ago"])
@@ -247,7 +242,7 @@ class UpdatesTests(unittest.TestCase):
 class SysinfoTests(unittest.TestCase):
     def test_parsers(self):
         self.assertEqual(info.parse_os_release('NAME="Linux Mint"\nVERSION="22 (Wilma)"\nPRETTY_NAME="Linux Mint 22"\n'),"Linux Mint 22")
-        self.assertEqual(info.parse_os_release('NAME=Alpine\nVERSION=3.20\n'),"Alpine 3.20")
+        self.assertEqual(info.parse_os_release('NAME="openSUSE Leap"\nVERSION="15.6"\n'),"openSUSE Leap 15.6")
         self.assertEqual(info.parse_cpu("processor\t: 0\nmodel name\t: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz\n"),"Intel Core i5-8250U CPU @ 1.60GHz")
         self.assertEqual(info.parse_cpu("processor\t: 0\nBogoMIPS\t: 108.00\n\nHardware\t: BCM2835\nModel\t: Raspberry Pi 4\n"),"Raspberry Pi 4")
         self.assertEqual(info.parse_meminfo("MemTotal:  8000000 kB\nMemFree: 100 kB\nMemAvailable:  4000000 kB\n"),(8192000000,4096000000))

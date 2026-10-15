@@ -26,14 +26,10 @@ class SystemActionTests(unittest.TestCase):
         self.assertIsNone(command_for("refresh"))
     def test_power_without_systemd(self):
         have=lambda names:(lambda c: "/usr/bin/"+c if c in names else None)
-        elogind=have({"loginctl","reboot","poweroff"})   # Artix, Gentoo, Devuan...: elogind's loginctl
-        self.assertEqual([command_for(a,which=elogind,systemd=False) for a in ("sleep","reboot","shutdown")],
-                         [["loginctl","suspend"],["loginctl","reboot"],["loginctl","poweroff"]])
-        self.assertEqual(command_for("shutdown",which=have({"systemctl","loginctl"}),systemd=False),["loginctl","poweroff"])   # systemctl installed but not in charge
-        void=have({"zzz","reboot","poweroff"})   # runit with no elogind
-        self.assertEqual([command_for(a,which=void,systemd=False) for a in ("sleep","reboot","shutdown")],[["zzz"],["reboot"],["poweroff"]])
-        self.assertIsNone(command_for("sleep",which=have(set()),systemd=False))
-        self.assertIn("elogind",unavailable_message("reboot")); self.assertIn("lock_command",unavailable_message("lock"))
+        # only systemd is supported: systemctl installed but not in charge, or plain commands, do nothing (TODO.md)
+        self.assertIsNone(command_for("shutdown",which=have({"systemctl","loginctl","reboot","poweroff"}),systemd=False))
+        self.assertIsNone(command_for("sleep",which=have(set()),systemd=True))
+        self.assertIn("systemd",unavailable_message("reboot")); self.assertIn("lock_command",unavailable_message("lock"))
     def test_power_menu_offers_lock_when_enabled_and_log_out_with_a_login_screen(self):
         ids=lambda settings,dm:[a.id for a in power_menu(settings,dm)]
         self.assertEqual(ids({},False),["sleep","reboot","shutdown"])

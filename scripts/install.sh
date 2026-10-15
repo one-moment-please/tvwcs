@@ -1,17 +1,25 @@
 #!/bin/sh
 # Installs TVWCS into ~/.local/share/tvwcs (the program; your data stays in ~/.config/tvwcs) and sets up the
-# window manager: it offers to add TVWCS's include line to your i3 and/or sway config, moves an install from the
-# old location (~/.config/i3/tvwcs) over, and can create a config from the standard template if you have none.
-# Every change to a window manager config is asked first, and the file is backed up as <config>.tvwcs-backup.
-# Safe to re-run to upgrade; your settings in ~/.config/tvwcs are untouched.
+# window manager. It first asks how TVWCS is to be used:
+#   1) "dedicated": this computer is only for TVWCS. It offers to add TVWCS's include line to your i3 and/or sway
+#      config (or to create one from the standard template), and, without a login screen, to log you in and start
+#      i3 or sway at boot.
+#   2) "alongside": next to your other desktops. TVWCS gets a session of its own (its own i3 / sway config in
+#      ~/.config/tvwcs, and a "TVWCS" entry at the login screen); automatic login, the login screen's default session
+#      and your shell's profile are never touched, and adding TVWCS to your usual i3 / sway config is only an option.
+# It also moves an install from the old location (~/.config/i3/tvwcs) over. Every change to a config of yours is
+# asked first, and the file is backed up as <config>.tvwcs-backup. Safe to re-run to upgrade; your settings in
+# ~/.config/tvwcs are untouched. Supported: Debian and its family (apt) and openSUSE (zypper), with systemd.
 #
-# Environment: TVWCS_DEST=<folder> installs somewhere else. TVWCS_ASSUME_YES=1 answers yes to adding or updating
-# the include line and removing the old copy (for scripted installs). TVWCS_MIGRATE=1 answers yes only to moving
-# from the old location: updating the include line and removing the old copy (the in-app updater sets it once you
-# have agreed to the move there).
+# Environment: TVWCS_SETUP=dedicated|alongside answers the first question (default without a terminal: the choice
+# made last time, else dedicated). TVWCS_DEST=<folder> installs somewhere else. TVWCS_ASSUME_YES=1 answers yes to
+# adding or updating the include line, adding the login screen entry and removing the old copy (for scripted installs).
+# TVWCS_MIGRATE=1 answers yes only to moving from the old location: updating the include line and removing the old
+# copy (the in-app updater sets it once you have agreed to the move there).
 # TVWCS_NO_RESTART=1 skips the offer to restart a running TVWCS. TVWCS_WMS="i3 sway" chooses which window managers
-# to set up (default: those installed; with neither installed, it offers to install one). TVWCS_ETC overrides /etc (where the standard config templates are), and
-# TVWCS_RUN and TVWCS_VAR override /run and /var (where the init system is detected).
+# to set up (default: those installed; with neither installed, it offers to install one). TVWCS_ETC overrides /etc
+# (where the standard config templates are), TVWCS_RUN overrides /run (where systemd is detected), and TVWCS_SHARE
+# and TVWCS_BINDIR override /usr/share and /usr/local/bin (where the login screen's session entries go).
 set -eu
 RUN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)  # folder holding this script (repo scripts/, or a release root)
 
@@ -33,9 +41,15 @@ CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
 DEST=${TVWCS_DEST:-${XDG_DATA_HOME:-$HOME/.local/share}/tvwcs}
 LEGACY=$CONFIG_HOME/i3/tvwcs                          # where TVWCS 2.6 and older were installed
 ETC=${TVWCS_ETC:-/etc}
+SHARE=${TVWCS_SHARE:-/usr/share}
+BINDIR=${TVWCS_BINDIR:-/usr/local/bin}
 case "$DEST" in
     *\'*|*\"*|*"
 "*) echo "install.sh: the install folder may not contain quotes or line breaks: $DEST" >&2; exit 1 ;;
+esac
+case "${TVWCS_SETUP:-}" in
+    ""|dedicated|alongside) ;;
+    *) echo "install.sh: TVWCS_SETUP must be dedicated (this computer is only for TVWCS) or alongside (next to other desktops), not \"$TVWCS_SETUP\"." >&2; exit 1 ;;
 esac
 
 # ------------------------------------------------------------------ asking
@@ -48,6 +62,18 @@ ask() {
     printf "%s [Y/n] " "$1"
     read -r ANSWER || return 1
     case "$ANSWER" in [Nn]*) return 1 ;; *) return 0 ;; esac
+}
+ask_yes() {   # like ask, but only on a terminal (TVWCS_ASSUME_YES never installs packages). Enter means yes.
+    [ -t 0 ] || return 1
+    printf "%s [Y/n] " "$1"
+    read -r ANSWER || return 1
+    case "$ANSWER" in [Nn]*) return 1 ;; *) return 0 ;; esac
+}
+ask_no() {   # like ask, but only on a terminal, and Enter means no
+    [ -t 0 ] || return 1
+    printf "%s [y/N] " "$1"
+    read -r ANSWER || return 1
+    case "$ANSWER" in [Yy]*) return 0 ;; *) return 1 ;; esac
 }
 
 # ------------------------------------------------------------------ copy the program
@@ -73,7 +99,7 @@ install_files() {
     find "$DEST/tvwcs" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
     cp "$BIN" "$DEST/bin/tvwcs"
     cp "$NEWCONF" "$DEST/tvwcs.conf"; cp "$SRC/VERSION" "$DEST/"
-    for MD in README.md CHANGELOG.md PROJECT_OVERVIEW.md LICENSE; do [ -f "$DOCS/$MD" ] && cp "$DOCS/$MD" "$DEST/"; done
+    for MD in README.md CHANGELOG.md PROJECT_OVERVIEW.md TODO.md LICENSE; do [ -f "$DOCS/$MD" ] && cp "$DOCS/$MD" "$DEST/"; done
     chmod +x "$DEST/bin/tvwcs"
     [ -f "$LAUNCHER" ] && cp "$LAUNCHER" "$DEST/"
 }
@@ -133,59 +159,57 @@ elif [ -n "$MIGRATING" ] && grep -qF "$LEGACY/bin/tvwcs" "$HK"; then
 fi
 
 # ------------------------------------------------------------------ what else is needed, in this distribution's terms
+# TVWCS supports Debian and its family (apt) and openSUSE (zypper), both with systemd. Anything else is "unknown": the
+# installer then only lists what to install by hand. TODO.md has the package names and commands other distributions
+# had before, and what they would need again.
 # distro -> the family whose package manager and names apply, from /etc/os-release (ID, then ID_LIKE)
 distro() {
     ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi; for D in ${ID:-} ${ID_LIKE:-}; do
         case "$D" in
-            arch|artix|manjaro|endeavouros) echo arch; exit ;;
-            fedora|rhel|centos|rocky|almalinux|nobara) echo fedora; exit ;;
             opensuse*|suse|sles) echo suse; exit ;;
-            void) echo void; exit ;;
-            alpine) echo alpine; exit ;;
-            gentoo) echo gentoo; exit ;;
-            debian|ubuntu|linuxmint|devuan|pop|raspbian) echo debian; exit ;;
+            debian|ubuntu|linuxmint|pop|raspbian) echo debian; exit ;;
         esac
     done; echo unknown )
 }
-# pkg <need>: that need's package name here (gtk = GTK 4 and PyGObject)
+# pkg <need>: that need's package name here (gtk = GTK 4 and PyGObject). On an unknown distribution, the usual name.
 pkg() {
     case "$(distro):$1" in
-        debian:gtk) echo "python3-gi gir1.2-gtk-4.0" ;;      debian:i3) echo i3 ;;
-        arch:gtk) echo "python-gobject gtk4" ;;              arch:i3) echo i3-wm ;;
-        fedora:gtk|suse:gtk) echo "python3-gobject gtk4" ;;  void:gtk) echo "python3-gobject gtk4" ;;
-        alpine:gtk) echo "py3-gobject3 gtk4.0" ;;            alpine:i3) echo i3wm ;;
-        gentoo:gtk) echo "dev-python/pygobject gui-libs/gtk" ;;
-        gentoo:i3) echo x11-wm/i3 ;;                         gentoo:xdotool) echo x11-misc/xdotool ;;
-        arch:xinit) echo xorg-xinit ;;                       fedora:xinit) echo xorg-x11-xinit ;;   gentoo:xinit) echo x11-apps/xinit ;;
+        debian:gtk) echo "python3-gi gir1.2-gtk-4.0" ;;      suse:gtk) echo "python3-gobject gtk4" ;;
         *:gtk) echo "PyGObject GTK4" ;;
         # the Settings app's tools (optional): pactl, xrandr, bluetoothctl, nmcli, and VTE for its terminal
-        debian:pactl|fedora:pactl|suse:pactl|void:pactl|alpine:pactl) echo pulseaudio-utils ;;
-        arch:pactl) echo libpulse ;;                         gentoo:pactl) echo media-libs/libpulse ;;
-        arch:bluetoothctl) echo bluez-utils ;;               gentoo:bluetoothctl) echo net-wireless/bluez ;;  *:bluetoothctl) echo bluez ;;
-        debian:nmcli) echo network-manager ;;                arch:nmcli) echo networkmanager ;;
-        alpine:nmcli) echo networkmanager-cli ;;             gentoo:nmcli) echo net-misc/networkmanager ;;   *:nmcli) echo NetworkManager ;;
+        debian:pactl|suse:pactl) echo pulseaudio-utils ;;
+        *:bluetoothctl) echo bluez ;;
+        debian:nmcli) echo network-manager ;;                *:nmcli) echo NetworkManager ;;
         # sound: PipeWire with its PulseAudio layer (the Sound page talks to it with pactl) and its session manager
         debian:pipewire) echo "pipewire pipewire-pulse wireplumber dbus-user-session" ;;   # WirePlumber needs the session bus
-        arch:pipewire|alpine:pipewire) echo "pipewire pipewire-pulse wireplumber" ;;
-        fedora:pipewire|suse:pipewire) echo "pipewire pipewire-pulseaudio wireplumber" ;;
-        void:pipewire) echo "pipewire wireplumber" ;;   gentoo:pipewire) echo "media-video/pipewire media-video/wireplumber" ;;
+        *:pipewire) echo "pipewire pipewire-pulseaudio wireplumber" ;;
         # hides the mouse pointer while it is still (i3; sway does it itself)
-        debian:unclutter|alpine:unclutter) echo unclutter-xfixes ;;   gentoo:unclutter) echo x11-misc/unclutter-xfixes ;;
+        debian:unclutter) echo unclutter-xfixes ;;
         # Power and sleep: the idle time on X11 (libXss), or swayidle on sway
-        debian:xss) echo libxss1 ;;   arch:xss) echo libxss ;;   suse:xss) echo libXss1 ;;   alpine:xss) echo libxscrnsaver ;;
-        gentoo:xss) echo x11-libs/libXScrnSaver ;;   *:xss) echo libXScrnSaver ;;
-        debian:xrandr) echo x11-xserver-utils ;;             arch:xrandr) echo xorg-xrandr ;;               gentoo:xrandr) echo x11-apps/xrandr ;;
-        debian:vte) echo gir1.2-vte-3.91 ;;                  arch:vte) echo vte4 ;;                          fedora:vte) echo vte291-gtk4 ;;
+        debian:xss) echo libxss1 ;;   suse:xss) echo libXss1 ;;   *:xss) echo libXScrnSaver ;;
+        debian:xrandr) echo x11-xserver-utils ;;
+        debian:vte) echo gir1.2-vte-3.91 ;;                  suse:vte) echo typelib-1_0-Vte-3_91 ;;
         *:vte) echo "VTE-for-GTK-4" ;;
+        # the look: an icon theme (without one, apps show letter tiles and buttons text symbols), and Open Sans, the
+        # first font of TVWCS's Metro theme that distributions package (Segoe UI and Selawik are not packaged)
+        *:icons) echo adwaita-icon-theme ;;
+        debian:font) echo fonts-open-sans ;;                 suse:font) echo google-opensans-fonts ;;
+        *:font) echo "Open-Sans" ;;
         *) echo "$1" ;;
     esac
 }
 install_hint() {
     case "$(distro)" in
-        debian) echo "sudo apt install $1" ;;   arch) echo "sudo pacman -S $1" ;;   fedora) echo "sudo dnf install $1" ;;
-        suse) echo "sudo zypper install $1" ;;  void) echo "sudo xbps-install $1" ;; alpine) echo "doas apk add $1" ;;
-        gentoo) echo "sudo emerge $1" ;;        *) echo "install with your package manager: $1" ;;
+        debian) echo "sudo apt install $1" ;;   suse) echo "sudo zypper install $1" ;;
+        *) echo "install with your package manager: $1 (the usual names; yours may differ)" ;;
     esac
+}
+UNSUPPORTED_SAID=""
+unsupported_note() {   # said once, before the first thing this installer cannot install here
+    [ -z "$UNSUPPORTED_SAID" ] || return 0; UNSUPPORTED_SAID=1
+    echo "This installer can only install packages on Debian and its family (Debian, Ubuntu, Mint, Pop!_OS, Raspberry Pi OS)"
+    echo "and on openSUSE. Here, install what is listed with your own package manager; TODO.md (in $DEST) has the"
+    echo "package names other distributions use."
 }
 as_root() {   # run a command as root, asking for the password on this terminal
     if [ "$(id -u)" = 0 ]; then "$@"
@@ -194,22 +218,68 @@ as_root() {   # run a command as root, asking for the password on this terminal
     else echo "Neither sudo nor doas is installed; cannot change the system's settings." >&2; return 1; fi
 }
 
+# ------------------------------------------------------------------ what this computer has
+DISPLAY_MANAGERS="gdm gdm3 sddm lightdm lxdm xdm slim ly greetd emptty nodm entrance lemurs tbsm cdm"
+login_manager() {   # the login screen installed here, or ""
+    [ -e "$ETC/systemd/system/display-manager.service" ] && { echo display-manager.service; return; }
+    for DM in $DISPLAY_MANAGERS; do
+        command -v "$DM" >/dev/null 2>&1 && { echo "$DM"; return; }
+    done
+    echo ""
+}
+init_system() {   # systemd or other (TVWCS supports systemd only; TODO.md says what others would need)
+    if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd; else echo other; fi
+}
+desktop_sessions() {   # the login screen's other sessions (GNOME, Plasma...), by file name; i3, sway and TVWCS's own left out
+    for F in "$SHARE"/xsessions/*.desktop "$SHARE"/wayland-sessions/*.desktop; do
+        [ -f "$F" ] || continue
+        N=${F##*/}; N=${N%.desktop}
+        case "$N" in tvwcs-*|i3|i3-with-shmlog|sway) continue ;; esac
+        printf '%s ' "$N"
+    done
+}
+installed() { if command -v "$1" >/dev/null 2>&1; then echo "$1 installed"; else echo "$1 not installed"; fi; }
+
+# ------------------------------------------------------------------ how TVWCS is used here: the one question
+# 1) dedicated: the computer is only for TVWCS (it logs in and starts TVWCS at boot), set up for the user running this.
+# 2) alongside: next to other desktops. TVWCS gets its own session, picked at the login screen, and nothing about the
+#    other sessions changes. Suggested when a login screen or another desktop is found, as running TVWCS through the
+#    normal i3 / sway config would bring its hotkeys and autostart into that session too.
+# The answer is kept in ~/.config/tvwcs/setup, so that re-running (or the in-app updater) keeps to it.
+SETUP_FILE=$CONFIG_HOME/tvwcs/setup
+SAVED_SETUP=$(cat "$SETUP_FILE" 2>/dev/null || true)
+case "$SAVED_SETUP" in dedicated|alongside) ;; *) SAVED_SETUP="" ;; esac
+DM=$(login_manager); OTHERS=$(desktop_sessions); OTHERS=${OTHERS% }
+echo
+echo "Found: $( [ -n "$DM" ] && echo "login screen ($DM)" || echo "no login screen" ), $( [ -n "$OTHERS" ] && echo "desktop sessions ($(echo "$OTHERS" | sed 's/ /, /g'))" || echo "no desktop sessions" ), $(installed i3), $(installed sway)."
+if [ "$(distro)" = unknown ]; then unsupported_note; fi
+if [ "$(init_system)" != systemd ]; then
+    echo "This system does not run systemd. TVWCS supports systemd systems only: Sleep, Reboot and Shut down, the automatic"
+    echo "login and the SSH switch in Settings will not work here. TODO.md (in $DEST) says what other systems would need."
+fi
+if [ -n "$SAVED_SETUP" ]; then SUGGEST=$SAVED_SETUP
+elif [ -z "$DM" ] && [ -z "$OTHERS" ]; then SUGGEST=dedicated; else SUGGEST=alongside; fi
+if [ -n "${TVWCS_SETUP:-}" ]; then SETUP=$TVWCS_SETUP
+elif [ -t 0 ]; then
+    if [ "$SUGGEST" = dedicated ]; then N=1; else N=2; fi
+    printf "\nHow should TVWCS be set up?\n  1) This computer is only for TVWCS (it logs in and starts TVWCS at boot)\n  2) Next to my other desktops (choose TVWCS at the login screen)\nChoose 1 (only TVWCS) or 2 (next to other desktops) [%s]: " "$N"
+    read -r ANSWER || ANSWER=""
+    case "$ANSWER" in 1*) SETUP=dedicated ;; 2*) SETUP=alongside ;; *) SETUP=$SUGGEST ;; esac
+else
+    SETUP=${SAVED_SETUP:-dedicated}   # without a terminal, nothing new is set up: an upgrade keeps to the last choice
+fi
+mkdir -p "$(dirname "$SETUP_FILE")"; echo "$SETUP" > "$SETUP_FILE"
+if [ "$SETUP" = alongside ]; then echo "Setting TVWCS up next to your other desktops."; else echo "Setting this computer up for TVWCS only."; fi
+
 # ------------------------------------------------------------------ a window manager, when there is none (optional)
 # TVWCS runs in i3 or sway. With neither installed, offer to install one with the package manager: i3 (recommended:
 # TVWCS places its window best there) together with Xorg (unless an X server, such as XLibre, is already installed),
-# startx, xdotool and xrandr, or sway. Afterwards the rest of
-# the installer sets it up, and can set the computer to log in and start it at boot. Only offered on a terminal, and
-# not when TVWCS_WMS names the window managers to set up.
-wm_packages() {   # wm_packages <i3|sway>: what to install for it here, or "" when this distribution is not known
+# startx, xdotool and xrandr, or sway. Afterwards the rest of the installer sets it up. Installing one never makes it
+# the login screen's default session. Only offered on a terminal, and not when TVWCS_WMS names the window managers.
+wm_packages() {   # wm_packages <i3|sway>: what to install for it here, or "" when this distribution is not supported
     case "$(distro):$1" in
         debian:i3) echo "i3 xserver-xorg xinit xdotool x11-xserver-utils" ;;
-        arch:i3) echo "i3-wm xorg-server xorg-xinit xdotool xorg-xrandr" ;;
-        fedora:i3) echo "i3 xorg-x11-server-Xorg xorg-x11-xinit xdotool xrandr" ;;
         suse:i3) echo "i3 xorg-x11-server xinit xdotool xrandr" ;;
-        void:i3) echo "i3 xorg-minimal xinit xdotool xrandr" ;;
-        alpine:i3) echo "i3wm xorg-server xinit xdotool xrandr xf86-input-libinput" ;;
-        gentoo:i3) echo "x11-wm/i3 x11-base/xorg-server x11-apps/xinit x11-misc/xdotool x11-apps/xrandr" ;;
-        gentoo:sway) echo gui-wm/sway ;;
         unknown:*) echo "" ;;
         *:sway) echo sway ;;
     esac
@@ -226,25 +296,23 @@ x_server() {   # the X server already installed: XLibre, Xorg, or "" for none
 }
 without_x_server() {   # the packages given, less the X server's (XLibre replaces Xorg; installing Xorg over it would undo that)
     for P in "$@"; do
-        case "$P" in xserver-xorg|xorg-server|xorg-x11-server-Xorg|xorg-x11-server|xorg-minimal|x11-base/xorg-server) ;; *) printf '%s ' "$P" ;; esac
+        case "$P" in xserver-xorg|xorg-x11-server) ;; *) printf '%s ' "$P" ;; esac
     done
 }
 pkg_install() {   # pkg_install <packages>: install them with this distribution's package manager, as root
     case "$(distro)" in
         debian) as_root apt-get update -q && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
-        arch) as_root pacman -S --needed --noconfirm "$@" ;;
-        fedora) as_root dnf install -y "$@" ;;
         suse) as_root zypper --non-interactive install "$@" ;;
-        void) as_root xbps-install -Sy "$@" ;;
-        alpine) as_root apk add "$@" ;;
-        gentoo) as_root emerge --noreplace "$@" ;;
         *) return 1 ;;
     esac
 }
 offer_wm_install() {
     if command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1; then return 0; fi
-    [ -t 0 ] && [ -z "${TVWCS_WMS:-}" ] && [ -n "$(wm_packages i3)" ] || return 0
+    [ -t 0 ] && [ -z "${TVWCS_WMS:-}" ] || return 0
     echo; echo "Neither i3 nor sway is installed, and TVWCS runs in one of them."
+    if [ -z "$(wm_packages i3)" ]; then
+        unsupported_note; echo "Install i3 (with an X server and startx) or sway yourself, then run install.sh again."; return 0
+    fi
     XSERVER=$(x_server)
     if [ -n "$XSERVER" ]; then I3_CHOICE="i3, for the $XSERVER already installed (recommended)"; else I3_CHOICE="i3 with Xorg (recommended)"; fi
     printf "Install one now? 1) %s  2) sway  3) neither [1]: " "$I3_CHOICE"
@@ -261,11 +329,24 @@ offer_wm_install() {
 offer_wm_install
 
 # ------------------------------------------------------------------ the other packages TVWCS uses
-# Listed with what each is for, and offered for installing (on a terminal, on a known distribution); else the
-# command to install them is printed.
+# Listed with what each is for, and offered for installing (on a terminal, on a supported distribution); else the
+# command to install them is printed. A sound server that is already there is never replaced.
 NEEDS=""   # one line per need: "packages<TAB>what for"
 need() { NEEDS="$NEEDS$1	$2
 "; }
+icon_theme_installed() {   # Adwaita or Papirus, system-wide or the user's own (the themes TVWCS's icons are drawn from)
+    for D in "$SHARE/icons" "${XDG_DATA_HOME:-$HOME/.local/share}/icons" "$HOME/.icons"; do
+        for T in Adwaita Papirus Papirus-Dark; do [ -f "$D/$T/index.theme" ] && return 0; done
+    done
+    return 1
+}
+metro_font_installed() {   # a font the Metro theme names before the fallbacks: Segoe UI, Selawik or Open Sans
+    for D in "$SHARE/fonts" "${XDG_DATA_HOME:-$HOME/.local/share}/fonts" "$HOME/.fonts"; do
+        [ -d "$D" ] || continue
+        [ -n "$(find "$D" \( -iname 'OpenSans*' -o -iname 'Open_Sans*' -o -iname 'selawik*' -o -iname 'segoeui*' \) 2>/dev/null | sed -n 1p)" ] && return 0
+    done
+    return 1
+}
 python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || need "$(pkg gtk)" "GTK 4 for Python: TVWCS's windows (required)"
 command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg i3)" "i3: the window manager TVWCS runs in (required)"
 command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
@@ -279,23 +360,21 @@ if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then ne
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth"
 command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)"
 python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page"
+icon_theme_installed || need "$(pkg icons)" "icons for apps and buttons (Papirus, papirus-icon-theme, has more app icons)"
+metro_font_installed || need "$(pkg font)" "Open Sans: the font of TVWCS's Metro look"
 start_pipewire() {   # PipeWire just installed: start it in a session that runs now (systemd starts it by itself from the next log-in)
     command -v pipewire >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1 || return 0
     if systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1; then
         echo "Started PipeWire for $(id -un)."
     fi
 }
-ask_yes() {   # like ask, but only on a terminal (TVWCS_ASSUME_YES never installs packages). Enter means yes.
-    [ -t 0 ] || return 1
-    printf "%s [Y/n] " "$1"
-    read -r ANSWER || return 1
-    case "$ANSWER" in [Nn]*) return 1 ;; *) return 0 ;; esac
-}
 if [ -n "$NEEDS" ]; then
     echo; echo "Missing packages:"
     printf '%s' "$NEEDS" | while IFS='	' read -r P W; do printf '  %-36s %s\n' "$P" "$W"; done
     ALL=$(printf '%s' "$NEEDS" | cut -f1 | tr '\n' ' '); ALL=${ALL% }
-    if [ "$(distro)" != unknown ] && ask_yes "Install them now?"; then
+    if [ "$(distro)" = unknown ]; then
+        unsupported_note; echo "To install them:  $(install_hint "$ALL")"
+    elif ask_yes "Install them now?"; then
         # shellcheck disable=SC2086   # one word per package
         if pkg_install $ALL; then echo "Installed them."; start_pipewire
         else echo "Not everything could be installed. Install what is missing with:  $(install_hint "$ALL")" >&2; fi
@@ -332,29 +411,38 @@ include_state() {
 }
 
 backup() { cp "$1" "$1.tvwcs-backup"; }
+replace_include() {   # replace_include <config>: point its (first) TVWCS include line at this install
+    TMP=$(mktemp)
+    LINE="$INCLUDE_LINE" awk '/^[ \t]*include[ \t]/ && /tvwcs\.conf/ { if (!done) print ENVIRON["LINE"]; done = 1; next } { print }' "$1" > "$TMP"
+    cat "$TMP" > "$1"; rm -f "$TMP"
+}
 
 CHANGED_WMS=""
-include_in() {   # include_in <wm> <config>: add or update the include line (after asking)
-    WM=$1; CFG=$2
+# include_in <wm> <config> [optional]: add or update the include line (after asking). "optional" is the alongside
+# setup's question about your usual config: TVWCS's own session does not need it there, so Enter means no.
+include_in() {
+    WM=$1; CFG=$2; OPTIONAL=${3:-}
     case $(include_state "$CFG") in
-        current) echo "Your $WM config ($CFG) already includes TVWCS." ;;
+        current)
+            if [ -n "$OPTIONAL" ]; then
+                echo "Your usual $WM config ($CFG) also includes TVWCS, so TVWCS starts in that session too. The TVWCS session does not need it; remove the include line to keep TVWCS out of your usual $WM."
+            else echo "Your $WM config ($CFG) already includes TVWCS."; fi ;;
         other)
             if ask "Your $WM config ($CFG) includes TVWCS from its old location. Update it to $INCLUDE_PATH?" migrate; then
-                backup "$CFG"; TMP=$(mktemp)
-                LINE="$INCLUDE_LINE" awk '/^[ \t]*include[ \t]/ && /tvwcs\.conf/ { if (!done) print ENVIRON["LINE"]; done = 1; next } { print }' "$CFG" > "$TMP"
-                cat "$TMP" > "$CFG"; rm -f "$TMP"
+                backup "$CFG"; replace_include "$CFG"
                 echo "Updated the include line in $CFG (backup: $CFG.tvwcs-backup)."; CHANGED_WMS="$CHANGED_WMS $WM"
             else
                 echo "Left $CFG unchanged. Change its TVWCS include line to:"; echo "    $INCLUDE_LINE"
             fi ;;
         none)
-            if ask "Add TVWCS to your $WM config ($CFG)? This appends one include line."; then
-                backup "$CFG"
-                { echo; echo "# TVWCS: its window rules, hotkeys and autostart. Added by TVWCS's install.sh."; echo "$INCLUDE_LINE"; } >> "$CFG"
-                echo "Added the include line to $CFG (backup: $CFG.tvwcs-backup)."; CHANGED_WMS="$CHANGED_WMS $WM"
-            else
-                echo "Left $CFG unchanged. To use TVWCS, add this line to it and reload $WM:"; echo "    $INCLUDE_LINE"
-            fi ;;
+            if [ -n "$OPTIONAL" ]; then
+                ask_no "Also add TVWCS to your usual $WM config ($CFG)? Its hotkeys, autostart and window rules then apply in that session too (the TVWCS session does not need this)." || return 0
+            elif ! ask "Add TVWCS to your $WM config ($CFG)? This appends one include line."; then
+                echo "Left $CFG unchanged. To use TVWCS, add this line to it and reload $WM:"; echo "    $INCLUDE_LINE"; return 0
+            fi
+            backup "$CFG"
+            { echo; echo "# TVWCS: its window rules, hotkeys and autostart. Added by TVWCS's install.sh."; echo "$INCLUDE_LINE"; } >> "$CFG"
+            echo "Added the include line to $CFG (backup: $CFG.tvwcs-backup)."; CHANGED_WMS="$CHANGED_WMS $WM" ;;
     esac
 }
 
@@ -372,7 +460,7 @@ current_layout() {   # "layout variant" of the keyboard in use now, best guess; 
     if [ -z "$L" ] && [ -f "$ETC/default/keyboard" ]; then   # Debian and its family
         L=$(sed -n 's/^XKBLAYOUT="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ETC/default/keyboard"); V=$(sed -n 's/^XKBVARIANT="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ETC/default/keyboard")
     fi
-    if [ -z "$L" ]; then   # Arch, Fedora and the rest write the X keyboard settings here (localectl too, without systemd by hand)
+    if [ -z "$L" ]; then   # openSUSE (and localectl without a running systemd) write the X keyboard settings here
         for F in "$ETC"/X11/xorg.conf.d/*keyboard*.conf; do
             [ -f "$F" ] || continue
             L=$(awk 'tolower($0) ~ /option[ \t]+"xkblayout"/ { gsub(/"/, ""); print $3; exit }' "$F")
@@ -392,8 +480,9 @@ known_layout() {   # every comma-separated layout must be in XKB's list (when th
 }
 
 MOD=""; LAYOUT=""; VARIANT=""; LAYOUT_IS_CURRENT=""
-choose_keys() {   # asked once, shared by i3 and sway
+choose_keys() {   # asked once, shared by i3 and sway. Without a terminal: Super, and the current layout.
     [ -n "$MOD" ] && return
+    if [ ! -t 0 ]; then MOD=Mod4; set -- $(current_layout); LAYOUT=$1; VARIANT=${2:-}; LAYOUT_IS_CURRENT=1; return; fi
     printf "Which key should be your window manager's modifier (\$mod)?\n  1) Super (the Windows key)\n  2) Alt\nChoose 1 or 2 [1]: "
     read -r ANSWER || ANSWER=1
     case "$ANSWER" in 2*) MOD=Mod1 ;; *) MOD=Mod4 ;; esac
@@ -418,18 +507,19 @@ keycode_config() {
     M="$2" awk '/^# WARNING/ {next} /^set \$mod / {print "set $mod " ENVIRON["M"]; next} {print}' "$1"
 }
 
-create_i3_config() {
-    CFG="$CONFIG_HOME/i3/config"; mkdir -p "$(dirname "$CFG")"
+create_i3_config() {   # create_i3_config [file]: your i3 config (the default), or TVWCS's own session config
+    CFG=${1:-$CONFIG_HOME/i3/config}; mkdir -p "$(dirname "$CFG")"
     WIZ_MOD=win; [ "$MOD" = Mod1 ] && WIZ_MOD=alt
     # The standard way: i3-config-wizard writes the default config with key names from the current keyboard
-    # layout. It reads the live keymap, so it is only used for the current layout and with a display.
-    if [ -n "$LAYOUT_IS_CURRENT" ] && [ -n "${DISPLAY:-}" ] && command -v i3-config-wizard >/dev/null 2>&1; then
+    # layout. It reads the live keymap, so it is only used for the current layout and with a display. It can only
+    # write the usual config, so TVWCS's session config always comes from the keycode template.
+    if [ -z "${1:-}" ] && [ -n "$LAYOUT_IS_CURRENT" ] && [ -n "${DISPLAY:-}" ] && command -v i3-config-wizard >/dev/null 2>&1; then
         XDG_CONFIG_HOME="$CONFIG_HOME" i3-config-wizard -m "$WIZ_MOD" >/dev/null 2>&1 || true   # fails afterwards when i3 is not running
     fi
     if [ ! -s "$CFG" ]; then
         if [ -f "$ETC/i3/config.keycodes" ]; then keycode_config "$ETC/i3/config.keycodes" "$MOD" > "$CFG"
         elif [ -f "$ETC/i3/config" ]; then M="$MOD" awk '{gsub(/Mod1/, ENVIRON["M"]); print}' "$ETC/i3/config" > "$CFG"
-        else echo "No i3 template found in $ETC/i3 (is i3 installed?); no config created." >&2; return 1; fi
+        else rm -f "$CFG"; echo "No i3 template found in $ETC/i3 (is i3 installed?); no config created." >&2; return 1; fi
     fi
     if [ -z "$LAYOUT_IS_CURRENT" ]; then
         { echo; echo "# Keyboard layout, chosen when TVWCS's install.sh created this file"
@@ -438,8 +528,8 @@ create_i3_config() {
     echo "Created $CFG from the standard i3 template (\$mod = $( [ "$MOD" = Mod4 ] && echo Super || echo Alt ))."
 }
 
-create_sway_config() {
-    CFG="$CONFIG_HOME/sway/config"; mkdir -p "$(dirname "$CFG")"
+create_sway_config() {   # create_sway_config [file]: your sway config (the default), or TVWCS's own session config
+    CFG=${1:-$CONFIG_HOME/sway/config}; mkdir -p "$(dirname "$CFG")"
     [ -f "$ETC/sway/config" ] || { echo "No sway template found at $ETC/sway/config (is sway installed?); no config created." >&2; return 1; }
     M="$MOD" awk '/^set \$mod / {print "set $mod " ENVIRON["M"]; next} {print}' "$ETC/sway/config" > "$CFG"
     # sway does not take the layout from X: it uses "us" unless told otherwise, so any other layout is written down.
@@ -450,7 +540,7 @@ create_sway_config() {
     echo "Created $CFG from the standard sway template (\$mod = $( [ "$MOD" = Mod4 ] && echo Super || echo Alt ))."
 }
 
-setup_wm() {   # setup_wm <i3|sway>
+setup_wm() {   # setup_wm <i3|sway>: the dedicated setup's usual config
     WM=$1; CFG=$(wm_config "$WM")
     if [ -n "$CFG" ]; then include_in "$WM" "$CFG"; return; fi
     if [ -t 0 ] && ask "There is no $WM config yet. Create one from the standard template?"; then
@@ -460,6 +550,91 @@ setup_wm() {   # setup_wm <i3|sway>
     echo "No $WM config found. Once you have one, add this line to it and reload $WM:"; echo "    $INCLUDE_LINE"
 }
 
+# ---- the alongside setup: TVWCS's own session
+# TVWCS's session runs i3 or sway with a config of its own, ~/.config/tvwcs/<wm>-session.conf: the standard template
+# plus the include line, so TVWCS's hotkeys, autostart and window rules stay out of your usual i3 / sway. It is
+# TVWCS's file, so it is created and kept pointing at this install without asking (edit it as you like otherwise).
+# The session is started by tvwcs-session, a small wrapper that exports TVWCS_SESSION (and the config's path in
+# TVWCS_SESSION_CONFIG), so TVWCS knows which config is its own (Settings' xss-lock fix changes that one).
+session_config() { echo "$CONFIG_HOME/tvwcs/$1-session.conf"; }
+SESSION_WMS=""
+setup_session_config() {   # setup_session_config <i3|sway>
+    WM=$1; SCFG=$(session_config "$WM")
+    if [ ! -f "$SCFG" ]; then
+        command -v "$WM" >/dev/null 2>&1 || [ -n "${TVWCS_WMS:-}" ] || return 0
+        choose_keys
+        create_${WM}_config "$SCFG" || { echo "Install $WM, then run install.sh again to create TVWCS's $WM session."; return 0; }
+        TMP=$(mktemp)
+        { echo "# TVWCS's own $WM session (\"TVWCS ($WM)\" at the login screen), not your usual $WM config. Written by TVWCS's"
+          echo "# install.sh from the standard template; edit it as you like. Your usual $WM config is not used in this session."
+          cat "$SCFG"; echo; echo "# TVWCS: its window rules, hotkeys and autostart."; echo "$INCLUDE_LINE"; } > "$TMP"
+        cat "$TMP" > "$SCFG"; rm -f "$TMP"
+    else
+        case $(include_state "$SCFG") in
+            current) ;;
+            other) replace_include "$SCFG"; echo "Pointed $SCFG at this install." ;;
+            none) { echo; echo "# TVWCS: its window rules, hotkeys and autostart."; echo "$INCLUDE_LINE"; } >> "$SCFG"; echo "Added TVWCS back to $SCFG." ;;
+        esac
+        echo "TVWCS's $WM session uses $SCFG."
+    fi
+    SESSION_WMS="$SESSION_WMS $WM"
+}
+session_wrapper() {   # the tvwcs-session script: nothing in it is about one user, so one copy serves everyone
+    cat <<'WRAPPER'
+#!/bin/sh
+# TVWCS's own session: i3 or sway with TVWCS's session config (~/.config/tvwcs/<wm>-session.conf), not your usual one.
+# Written by TVWCS's install.sh. Run by the login screen's "TVWCS" entries, or from a text console:
+#     startx <path to this file> i3        or        <path to this file> sway
+WM=${1:-i3}
+CFG=${XDG_CONFIG_HOME:-$HOME/.config}/tvwcs/$WM-session.conf
+case "$WM" in i3|sway) ;; *) echo "tvwcs-session: use i3 or sway, not $WM" >&2; exit 2 ;; esac
+if [ ! -f "$CFG" ]; then
+    echo "tvwcs-session: $CFG is missing. Run TVWCS's install.sh and choose \"Next to my other desktops\"." >&2; exit 1
+fi
+# TVWCS reads these to know that this session's config is its own one.
+TVWCS_SESSION=$WM; TVWCS_SESSION_CONFIG=$CFG; export TVWCS_SESSION TVWCS_SESSION_CONFIG
+exec "$WM" -c "$CFG"
+WRAPPER
+}
+session_entry() {   # session_entry <i3|sway>: the login screen's entry for it
+    printf '%s\n' "[Desktop Entry]" "Type=Application" "Name=TVWCS ($1)" \
+        "Comment=TVWCS in a $1 session of its own, made for a TV and a remote (added by TVWCS's install.sh)" \
+        "Exec=$BINDIR/tvwcs-session $1" "TryExec=$1" "DesktopNames=$1"
+}
+entry_path() { if [ "$1" = i3 ]; then echo "$SHARE/xsessions/tvwcs-i3.desktop"; else echo "$SHARE/wayland-sessions/tvwcs-sway.desktop"; fi; }
+setup_login_entries() {
+    # A copy of the wrapper in TVWCS's own folder, for startx and for computers without a login screen.
+    session_wrapper > "$DEST/bin/tvwcs-session"; chmod +x "$DEST/bin/tvwcs-session"
+    [ -n "$SESSION_WMS" ] || return 0
+    if [ -z "$DM" ]; then
+        echo; echo "There is no login screen here. To start TVWCS's session from a text console, log in and run:"
+        for WM in $SESSION_WMS; do
+            if [ "$WM" = i3 ]; then echo "    startx '$DEST/bin/tvwcs-session' i3"; else echo "    '$DEST/bin/tvwcs-session' sway"; fi
+        done
+        return 0
+    fi
+    # The entries and the wrapper they run go into the system's folders, which needs root once. Unchanged ones are
+    # not written again.
+    STAGE=$(mktemp -d); session_wrapper > "$STAGE/tvwcs-session"; set -- "$BINDIR/tvwcs-session" "$STAGE/tvwcs-session"; ALL_SAME=1
+    same_file "$STAGE/tvwcs-session" "$BINDIR/tvwcs-session" 2>/dev/null || ALL_SAME=""
+    for WM in $SESSION_WMS; do
+        session_entry "$WM" > "$STAGE/$WM.desktop"; set -- "$@" "$(entry_path "$WM")" "$STAGE/$WM.desktop"
+        same_file "$STAGE/$WM.desktop" "$(entry_path "$WM")" 2>/dev/null || ALL_SAME=""
+    done
+    echo
+    if [ -n "$ALL_SAME" ]; then echo "The login screen already lists TVWCS's session."; rm -rf "$STAGE"; LOGIN_ENTRY=1; return 0; fi
+    if ! ask "Add a \"TVWCS\" session to the login screen? This adds$(for WM in $SESSION_WMS; do printf ' %s' "$(entry_path "$WM")"; done) and $BINDIR/tvwcs-session, and asks for your password once."; then
+        echo "No login screen entry was added. Run install.sh again to add it, or start the session from a text console with:"
+        echo "    startx '$DEST/bin/tvwcs-session' i3"; rm -rf "$STAGE"; return 0
+    fi
+    if as_root sh -c 'set -e; mkdir -p "$(dirname "$1")"; cp "$2" "$1"; chmod 0755 "$1"; shift 2
+                      while [ $# -gt 0 ]; do mkdir -p "$(dirname "$1")"; cp "$2" "$1"; chmod 0644 "$1"; shift 2; done' sh "$@"; then
+        echo "Added TVWCS's session to the login screen (delete$(for WM in $SESSION_WMS; do printf ' %s' "$(entry_path "$WM")"; done) and $BINDIR/tvwcs-session to undo it)."
+        LOGIN_ENTRY=1
+    else echo "Could not add the login screen entry; nothing was changed." >&2; fi
+    rm -rf "$STAGE"
+}
+
 echo
 WMS=${TVWCS_WMS:-}
 if [ -z "$WMS" ]; then
@@ -467,7 +642,16 @@ if [ -z "$WMS" ]; then
     command -v sway >/dev/null 2>&1 && WMS="$WMS sway"
     [ -n "$WMS" ] || WMS="i3"   # nothing installed yet: still say what to add once it is
 fi
-for WM in $WMS; do setup_wm "$WM"; done
+LOGIN_ENTRY=""
+if [ "$SETUP" = alongside ]; then
+    for WM in $WMS; do setup_session_config "$WM"; done
+    setup_login_entries
+    for WM in $WMS; do   # your usual config: only on request
+        CFG=$(wm_config "$WM"); [ -n "$CFG" ] && include_in "$WM" "$CFG" optional
+    done
+else
+    for WM in $WMS; do setup_wm "$WM"; done
+fi
 
 # ---- reaching the running i3 / sway, also from an SSH login (which has no DISPLAY, SWAYSOCK or I3SOCK)
 user_runtime() {   # this user's runtime folder: XDG_RUNTIME_DIR, else /run/user/<uid> when it exists, else ""
@@ -494,27 +678,21 @@ wm_msg() {   # wm_msg <i3|sway> <arguments>: send a command to the running one; 
     WS_TOOL=$(wm_tool "$1"); shift; "$WS_TOOL" -s "$WS" "$@"
 }
 
-# A window manager that is running reloads its changed config, so TVWCS's hotkeys work straight away.
+# A window manager that is running reloads its changed config, so TVWCS's hotkeys work straight away. (In the
+# alongside setup this is only your usual config, and only when you chose to add TVWCS to it.)
 for WM in $CHANGED_WMS; do
     if wm_msg "$WM" -q reload >/dev/null 2>&1; then echo "Reloaded $WM."; fi
 done
 
 # ------------------------------------------------------------------ power actions without a password (optional)
-# Sleep, Reboot and Shut down need root when polkit cannot allow them (no systemd or elogind, or another user is
-# logged in). TVWCS then asks for your sudo password on screen; this optional rule lets your user run exactly those
-# commands, with exactly those arguments, without one. Only offered on a terminal, and only on a clear yes.
-ask_no() {   # like ask, but Enter means no
-    [ -t 0 ] || return 1
-    printf "%s [y/N] " "$1"
-    read -r ANSWER || return 1
-    case "$ANSWER" in [Yy]*) return 0 ;; *) return 1 ;; esac
-}
+# Sleep, Reboot and Shut down need root when polkit cannot allow them (another user is logged in, say). TVWCS then
+# asks for your sudo password on screen; this optional rule lets your user run exactly those commands, with exactly
+# those arguments, without one. Only offered on a terminal, and only on a clear yes.
 program_paths() {   # every installed path of a program (sudo and doas rules match the path TVWCS runs it by)
     for DIR in /usr/bin /bin /usr/sbin /sbin /usr/local/bin /usr/local/sbin; do [ -x "$DIR/$1" ] && echo "$DIR/$1"; done; return 0
 }
-power_commands() {   # "path arguments" for each power command here, one per line ("path" alone = no arguments)
-    for P in $(program_paths systemctl) $(program_paths loginctl); do for V in suspend reboot poweroff; do echo "$P $V"; done; done
-    for C in reboot poweroff zzz; do for P in $(program_paths $C); do echo "$P"; done; done
+power_commands() {   # "path arguments" for each power command here, one per line
+    for P in $(program_paths systemctl); do for V in suspend reboot poweroff; do echo "$P $V"; done; done
 }
 sudo_rule() {   # sudo_rule <user>: the sudoers drop-in. Its alias is named after the user, so every user can have one.
     ALIAS=TVWCS_POWER_$(echo "$1" | tr 'a-z.-' 'A-Z__')
@@ -572,50 +750,25 @@ setup_power_rule() {
 }
 setup_power_rule
 
-# ------------------------------------------------------------------ log in and start i3 / sway at boot (optional)
+# ------------------------------------------------------------------ log in and start i3 / sway at boot (dedicated only)
 # On a computer with no login screen (display manager) yet, offer to log this user in on the first console at boot
 # and start i3 (through startx) or sway there, so it boots straight into TVWCS like a TV. Only offered on a terminal,
-# and only on a clear yes. The console login is set up through systemd (getty@tty1) or runit (agetty-tty1); the
-# window manager is started from the login shell's profile, only on tty1 and only when no session is running there.
-DISPLAY_MANAGERS="gdm gdm3 sddm lightdm lxdm xdm slim ly greetd emptty nodm entrance lemurs tbsm cdm"
-login_manager() {   # the login screen installed here, or ""
-    [ -e "$ETC/systemd/system/display-manager.service" ] && { echo display-manager.service; return; }
-    for DM in $DISPLAY_MANAGERS; do
-        command -v "$DM" >/dev/null 2>&1 && { echo "$DM"; return; }
-        [ -e "$ETC/sv/$DM" ] && [ -e "${TVWCS_VAR:-/var}/service/$DM" ] && { echo "$DM"; return; }
-    done
-    echo ""
-}
-init_system() {   # systemd, runit or other
-    if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd
-    elif [ -d "$ETC/sv/agetty-tty1" ] && command -v sv >/dev/null 2>&1; then echo runit
-    else echo other; fi
-}
+# and only on a clear yes. The console login is set up through systemd (getty@tty1); the window manager is started
+# from the login shell's profile, only on tty1 and only when no session is running there. The alongside setup never
+# offers this, and never changes the login screen's default session or the shell's profile.
 GETTY_OVERRIDE=$ETC/systemd/system/getty@tty1.service.d/autologin.conf
 console_login_set() {   # the first console already logs someone in by itself
-    case $(init_system) in
-        systemd) [ -f "$GETTY_OVERRIDE" ] && grep -q -- '--autologin' "$GETTY_OVERRIDE" ;;
-        runit) grep -q -- '--autologin' "$ETC/sv/agetty-tty1/conf" 2>/dev/null ;;
-        *) return 1 ;;
-    esac
+    [ "$(init_system)" = systemd ] && [ -f "$GETTY_OVERRIDE" ] && grep -q -- '--autologin' "$GETTY_OVERRIDE"
 }
 set_console_login() {   # set_console_login <user>
-    case $(init_system) in
-        systemd)
-            AGETTY=$(command -v agetty 2>/dev/null || echo /sbin/agetty)
-            TMP=$(mktemp)
-            printf '%s\n' "# Written by TVWCS's install.sh: logs $1 in on the first console at boot. Delete this file to undo it." \
-                "[Service]" "ExecStart=" "ExecStart=-$AGETTY -o '-p -f -- \\\\u' --noclear --autologin $1 %I \$TERM" > "$TMP"
-            as_root sh -c 'mkdir -p "$(dirname "$1")" && cat > "$1" && chmod 0644 "$1"' sh "$GETTY_OVERRIDE" < "$TMP"; R=$?; rm -f "$TMP"
-            [ $R = 0 ] || return 1
-            echo "Added $GETTY_OVERRIDE (delete it to undo the automatic login)." ;;
-        runit)
-            CONF=$ETC/sv/agetty-tty1/conf
-            as_root sh -c 'cp "$1" "$1.tvwcs-backup" && sed "s/^\([[:space:]]*\)GETTY_ARGS=\"*\([^\"]*\)\"*/\1GETTY_ARGS=\"--autologin $2 \2\"/" "$1.tvwcs-backup" > "$1"' sh "$CONF" "$1" || return 1
-            grep -q -- '--autologin' "$CONF" || { echo "GETTY_ARGS=\"--autologin $1 --noclear\"" | as_root tee -a "$CONF" >/dev/null || return 1; }
-            echo "Changed $CONF to log $1 in automatically (the original is $CONF.tvwcs-backup)." ;;
-        *) return 1 ;;
-    esac
+    [ "$(init_system)" = systemd ] || return 1
+    AGETTY=$(command -v agetty 2>/dev/null || echo /sbin/agetty)
+    TMP=$(mktemp)
+    printf '%s\n' "# Written by TVWCS's install.sh: logs $1 in on the first console at boot. Delete this file to undo it." \
+        "[Service]" "ExecStart=" "ExecStart=-$AGETTY -o '-p -f -- \\\\u' --noclear --autologin $1 %I \$TERM" > "$TMP"
+    as_root sh -c 'mkdir -p "$(dirname "$1")" && cat > "$1" && chmod 0644 "$1"' sh "$GETTY_OVERRIDE" < "$TMP"; R=$?; rm -f "$TMP"
+    [ $R = 0 ] || return 1
+    echo "Added $GETTY_OVERRIDE (delete it to undo the automatic login)."
 }
 # The start lines for the login shell, between markers so that running install.sh again replaces them.
 START_BEGIN="# >>> TVWCS: start the window manager after the automatic login (added by install.sh; delete to undo) >>>"
@@ -666,7 +819,9 @@ setup_autologin() {
     case "$ME" in [a-z_]*) ;; *) return 0 ;; esac
     case "$ME" in *[!a-zA-Z0-9_.-]*) return 0 ;; esac
     [ -z "$(login_manager)" ] || return 0
-    [ "$(init_system)" != other ] || return 0
+    if [ "$(init_system)" != systemd ]; then
+        echo; echo "Logging in and starting TVWCS at boot needs systemd, so it was not offered (TODO.md has what other systems need)."; return 0
+    fi
     CHOICES=""
     for WM in $WMS; do
         command -v "$WM" >/dev/null 2>&1 || continue
@@ -716,15 +871,15 @@ start_console_session() {
     if command -v who >/dev/null 2>&1 && who 2>/dev/null | awk '$2 == "tty1" { found = 1 } END { exit !found }'; then
         echo "Someone is logged in on the computer's first console, so $WM was not started now; it starts there at the next start."; return 0
     fi
-    case $(init_system) in
-        systemd) as_root systemctl restart getty@tty1.service ;;
-        runit) as_root sv restart "${TVWCS_VAR:-/var}/service/agetty-tty1" ;;
-    esac || { echo "Could not start the console login now; $WM starts when the computer next starts." >&2; return 0; }
+    as_root systemctl restart getty@tty1.service || { echo "Could not start the console login now; $WM starts when the computer next starts." >&2; return 0; }
     if command -v chvt >/dev/null 2>&1; then as_root chvt 1 >/dev/null 2>&1 || true; fi   # put the first console on the screen
     echo "Started $WM: the computer's screen logs in as $(id -un) and shows it now."
 }
 AUTOLOGIN_WM=""
-setup_autologin
+if [ "$SETUP" = dedicated ]; then setup_autologin
+elif console_login_set; then   # left from an earlier dedicated setup: say so, but leave it alone
+    echo; echo "This computer still logs someone in by itself at start-up (from an earlier install). To stop that, delete $GETTY_OVERRIDE and the TVWCS lines in your shell's login file."
+fi
 
 # ------------------------------------------------------------------ restart a running TVWCS
 # A running TVWCS keeps using the old program until it is restarted. Offer to do that now. The in-app updater sets
@@ -813,5 +968,9 @@ if [ -n "$MIGRATING" ]; then
     fi
 fi
 
-# ------------------------------------------------------------------ start the session set up above, now
+# ------------------------------------------------------------------ what next
+if [ "$SETUP" = alongside ] && [ -n "$LOGIN_ENTRY" ]; then
+    echo; echo "Done. To use TVWCS, log out and choose$(for WM in $SESSION_WMS; do printf ' "TVWCS (%s)"' "$WM"; done | sed 's/" "/" or "/g') at the login screen."
+fi
+# The dedicated setup: start the session set up above, now.
 [ -z "$AUTOLOGIN_WM" ] || start_console_session

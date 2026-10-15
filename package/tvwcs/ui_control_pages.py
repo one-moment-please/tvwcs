@@ -429,7 +429,7 @@ class PowerPage(Page):
                   if own else "Lock (after the time above, or from the power menu) uses the screen locker the system has, such as i3lock or swaylock.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
-                      "TVWCS cannot tell how long the computer has been idle: install libxss1 (or xprintidle).","error")
+                      "TVWCS cannot tell how long the computer has been idle: install libxss1 (libXss1 on openSUSE), or xprintidle.","error")
         self.section("WHAT THE SYSTEM DOES BY ITSELF")
         if s.session=="X11":
             x=s.xtimers
@@ -441,7 +441,7 @@ class PowerPage(Page):
                          detail="DPMS power saving",ident="sys:dpms")
             if s.xss_lock:
                 self.row("Locks when the screen turns off","Yes",self.stop_xss_lock if s.xss_lock!="?" else None,
-                         detail="xss-lock is running"+(", started by your i3 config. Choose this to stop it" if s.xss_lock!="?" else
+                         detail="xss-lock is running"+((", started by TVWCS's session config" if os.environ.get("TVWCS_SESSION") else ", started by your i3 config")+". Choose this to stop it" if s.xss_lock!="?" else
                                                        ". Remove it from the file that starts it to stop the screen locking"),
                          icon="system-lock-screen-symbolic",fallback="🔒",ident="sys:xss")
         l=s.logind
@@ -1112,7 +1112,7 @@ class SystemPage(Page):
         self.win.confirm("Install the SSH server?","This installs OpenSSH's server with the package manager. Turn it on here afterwards.",
                          "Install",lambda:self.as_root(ssh.install_argv(),"Installing the SSH server","Installing the SSH server…"),danger=False)
     def switch_ssh(self, s):
-        if not s.unit: self.win.notice("SSH","Without systemd, start and stop the SSH server with your init system's own tools."); return
+        if not s.unit: self.win.notice("SSH","The SSH server has no systemd service here (ssh or sshd), so Settings cannot start or stop it."); return
         if s.active:
             self.win.confirm("Turn SSH off?","Nobody can sign in from another computer until it is turned on again. "
                              "Connections open now stay open.","Turn off",lambda:self.as_root(ssh.service_argv(s,False),"Turning SSH off","Turning SSH off…"))
