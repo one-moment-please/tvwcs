@@ -4,7 +4,7 @@ this computer from another one (its local name, addresses and user). No GTK depe
 Changing anything needs root, so this module only builds the commands; the panel runs them through sudo or doas.
 Password sign-in is switched with one drop-in file, /etc/ssh/sshd_config.d/00-tvwcs.conf: sshd keeps the first value
 it reads for a setting, and the drop-ins are read in name order where sshd_config includes them (at its top on
-Debian, Ubuntu, Fedora and Arch). Keys only is refused while the user has no key, so it cannot lock everyone out."""
+Debian, Ubuntu and openSUSE). Keys only is refused while the user has no key, so it cannot lock everyone out."""
 from __future__ import annotations
 import getpass, glob, os, shlex, shutil, socket
 from dataclasses import dataclass, field
@@ -16,14 +16,12 @@ from tvwcs.control_network import parse_ip_json
 SSH_DIR=Path("/etc/ssh")
 DROPIN_NAME="00-tvwcs.conf"
 KEY_TYPES=("ssh-","ecdsa-","sk-ssh-","sk-ecdsa-")
-INSTALL={"apt-get":["apt-get","install","-y","openssh-server"],"dnf":["dnf","install","-y","openssh-server"],
-         "pacman":["pacman","-S","--needed","--noconfirm","openssh"],"zypper":["zypper","--non-interactive","install","openssh-server"],
-         "xbps-install":["xbps-install","-y","openssh"],"apk":["apk","add","openssh-server"]}
+INSTALL={"apt-get":["apt-get","install","-y","openssh-server"],"zypper":["zypper","--non-interactive","install","openssh-server"]}
 
 @dataclass
 class SshState:
     installed: bool=False
-    unit: str=""                 # the systemd unit: ssh (Debian, Ubuntu) or sshd (the rest); "" without systemd
+    unit: str=""                 # the systemd unit: ssh (Debian, Ubuntu) or sshd (openSUSE); "" when there is none
     enabled: bool=False          # starts with the computer
     active: bool=False           # running now
     passwords: bool=True         # password sign-in is allowed

@@ -385,7 +385,7 @@ class PowerPage(Page):
                   "or while an application keeps the computer awake.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
-                      "TVWCS cannot tell how long the computer has been idle: install libxss1 (or xprintidle).","error")
+                      "TVWCS cannot tell how long the computer has been idle: install libxss1 (libXss1 on openSUSE), or xprintidle.","error")
         self.section("WHAT THE SYSTEM DOES BY ITSELF")
         if s.session=="X11":
             x=s.xtimers
@@ -1059,7 +1059,7 @@ class SystemPage(Page):
         self.win.confirm("Install the SSH server?","This installs OpenSSH's server with the package manager. Turn it on here afterwards.",
                          "Install",lambda:self.as_root(ssh.install_argv(),"Installing the SSH server","Installing the SSH server…"),danger=False)
     def switch_ssh(self, s):
-        if not s.unit: self.win.notice("SSH","Without systemd, start and stop the SSH server with your init system's own tools."); return
+        if not s.unit: self.win.notice("SSH","The SSH server has no systemd service here (ssh or sshd), so Settings cannot start or stop it."); return
         if s.active:
             self.win.confirm("Turn SSH off?","Nobody can sign in from another computer until it is turned on again. "
                              "Connections open now stay open.","Turn off",lambda:self.as_root(ssh.service_argv(s,False),"Turning SSH off","Turning SSH off…"))

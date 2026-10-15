@@ -1,4 +1,4 @@
-"""Software updates for Settings: the distribution's package manager, plus Flatpak. No GTK dependency.
+"""Software updates for Settings: the distribution's package manager (apt or zypper), plus Flatpak. No GTK dependency.
 
 Listing the waiting updates never needs root. Installing them does: the panel runs the `install` command through
 sudo or doas (see privilege.py and ui_control.py), and Flatpak's own update as the user."""
@@ -24,8 +24,6 @@ class Manager:
     install_argv: tuple  # runs as root (or as the user, for Flatpak)
     needs_root: bool = True
     ok_codes: tuple = (0,)   # exit codes of list_argv that mean "it worked" (some exit non-zero when updates wait)
-    fallback: tuple = ()     # another list command, when list_argv's tool is missing
-    fallback_ok: tuple = (0,)
     refresh_argv: tuple = () # downloads fresh package lists, as root, where listing alone reads the cached ones
 
 @dataclass
@@ -50,49 +48,12 @@ def parse_apt(text):
         if m: found.append(Update(m.group(1),m.group(3),(m.group(4) or "").strip(),m.group(2).split(",")[0]))
     return found
 
-def parse_dnf(text):
-    """`dnf -q check-update`: 'firefox.x86_64   128.0-1.fc40   updates'. Stops at 'Obsoleting Packages'."""
-    found=[]
-    for line in text.splitlines():
-        if line.lower().startswith(("obsoleting","security:","last metadata")): break
-        parts=line.split()
-        if len(parts)==3 and "." in parts[0] and not line.startswith(" "):
-            found.append(Update(parts[0].rsplit(".",1)[0],parts[1],"",parts[2]))
-    return found
-
-_PACMAN=re.compile(r"^(\S+)\s+(\S+)\s+->\s+(\S+)")
-def parse_pacman(text):
-    """`checkupdates` or `pacman -Qu`: 'linux 6.9.7.arch1-1 -> 6.9.8.arch1-1' (an '[ignored]' one is left out)."""
-    found=[]
-    for line in text.splitlines():
-        m=_PACMAN.match(line.strip())
-        if m and "[ignored]" not in line: found.append(Update(m.group(1),m.group(3),m.group(2)))
-    return found
-
 def parse_zypper(text):
     """`zypper -q list-updates`: 'v | Main Repository | bash | 5.2.26-1.1 | 5.2.32-1.1 | x86_64'."""
     found=[]
     for line in text.splitlines():
         cols=[c.strip() for c in line.split("|")]
         if len(cols)>=6 and cols[0]=="v": found.append(Update(cols[2],cols[4],cols[3],cols[1]))
-    return found
-
-def parse_xbps(text):
-    """`xbps-install -Mun`: 'firefox-128.0_1 update x86_64 https://repo-default.voidlinux.org/current …'."""
-    found=[]
-    for line in text.splitlines():
-        parts=line.split()
-        if len(parts)>=2 and parts[1] in ("update","install") and "-" in parts[0]:
-            name,version=parts[0].rsplit("-",1); found.append(Update(name,version))
-    return found
-
-_APK=re.compile(r"^(\S+?)-(\d\S*-r\d+)\s+<\s+(\S+)")
-def parse_apk(text):
-    """`apk version -l '<'`: 'busybox-1.36.1-r28   < 1.36.1-r29' (the first line is a header)."""
-    found=[]
-    for line in text.splitlines():
-        m=_APK.match(line.strip())
-        if m: found.append(Update(m.group(1),m.group(3),m.group(2)))
     return found
 
 def parse_flatpak(text):
@@ -108,16 +69,12 @@ _APT_INSTALL=("env","DEBIAN_FRONTEND=noninteractive","sh","-c",
               "apt-get update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade --with-new-pkgs")
 MANAGERS=(
     Manager("apt","APT",("apt","list","--upgradable"),parse_apt,_APT_INSTALL,refresh_argv=("apt-get","update")),
-    Manager("dnf","DNF",("dnf","-q","check-update"),parse_dnf,("dnf","-y","upgrade","--refresh"),ok_codes=(0,100)),
-    Manager("pacman","pacman",("checkupdates",),parse_pacman,("pacman","-Syu","--noconfirm"),ok_codes=(0,2),fallback=("pacman","-Qu"),fallback_ok=(0,1)),
     Manager("zypper","zypper",("zypper","--non-interactive","--quiet","list-updates"),parse_zypper,("zypper","--non-interactive","update"),
             refresh_argv=("zypper","--non-interactive","refresh")),
-    Manager("xbps","XBPS",("xbps-install","-Mun"),parse_xbps,("xbps-install","-Syu","-y")),
-    Manager("apk","apk",("apk","version","-l","<"),parse_apk,("sh","-c","apk update && apk upgrade"),refresh_argv=("apk","update")),
 )
 FLATPAK=Manager("flatpak","Flatpak",("flatpak","remote-ls","--updates","--columns=application,version,origin"),parse_flatpak,
                 ("flatpak","update","-y","--noninteractive"),needs_root=False)
-_TOOL={"apt":"apt-get","dnf":"dnf","pacman":"pacman","zypper":"zypper","xbps":"xbps-install","apk":"apk"}
+_TOOL={"apt":"apt-get","zypper":"zypper"}
 
 def detect(which=None):
     """The system's package manager (the first found), or None."""
@@ -133,8 +90,7 @@ def age_text(checked, now=None):
             n=int(seconds//size); return f"{n} {unit}{'s' if n!=1 else ''} ago"
     return "just now"
 
-_LISTS={"apt":("/var/lib/apt/lists","/var/cache/apt/pkgcache.bin"),"pacman":("/var/lib/pacman/sync",),
-        "dnf":("/var/cache/dnf",),"zypper":("/var/cache/zypp/raw",),"xbps":("/var/db/xbps",),"apk":("/var/cache/apk",)}
+_LISTS={"apt":("/var/lib/apt/lists","/var/cache/apt/pkgcache.bin"),"zypper":("/var/cache/zypp/raw",)}
 def lists_checked(manager):
     times=[]
     for path in _LISTS.get(manager.id,()):
@@ -149,16 +105,14 @@ def reboot_needed(release=None, exists=os.path.exists):
     return not any(exists(f"{d}/{release}") for d in ("/usr/lib/modules","/lib/modules")) and exists("/usr/lib/modules")
 
 def _list(manager):
-    argv,ok=manager.list_argv,manager.ok_codes
-    if not have(argv[0]) and manager.fallback: argv,ok=manager.fallback,manager.fallback_ok   # pacman without pacman-contrib
-    result=run(list(argv),timeout=240)
-    if result.code not in ok: return [],result.message
+    result=run(list(manager.list_argv),timeout=240)
+    if result.code not in manager.ok_codes: return [],result.message
     return manager.parse(result.out),""
 
 def read_state():
     manager=detect(); flatpak=have("flatpak")
     if manager is None and not flatpak:
-        return UpdatesState(False,"No supported package manager was found (apt, dnf, pacman, zypper, xbps or apk, or Flatpak).")
+        return UpdatesState(False,"No supported package manager was found (apt on Debian and its family, zypper on openSUSE, or Flatpak).")
     state=UpdatesState(True,"",manager)
     if manager is not None:
         state.updates,problem=_list(manager); state.checked=lists_checked(manager)
