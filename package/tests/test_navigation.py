@@ -51,7 +51,7 @@ def make_window(**state):
     win=ui_window.TVWCSWindow.__new__(ui_window.TVWCSWindow)
     win.app=MagicMock(); win._groups={"quick":[],"guide":[],"options":[]}; win._header_group=[]; win._result_groups=[]; win._modal_groups=[]
     win.guide_open=False; win.options_open=False; win.guide_pane=None; win.options_pane=None; win._last_focus={}
-    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None; win._password=None; win._text=None; win._focus_tip=None; win._focus_tip_source=0
+    win._search_results=[]; win._selected_result=0; win._capture=None; win._pin=None; win._password=None; win._chan=None; win._text=None; win._focus_tip=None; win._focus_tip_source=0
     win.search_entry=Entry("search"); win.get_focus=lambda:W.focus
     win._type_to_search=MagicMock(); win._escape=MagicMock()
     for k,v in state.items(): setattr(win,k,v)
@@ -73,9 +73,10 @@ class NavigationTests(unittest.TestCase):
         groups=[NavGroup([container]),NavGroup([row])]
         self.assertEqual(win._group_index(groups,row),1); self.assertEqual(win._group_index(groups,container),0)
         self.assertEqual(win._group_index(groups,W("elsewhere",parent=container)),0)   # inside-match still works as a fallback
-    def test_left_on_collapsed_options_button_expands_it(self):
-        win=make_window(); g,toggle,opt,main=options_row(win); W.focus=toggle
-        self.assertTrue(win._move_within_group(-1)); g.expand.assert_called_once()
+    def test_left_on_a_quick_menu_row_opens_its_menu(self):
+        win=make_window(); g,toggle,opt,main=options_row(win); W.focus=main
+        g.open_options=MagicMock(return_value=True); g.expanded=lambda:False
+        self.assertTrue(win._move_within_group(-1)); g.open_options.assert_called_once()
     def test_left_again_when_expanded_stays_put(self):
         win=make_window(); g,toggle,opt,main=options_row(win,expanded=True); W.focus=toggle
         win._move_within_group(-1); g.expand.assert_not_called(); self.assertIs(W.focus,toggle)

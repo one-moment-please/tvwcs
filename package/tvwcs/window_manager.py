@@ -233,6 +233,27 @@ class I3WindowManager:
     def has_windows(self):
         """True when any application window is open, on any workspace (TVWCS's own windows and bars do not count)."""
         return bool(self._all_windows())
+    def screen_has_windows(self):
+        """True when an application window is on a workspace that is on screen now (on any monitor). An app open on a
+        workspace out of sight does not count: the screen shows nothing but the background."""
+        return any(w.get("workspace_visible") for w in self.windows())
+    def tvwcs_on_screen(self):
+        """Whether TVWCS's main window is on a workspace that is on screen: False when it was left behind on a workspace
+        that is out of sight (an app opened in a new workspace while it showed), None when that cannot be told."""
+        tree=self._tree()
+        if not tree: return None
+        shown={w.get("name") for w in self.workspaces() if w.get("visible")}
+        def walk(node, workspace=""):
+            if node.get("type")=="workspace": workspace=node.get("name","")
+            if node.get("name")=="TVWCS" and (node.get("window") is not None or node.get("app_id")): return workspace in shown
+            for child in node.get("nodes",[])+node.get("floating_nodes",[]):
+                found=walk(child,workspace)
+                if found is not None: return found
+            return None
+        return walk(tree)
+    def urgent_ids(self):
+        """con_ids of the windows asking for attention (an app that was started again often only flags its open window)."""
+        return {int(w["con_id"]) for w in self._all_windows() if w.get("urgent")}
 
     # ------------------------------------------------------------ bars
     def bar_modes(self):

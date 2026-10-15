@@ -141,6 +141,14 @@ def render_i3(hotkeys, command, keycodes=None, app_keys=(), tv=False) -> str:
     if tv: lines+=TV_BORDERS
     return "\n".join(lines)+"\n"
 
+# The keys that move around and choose in TVWCS (the D-pad, OK, Back). While a hotkey is being chosen they keep moving
+# between Cancel and Clear and pressing them, so they are never taken as the new hotkey (with a modifier held they are).
+NAVIGATION_KEYS=frozenset(("Up","Down","Left","Right","KP_Up","KP_Down","KP_Left","KP_Right","Return","KP_Enter","ISO_Enter",
+                           "Escape","Back","Select","Tab","ISO_Left_Tab"))
+def is_navigation(key_name, held=()):
+    """A D-pad, OK or Back key pressed on its own: it navigates the hotkey dialog instead of becoming the hotkey."""
+    return not held and key_name in NAVIGATION_KEYS
+
 class HotkeyCapture:
     """Turns raw key events into a spec while the user is choosing a hotkey.
     A lone modifier is only accepted when it is released without any other key having been pressed."""

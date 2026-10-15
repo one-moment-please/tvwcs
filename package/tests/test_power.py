@@ -15,8 +15,8 @@ DPMS (Energy Star):
 
 class PowerTests(unittest.TestCase):
     def test_idle_option_is_cleaned(self):
-        self.assertEqual(power.clean_idle(None),{"screen_off":None,"lock":0,"sleep":0})
-        self.assertEqual(power.clean_idle({"screen_off":0,"lock":300,"sleep":"x"}),{"screen_off":0,"lock":300,"sleep":0})
+        self.assertEqual(power.clean_idle(None),{"screensaver":0,"screen_off":None,"lock":0,"sleep":0})
+        self.assertEqual(power.clean_idle({"screen_off":0,"lock":300,"sleep":"x"}),{"screensaver":0,"screen_off":0,"lock":300,"sleep":0})
         self.assertEqual(power.clean_idle({"lock":True,"sleep":-5})["lock"],0)
     def test_what_is_due_runs_once_per_idle_period_in_time_order(self):
         times={"screen_off":600,"lock":300,"sleep":1800}
@@ -102,6 +102,6 @@ class PowerTests(unittest.TestCase):
         argv=power.swayidle_argv({"screen_off":600,"lock":0,"sleep":1800},"/opt/tv wcs/bin/tvwcs")
         self.assertEqual(argv,["swayidle","-w","timeout","600","'/opt/tv wcs/bin/tvwcs' idle screen_off","resume","'/opt/tv wcs/bin/tvwcs' idle resume",
                                "timeout","1800","'/opt/tv wcs/bin/tvwcs' idle sleep"])
-        self.assertIsNone(power.swayidle_argv({"screen_off":None,"lock":0,"sleep":0},"tvwcs"))
+        self.assertIsNone(power.swayidle_argv({"screensaver":0,"screen_off":None,"lock":0,"sleep":0},"tvwcs"))
 
 if __name__=="__main__": unittest.main()

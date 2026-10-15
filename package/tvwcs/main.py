@@ -17,7 +17,7 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs import power, privilege, quick_status, tv_mode
+from tvwcs import appearance, power, privilege, quick_status, screensaver, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfiles, ProfileEditor
@@ -83,6 +83,9 @@ class IdleWatcher:
         for a in actions:
             self.done.add(a)
             if a=="screen_off": power.screen_off()
+            elif a=="screensaver":
+                problem=screensaver.start(LAUNCHER)
+                if problem: print(problem,file=sys.stderr)
             else: self.app.run_system_action(a)
     def stop(self): self.swayidle.stop()
 
@@ -111,7 +114,9 @@ class StatusWatcher:
             w.tick_clock()
             if now-self.last_read>=self.READ_EVERY: self.read_now()
         if app.tv_option("tv_keep_menu_open"):
-            has_windows=app.wm.has_windows()
+            # "No application open" means nothing on screen: an app left on a workspace out of sight (Settings closed
+            # over it, say) still leaves an empty screen to come back to
+            has_windows=app.wm.screen_has_windows()
             if not visible:
                 self.kept_open=False
                 if has_windows: app.grace_until=0.0   # an app is open: whatever was launched has arrived
@@ -165,6 +170,7 @@ def idle_action(action):
     if action=="resume": power.screen_on(); return 0
     if power.keep_awake(): return 0
     if action=="screen_off": return 0 if power.screen_off().ok else 1
+    if action=="screensaver": return 1 if screensaver.start(LAUNCHER) else 0
     command=command_for(action,ConfigStore().settings)
     if not command: print(unavailable_message(action),file=sys.stderr); return 1
     return subprocess.call(command,env=privilege.c_locale_env())
@@ -215,7 +221,7 @@ class TVWCSApp(Gtk.Application):
         first=self.window is None
         self.refresh_data(rebuild=False)
         if first:
-            self._update_layout(False,False,focus_output=False); self.window=TVWCSWindow(self)
+            self.apply_look(); self._update_layout(False,False,focus_output=False); self.window=TVWCSWindow(self)
             self.apply_hotkeys(); self.idle.apply(); self.watch.start(); GLib.timeout_add(1500,self._run_startup_action)
         self.window.set_visible(False)
     def do_shutdown(self):
@@ -262,7 +268,7 @@ class TVWCSApp(Gtk.Application):
         started, so nothing on the current workspace is made fullscreen over it."""
         if self.window is None: return
         if launched: self.grace_until=time.monotonic()+tv_mode.LAUNCH_GRACE
-        elif self.window.is_visible() and self.tv_option("tv_keep_menu_open") and time.monotonic()>=self.grace_until and not self.wm.has_windows():
+        elif self.window.is_visible() and self.tv_option("tv_keep_menu_open") and time.monotonic()>=self.grace_until and not self.wm.screen_has_windows():
             # TV mode with nothing open: there is nothing to go back to, so the Quick Menu stays (the Guide still closes)
             if self.window.guide_open: self.show_panels(False,False,focus="quick")
             return
@@ -294,6 +300,8 @@ class TVWCSApp(Gtk.Application):
         w=self.window
         if w is None: return False
         visible=w.is_visible()
+        if visible and self.wm.available and self.wm.tvwcs_on_screen() is False:
+            visible=False   # left on a workspace out of sight (an app opened elsewhere while it showed): bring it here
         if mode=="toggle" and visible: self.hide_window(); return False
         guide=(mode=="guide") and not (visible and w.guide_open)
         if visible: self.show_panels(guide,False,focus="guide" if guide else "quick"); return False
@@ -302,7 +310,7 @@ class TVWCSApp(Gtk.Application):
         w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False
         self._update_layout(guide,False,focus_output=True)
         w.set_default_size(self.layout.width,self.layout.height); w._build(); w.present(); self.apply_geometry()
-        w.focus_pane_soon("guide" if guide else "quick")
+        w.focus_pane_soon("guide" if guide else "search")   # the Quick Menu opens on its search field, ready for a channel number
         if not self.store.settings.get("use") and not self._welcomed:   # first run: TV or desk?
             self._welcomed=True; GLib.timeout_add(120,lambda:(w.first_run(None),GLib.SOURCE_REMOVE)[1])
         return False
@@ -407,25 +415,42 @@ class TVWCSApp(Gtk.Application):
         elif result["kind"]=="window": self.focus_window(result["window"]["con_id"])
     STARTING_SLOW=20   # seconds before "Starting …" says the app may not have started
     STARTING_GIVE_UP=60
-    def _launched(self,profile,started=False,before=None):
+    URGENT_WATCH=15    # seconds a launch made with TVWCS hidden is watched for an app that only flags its open window
+    def _launched(self,profile,started=False,before=None,urgent=None,mode=None):
+        """After a launch: hide TVWCS once the app's first window appears. Until then, a "Starting Jellyfin…" card is
+        shown wherever the screen would otherwise stay empty (an app opening in a workspace of its own takes a few
+        seconds to draw anything), and TVWCS stays reachable with its hotkey. An app that was already running in a way
+        TVWCS could not match often opens no new window and only flags its open one as urgent: that window is shown."""
         self.store.record_last_profile(profile.id)
         w=self.window
-        if not started or before is None or w is None or not w.is_visible() or not self.wm.available: self.hide_window(launched=started); return
-        # "Starting Kodi…" until the app's first window appears: a slow app otherwise looks like nothing happened.
+        if not started or before is None or w is None or not self.wm.available: self.hide_window(launched=started); return
+        urgent=set(urgent or ())
+        blank=mode==LAUNCH_NEW_WORKSPACE or not self.wm.screen_has_windows()
+        card=w.is_visible() or blank
+        if card:
+            if w.is_visible(): self.wm.move_tvwcs_to_current_workspace(); self.apply_geometry()   # follow to the new workspace
+            else: self.show_mode("toggle")
+        else: self.hide_window(launched=True)
         state={"done":False,"t":0.0}
-        def finish():
+        def finish(show=None):
             if state["done"]: return
             state["done"]=True
-            if w._modal_groups: w.close_modal()
-            self.hide_window(launched=True)
+            if card and w._modal_groups: w.close_modal()
+            if show is not None and not self.wm.focus(show,mode or LAUNCH_SAME): show=None
+            if card: self.hide_window(launched=show is None)
         def check():
             if state["done"]: return GLib.SOURCE_REMOVE
-            if not w.is_visible() or not w._modal_groups: state["done"]=True; return GLib.SOURCE_REMOVE   # closed some other way
+            if card and (not w.is_visible() or not w._modal_groups): state["done"]=True; return GLib.SOURCE_REMOVE   # closed some other way
             state["t"]+=0.4
-            if any(int(x["con_id"]) not in before for x in self.wm.windows()) or state["t"]>=self.STARTING_GIVE_UP: finish(); return GLib.SOURCE_REMOVE
-            if abs(state["t"]-self.STARTING_SLOW)<0.2: w.starting_slow(profile.name)
+            windows=self.wm.windows()
+            if any(int(x["con_id"]) not in before for x in windows): finish(); return GLib.SOURCE_REMOVE
+            flagged=[int(x["con_id"]) for x in windows if x.get("urgent") and int(x["con_id"]) in before and int(x["con_id"]) not in urgent]
+            if flagged: finish(flagged[0]); return GLib.SOURCE_REMOVE
+            if state["t"]>=(self.STARTING_GIVE_UP if card else self.URGENT_WATCH): finish(); return GLib.SOURCE_REMOVE
+            if card and abs(state["t"]-self.STARTING_SLOW)<0.2: w.starting_slow(profile.name)
             return GLib.SOURCE_CONTINUE
-        w.show_starting(profile.name,finish); GLib.timeout_add(400,check)
+        if card: w.show_starting(profile.name,finish)
+        GLib.timeout_add(400,check)
     def launch_profile(self,profile,bypass_pin=False):
         if profile is None: return
         app=self.catalogue.by_id().get(profile.desktop_id)
@@ -442,7 +467,7 @@ class TVWCSApp(Gtk.Application):
         if self.wm.focus(window["con_id"],self.launch_mode(profile)): self._launched(profile)
         else: self._start(profile,app)
     def _start(self,profile,app):
-        before={int(w["con_id"]) for w in self.wm.windows()}
+        before={int(w["con_id"]) for w in self.wm.windows()}; urgent=self.wm.urgent_ids()
         known=before if any(p.pin_hash for p in self.store.profiles) else None
         mode=self.launch_mode(profile)
         try:
@@ -461,7 +486,7 @@ class TVWCSApp(Gtk.Application):
                 self.wm.prepare_for_launch(mode)
                 if not info.launch([],None): raise RuntimeError(f"Linux refused to launch {profile.name}.")
             if known is not None: self._remember_windows(profile,app,known)
-            self._launched(profile,started=True,before=before)
+            self._launched(profile,started=True,before=before,urgent=urgent,mode=mode)
         except (OSError,ValueError,RuntimeError) as exc: self.notify_message(f"Could not launch {profile.name}: {exc}")
     def _remember_windows(self,profile,app,known):
         """Note which windows this launch opened, so a later 'show' knows whose PIN applies. The app needs a moment to map them."""
@@ -592,8 +617,10 @@ class TVWCSApp(Gtk.Application):
     def reload_options(self):
         """The Settings app changed TVWCS's options (the Options page): read them again, and apply the interface size
         and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
-        old=self.store.settings["scale"]; self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
+        old=self.store.settings["scale"]; look=(self.store.settings["theme"],self.store.settings["wallpaper"])
+        self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
         self.apply_hotkeys(); self.idle.apply(); self.watch.apply_bar(); self.watch.updates_changed()
+        if (self.store.settings["theme"],self.store.settings["wallpaper"])!=look: self.apply_look()
         if self.window is None: return
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
         if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
@@ -620,6 +647,16 @@ class TVWCSApp(Gtk.Application):
         if self.window is not None and not self.window.is_visible(): self.show_mode("toggle")
         return GLib.SOURCE_REMOVE
 
+    def apply_look(self):
+        """Settings > Options > Appearance and Background colour: dark or light for TVWCS's own widgets and for the
+        applications that follow the desktop's colour scheme (appearance.py), and the colour behind everything."""
+        s=self.store.settings; theme,wallpaper=s["theme"],s["wallpaper"]
+        gtk_settings=Gtk.Settings.get_default()
+        if gtk_settings is not None: gtk_settings.set_property("gtk-application-prefer-dark-theme",theme!="light")
+        def work():
+            for problem in (appearance.apply_theme(theme),appearance.apply_wallpaper(wallpaper) if self.wm.available else ""):
+                if problem: print(f"TVWCS appearance: {problem}",file=sys.stderr)
+        threading.Thread(target=work,daemon=True).start()
     def set_use(self,use):
         """First run: where TVWCS is used (TV or desk), as in Settings > Options > Used on."""
         old=self.store.settings["scale"]; apply_use(self.store.settings,use); self.store.save()
@@ -657,10 +694,11 @@ def main():
         from tvwcs.lockscreen import lock
         return lock(ConfigStore().settings,nofork=len(args)==2)   # read the options again (install.sh, after changing them)
     if len(args)==2 and args[0]=="idle" and args[1] in (*power.ACTIONS,"resume"): return idle_action(args[1])
+    if args in (["screensaver"],["screensaver","--preview"]): return screensaver.run(ConfigStore().settings,preview=len(args)==2)
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
-    if args: print("Usage: tvwcs [toggle|guide|stop|reload|--version|lock [--nofork]|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    if args: print("Usage: tvwcs [toggle|guide|stop|reload|--version|lock [--nofork]|screensaver|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())

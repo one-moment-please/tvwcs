@@ -288,4 +288,42 @@ class BadgeTests(unittest.TestCase):
         r=search_items("inbox",[],{},[{"con_id":5,"title":"(2) Inbox","class":"mail","instance":"mail"}])[0]
         self.assertEqual((r["label"],r["badge"]),("Inbox","2"))
 
+class ChannelZeroTests(unittest.TestCase):
+    def test_channel_000_is_allowed_and_1000_is_not(self):
+        with tempfile.TemporaryDirectory() as d:
+            store=ConfigStore(Path(d)/"config.json")
+            store.set_profile(LaunchProfile("z","a.desktop","A",channel=0))
+            self.assertEqual(ConfigStore(Path(d)/"config.json").get("z").channel,0)
+            with self.assertRaisesRegex(ValueError,"000 to 999"): store.set_profile(LaunchProfile("y","b.desktop","B",channel=1000))
+            with self.assertRaises(ValueError): store.set_profile(LaunchProfile("x","c.desktop","C",channel=-1))
+    def test_settings_gets_channel_000_once(self):
+        from tvwcs.model import SETTINGS_DESKTOP_ID
+        settings=Application(SETTINGS_DESKTOP_ID,"TVWCS Settings",None,None,None,("Settings",),"/x","tvwcs settings")
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"config.json"; store=ConfigStore(path)
+            store.set_profile(LaunchProfile("s",SETTINGS_DESKTOP_ID,"TVWCS Settings",channel=999))
+            store.ensure_defaults([settings])
+            self.assertEqual(store.get("s").channel,0)                 # moved from 999 the first time
+            store.get("s").channel=7; store.save(); store=ConfigStore(path); store.ensure_defaults([settings])
+            self.assertEqual(store.get("s").channel,7)                 # the user's later choice stays
+    def test_channel_000_already_taken_is_left_alone(self):
+        from tvwcs.model import SETTINGS_DESKTOP_ID
+        settings=Application(SETTINGS_DESKTOP_ID,"TVWCS Settings",None,None,None,("Settings",),"/x","tvwcs settings")
+        with tempfile.TemporaryDirectory() as d:
+            store=ConfigStore(Path(d)/"config.json")
+            store.set_profile(LaunchProfile("a","a.desktop","A",channel=0))
+            store.set_profile(LaunchProfile("s",SETTINGS_DESKTOP_ID,"TVWCS Settings",channel=999))
+            store.ensure_defaults([settings])
+            self.assertEqual(store.get("s").channel,999); self.assertTrue(store.settings["channel_zero_done"])
+    def test_new_settings_are_cleaned(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"config.json"
+            path.write_text(json.dumps({"profiles":[],"settings":{"theme":"purple","wallpaper":"#123456","password_keyboard":"digits","screensaver_logo":"nope","time_entry":"steps"}}))
+            s=ConfigStore(path).settings
+            self.assertEqual(s["theme"],"dark"); self.assertEqual(s["wallpaper"],DEFAULT_SETTINGS["wallpaper"])
+            self.assertEqual(s["password_keyboard"],"digits"); self.assertEqual(s["screensaver_logo"],"dvd"); self.assertEqual(s["time_entry"],"steps")
+    def test_wallpaper_choices(self):
+        from tvwcs.model import WALLPAPERS, DEFAULT_WALLPAPER
+        self.assertEqual(len(WALLPAPERS),18); self.assertIn(DEFAULT_WALLPAPER,WALLPAPERS); self.assertEqual(DEFAULT_SETTINGS["theme"],"dark")
+
 if __name__=="__main__": unittest.main()

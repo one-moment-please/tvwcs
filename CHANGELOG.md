@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.1.0 — 2026-10-15
+
+**Quick Menu**
+- The search bar is selected when the Quick Menu opens, and it says you can type a channel number.
+- Each row has one menu (⋯) with labelled choices: open in a new workspace or this one, the app's own actions, and Close when the app is open. It replaces the sliding options and the second popup.
+- Channels run from 000 to 999. Channel 000 opens Settings: on the first start of 3.1, Settings moves to 000 unless another app already has it.
+- Setting a channel shows three digit boxes that start empty each time, with a number pad.
+- A slow app shows "Starting…" instead of a blank screen, and the Quick Menu can still be opened meanwhile. An app that is already running and only asks for attention when started again is brought to the front.
+- With "Keep the Quick Menu open" on, the Quick Menu now comes back when Settings (or the last app on screen) closes, even when apps are open on other workspaces.
+- A hidden mouse pointer no longer highlights what it was resting on.
+- Password dialogs can show a number pad, with a key to switch to the full keyboard and back.
+
+**Settings**
+- Options: light or dark mode (dark by default), passed on to GTK, Flatpak and browser apps that follow the system's choice. A background colour from 18 swatches (dark grey by default), shown when no app is open and behind the Quick Menu. Password dialogs can open with the number pad.
+- With the number pad chosen and SSH on, Settings recommends turning off SSH password login.
+- Power and sleep: a screen saver (the DVD logo, TVWCS's logo or a picture of your own) with its own idle time and a preview.
+- Date and time: set the time by hand in one of three ways: fields with ▲ and ▼, steps, or four digits.
+- Network: an Ethernet port the Debian installer set up in `/etc/network/interfaces` showed as "not managed". Settings now says why and can hand it to NetworkManager, keeping a backup of the old file.
+- A new Storage page: open, close and safely remove drives, and add, connect and disconnect network shares (Samba, NFS, SFTP, WebDAV, FTP).
+- Choosing a hotkey ignores the D-pad, OK and Back, so the Clear button can be reached with a remote.
+
+**Session**
+- Apps no longer take up to half a minute to start when TVWCS is started from `startx`: the session's display is now passed to systemd and D-Bus, so the desktop portal that Flatpak apps wait for can start. Run the installer again (or log in again after updating) to get it.
+- The installer offers udisks2, gvfs-backends, xdg-desktop-portal-gtk and x11-xserver-utils for the new features.
+- The README lists what does not work on systems that are not Debian-based.
+
 ## 3.0.3 — 2026-10-15
 
 - The install command in the README and the Debian guide now downloads the latest release instead of the development version on `main`. Every release includes `tvwcs.tar.gz` for it. Installing from `main` is still described, for testing.

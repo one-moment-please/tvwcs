@@ -357,6 +357,12 @@ if command -v i3 >/dev/null 2>&1 && ! command -v xprintidle >/dev/null 2>&1 && !
 if command -v sway >/dev/null 2>&1 && ! command -v swayidle >/dev/null 2>&1; then need swayidle "Settings: Power and sleep (in sway)"; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then need "$(pkg unclutter)" "hides the mouse pointer after 3 seconds without moving (i3)"; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Settings: displays (sway has its own)"; fi
+if command -v i3 >/dev/null 2>&1 && ! command -v xsetroot >/dev/null 2>&1; then need "$(pkg xrandr)" "the background colour (xsetroot, in i3)"; fi
+command -v udisksctl >/dev/null 2>&1 || need udisks2 "Settings: storage (opening and closing drives)"
+# Helper programs that are not on PATH (TVWCS_LIBEXEC lets the tests point elsewhere).
+libexec_has() { for d in ${TVWCS_LIBEXEC:-/usr/libexec /usr/lib/gvfs /usr/lib}; do [ -e "$d/$1" ] && return 0; done; return 1; }
+libexec_has gvfsd-smb || need gvfs-backends "Settings: storage (network shares)"
+libexec_has xdg-desktop-portal-gtk || need "xdg-desktop-portal xdg-desktop-portal-gtk" "light or dark mode for Flatpak apps and browsers"
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth"
 command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)"
 python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page"
@@ -799,7 +805,9 @@ write_start() {   # write_start <i3|sway>: add (or replace) the start lines in t
     echo "Added the lines that start $WM on the first console to $FILE$( [ -f "$FILE.tvwcs-backup" ] && echo " (backup: $FILE.tvwcs-backup)")."
     if [ "$WM" = i3 ]; then   # startx runs ~/.xinitrc
         if [ ! -f "$HOME/.xinitrc" ]; then
-            printf '#!/bin/sh\n# Written by TVWCS'"'"'s install.sh: startx starts i3.\nexec i3\n' > "$HOME/.xinitrc"; echo "Created $HOME/.xinitrc, which starts i3."
+            # Debian's /etc/X11/Xsession.d would pass DISPLAY to the user's systemd and D-Bus services; a .xinitrc of its own skips it,
+            # so the desktop portal (which Flatpak apps wait for at start) and notifications cannot reach the screen. tvwcs.conf does it too.
+            printf '#!/bin/sh\n# Written by TVWCS'"'"'s install.sh: startx starts i3.\nexport XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-i3}"\n''command -v dbus-update-activation-environment >/dev/null 2>&1 && dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP\nexec i3\n' > "$HOME/.xinitrc"; echo "Created $HOME/.xinitrc, which starts i3."
         elif ! grep -q 'i3' "$HOME/.xinitrc"; then
             echo "Note: your ~/.xinitrc does not start i3; startx runs it as it is. Make its last line: exec i3"
         fi

@@ -4,7 +4,7 @@ import os
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 METRO_COLORS=("#0078d7","#e81123","#00b294","#ff8c00","#881798","#107c10","#ea005e","#6b69d6","#00cc6a","#c239b3")
 _scale=[1.0]
@@ -98,3 +98,31 @@ def screen_height():
     for i in range(monitors.get_n_items()):
         best=max(best,monitors.get_item(i).get_geometry().height)
     return best
+
+class PointerWatch:
+    """Marks a window with the "pointer" CSS class while the mouse is really being used, so hover colours (theme.py)
+    show only then. The pointer is hidden after 3 seconds without moving (unclutter, or sway's hide_cursor), but GTK
+    still counts it as over whatever it rests on: without this, that row would look half-selected next to the remote's
+    real selection. A key press, or 3 seconds without moving, takes the class away; the first event after the window
+    appears under a resting pointer does not count as moving."""
+    IDLE_MS=3000
+    MIN_MOVE=3   # pixels
+    def __init__(self, window):
+        self.window=window; self.last=None; self.source=0
+        motion=Gtk.EventControllerMotion(); motion.connect("enter",self._enter); motion.connect("motion",self._moved)
+        motion.connect("leave",lambda *_:self.off()); window.add_controller(motion)
+        key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        key.connect("key-pressed",lambda *_:(self.off(),False)[1]); window.add_controller(key)
+    @property
+    def active(self): return self.window.has_css_class("pointer")
+    def _enter(self, _c, x, y): self.last=(x,y)
+    def _moved(self, _c, x, y):
+        last=self.last; self.last=(x,y)
+        if last is None or abs(x-last[0])+abs(y-last[1])<self.MIN_MOVE: return
+        if not self.active: self.window.add_css_class("pointer")
+        if self.source: GLib.source_remove(self.source)
+        self.source=GLib.timeout_add(self.IDLE_MS,self._idle)
+    def _idle(self): self.source=0; self.off(); return GLib.SOURCE_REMOVE
+    def off(self):
+        if self.source: GLib.source_remove(self.source); self.source=0
+        if self.active: self.window.remove_css_class("pointer")

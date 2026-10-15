@@ -72,6 +72,24 @@ ACCENT_NAMES={"#0078d7":"Blue","#e81123":"Red","#00b294":"Teal","#ff8c00":"Orang
 def accent_name(colour) -> str: return ACCENT_NAMES.get((colour or "").lower(),colour or "")
 # Settings > Options > Screen edge margin, in px at desktop scale: many TVs crop the picture's edges (overscan).
 MARGIN_CHOICES=(0,10,20,40,60,80)
+# Channels run from 000 to 999. Channel 000 goes to TVWCS's own Settings app, once, on a new or updated install.
+CHANNEL_MIN,CHANNEL_MAX=0,999
+SETTINGS_DESKTOP_ID="com.tvwcs.ControlPanel.desktop"
+# Settings > Options > Appearance: TVWCS's light or dark look; applications that follow the desktop's colour scheme follow it.
+THEMES={"dark":"Dark","light":"Light"}
+# Settings > Options > Background colour: what shows where no application is open, and behind the Quick Menu.
+# Six greys from white to black, six bright colours and the same six darkened. Shown as swatches without names.
+WALLPAPER_GREYS=("#ffffff","#c8c8c8","#969696","#646464","#323232","#000000")
+WALLPAPER_COLOURS=("#e81123","#ff8c00","#ffd800","#107c10","#0078d7","#881798")
+WALLPAPER_DARK=("#740912","#804600","#806c00","#083e08","#003c6c","#440c4c")
+WALLPAPERS=WALLPAPER_GREYS+WALLPAPER_COLOURS+WALLPAPER_DARK
+DEFAULT_WALLPAPER="#323232"   # dark grey
+# The on-screen keyboard for passwords: the full keyboard, or a number pad for a password of digits only.
+PASSWORD_KEYBOARDS={"full":"Full keyboard","digits":"Number pad"}
+# Settings > Power and sleep > Screen saver: the bouncing logo.
+SCREENSAVER_LOGOS={"dvd":"The DVD Video logo","tvwcs":"The TVWCS logo","image":"A picture of your own"}
+# Settings > Date and time > Set the time: the ways of entering a time by hand.
+TIME_ENTRY={"fields":"Hour and minute, changed with ↑ ↓","digits":"Typed on the number pad","steps":"Forward and back in steps"}
 
 def key_hints(use) -> str:
     """The Settings app's footer: a remote's key is called Back, a keyboard's Esc."""
@@ -99,8 +117,16 @@ DEFAULT_SETTINGS={
     "tv_keep_menu_open":True,       # TV mode: keep the Quick Menu on screen while no application is open
     "apps_open":"profile",          # Where apps open (APPS_OPEN); always_new_workspace above still wins
     "reduce_motion":False,          # no animated transitions (slow TV boxes)
+    "theme":"dark",                 # THEMES: TVWCS's look, passed on to applications that follow the desktop's colour scheme
+    "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
+    "password_keyboard":"full",     # PASSWORD_KEYBOARDS: what a password dialog opens with (it can switch to the other)
+    "screensaver_logo":"dvd",       # SCREENSAVER_LOGOS
+    "screensaver_image":"",         # the picture for "image"
+    "time_entry":"fields",          # TIME_ENTRY
+    "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
+    "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
     "tvwcs_lock_screen":False,      # Lock uses TVWCS's own lock screen (i3lock / swaylock with its message), else the system's locker
-    "idle":{"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
+    "idle":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},   # mode: STARTUP_MODES
 }
@@ -142,9 +168,17 @@ def _clean_settings(raw) -> dict:
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
     if raw.get("use") in USES: s["use"]=raw["use"]
     if raw.get("apps_open") in APPS_OPEN: s["apps_open"]=raw["apps_open"]
+    if raw.get("theme") in THEMES: s["theme"]=raw["theme"]
+    if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
+    if raw.get("password_keyboard") in PASSWORD_KEYBOARDS: s["password_keyboard"]=raw["password_keyboard"]
+    if raw.get("screensaver_logo") in SCREENSAVER_LOGOS: s["screensaver_logo"]=raw["screensaver_logo"]
+    if isinstance(raw.get("screensaver_image"),str): s["screensaver_image"]=raw["screensaver_image"].strip()
+    if raw.get("time_entry") in TIME_ENTRY: s["time_entry"]=raw["time_entry"]
+    shares=raw.get("network_shares")
+    if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
                 "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
-                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","reduce_motion"):
+                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle"))
@@ -180,7 +214,7 @@ class ConfigStore:
             try:
                 channel=raw.get("channel")
                 channel=int(channel) if channel not in (None, "") else None
-                if channel is not None and not 1 <= channel <= 999: channel=None
+                if channel is not None and not CHANNEL_MIN <= channel <= CHANNEL_MAX: channel=None
                 # Files written before 2.3 have a boolean "tile" and no launch_mode; they load as LAUNCH_SAME.
                 mode=raw.get("launch_mode")
                 if mode not in LAUNCH_MODES: mode=LAUNCH_SAME
@@ -208,7 +242,16 @@ class ConfigStore:
                     p.name=app.name; changed=True
             if app.desktop_id not in known:
                 self.profiles.append(LaunchProfile(str(uuid.uuid4()),app.desktop_id,app.name)); known.add(app.desktop_id); changed=True
+        if self._give_settings_channel_zero(): changed=True
         if changed: self.save()
+    def _give_settings_channel_zero(self):
+        """Channel 000 opens Settings: given once (a new install, or the first start after updating to 3.1), to the
+        Settings app's main profile, when no other profile has it. The user may change it afterwards."""
+        if self.settings["channel_zero_done"]: return False
+        main=next((p for p in self.for_app(SETTINGS_DESKTOP_ID) if not p.command and not p.desktop_action),None)
+        if main is None: return False   # Settings is not installed (yet): try again next time
+        if not any(p.channel==0 for p in self.profiles): main.channel=0
+        self.settings["channel_zero_done"]=True; return True
     def get(self, profile_id):
         return next((p for p in self.profiles if p.id==profile_id),None)
     def for_app(self, desktop_id):
@@ -217,7 +260,7 @@ class ConfigStore:
     def favorites(self): return sorted((p for p in self.profiles if p.favorite),key=lambda p:(p.channel is None,p.channel or 0,p.name.casefold()))
     def set_profile(self, profile: LaunchProfile):
         if profile.channel is not None:
-            if not 1 <= int(profile.channel) <= 999: raise ValueError("Channel must be between 1 and 999.")
+            if not CHANNEL_MIN <= int(profile.channel) <= CHANNEL_MAX: raise ValueError("The channel must be from 000 to 999.")
             for other in self.profiles:
                 if other.id != profile.id and other.channel == profile.channel:
                     raise ValueError(f"Channel {profile.channel} is already assigned to {other.name}.")

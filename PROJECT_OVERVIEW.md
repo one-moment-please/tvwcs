@@ -19,7 +19,7 @@ A normal desktop assumes a mouse, a keyboard and a screen at arm's length. On a 
 The look follows Metro (Modern UI): flat and typographic.
 
 - **Square.** No rounded corners, gradients or shadows.
-- **Solid colour.** Dark surfaces, one accent colour (chosen in Settings), large light type, small spaced capitals for section titles. Text contrast is kept high.
+- **Solid colour.** Dark surfaces by default (a light mode is an option), one accent colour (chosen in Settings), large light type, small spaced capitals for section titles. Text contrast is kept high.
 - **Clear focus.** The selected item is a solid accent block with a white frame. Dangerous actions turn red.
 - **Real icons.** App logos wherever an app is listed; a coloured letter tile when there is none. Symbols where the meaning is universal (⚙ ⏻ ✕ ⊞ ⋯ ≡ ☆ ✎), words elsewhere.
 - **Scales to the room.** Desktop, TV Mode (1080p) and 4K TV Mode sizes. The size applies at once.
@@ -50,9 +50,9 @@ From top to bottom:
 - **Favorites:** pinned launch profiles.
 - **Key hints**, then the **status row:** clock, network, volume, Bluetooth and waiting updates. Each opens its Settings page.
 
-Each row has an options button (⋯), also opened with ← on the row or a right-click. Options fold away when the selection moves off them:
+Each row has a menu button (⋯), also opened with ← on the row or a right-click. It opens one list of labelled choices in a dialog:
 
-- **App:** open it the other way (tiled here, or in its own workspace), ≡ its own `.desktop` actions, Close.
+- **App:** open it the other way (tiled here, or in its own workspace), its own `.desktop` actions, Close when it is open.
 - **Workspace:** move it to another monitor, expand it into its apps, or close it and everything on it (asks first).
 - **Favorite:** its launch mode and `.desktop` actions.
 
@@ -92,23 +92,23 @@ TVWCS focuses an existing window rather than starting a second copy when it can 
 
 ### Channels and favorites
 
-Channel numbers are the user's own shortcuts to profiles. They are unique, optional and stored locally. Favorites are independent of channels.
+Channel numbers (000 to 999) are the user's own shortcuts to profiles. They are unique, optional and stored locally. Channel 000 goes to Settings once, on a new install or the first start of 3.1, when nothing else has it. Favorites are independent of channels.
 
 ### Hotkeys
 
-Three sets: keyboard (default: tap Super for the Quick Menu), remote (default: F2) and gamepad (none; needs a mapper such as AntiMicroX). Each has a Quick Menu key and an Applications key; the remote also has a fullscreen key. Any profile can have its own hotkey. A key does one thing: choosing a key already in use warns and asks before moving it. A modifier tapped alone is bound by keycode on release, so Super combinations keep working. Remote media keys are written with their `XF86` names.
+Three sets: keyboard (default: tap Super for the Quick Menu), remote (default: F2) and gamepad (none; needs a mapper such as AntiMicroX). Each has a Quick Menu key and an Applications key; the remote also has a fullscreen key. Any profile can have its own hotkey. A key does one thing: choosing a key already in use warns and asks before moving it. A modifier tapped alone is bound by keycode on release, so Super combinations keep working. While a key is being chosen, the D-pad, OK and Back keep navigating the dialog. Remote media keys are written with their `XF86` names.
 
 ### Power and locking
 
 The power menu has Sleep, Reboot and Shut down, Log out when there is a login screen, and Lock when enabled. Reboot, Shut down and Log out ask first, with Cancel selected. Power actions use `systemctl`. When polkit refuses, TVWCS uses a no-password sudo or doas rule (the installer offers a narrow one), else asks for the sudo password in its own dialog and passes it to `sudo -S` without storing it.
 
-Settings keeps idle times for screen off, lock and sleep (TVWCS watches idle time itself on i3; it runs `swayidle` on sway). Nothing happens while sound plays or an app inhibits idle.
+Settings keeps idle times for the screen saver (`screensaver.py`, a logo bouncing round a black screen), screen off, lock and sleep (TVWCS watches idle time itself on i3; it runs `swayidle` on sway). Nothing happens while sound plays or an app inhibits idle.
 
 The optional **TVWCS lock screen** (`lockscreen.py`) does not draw a lock itself. It paints one picture per monitor ("Locked — A password is needed. Type <user>'s password, then press Enter to unlock.") and runs i3lock, or swaylock on sway, with it. The power menu's Lock, the idle lock and `tvwcs lock` use it. When the i3 config starts xss-lock, its locker line is replaced too, and restored when the option is turned off.
 
 ## Settings app
 
-A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Options, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network. Each page is also a `.desktop` action, so it can be a channel or favorite.
+A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Options, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network, Storage. Each page is also a `.desktop` action, so it can be a channel or favorite.
 
 It drives standard tools rather than services: `pactl` (PipeWire/PulseAudio), `xrandr` or `swaymsg`, `bluetoothctl`, `nmcli` (read-only `ip` fallback), `timedatectl`, apt plus Flatpak, OpenSSH via `systemctl`, and VTE for the terminal. A page whose tool is missing says what to install. Changes TVWCS needs to know about are sent with `tvwcs reload`.
 
@@ -146,8 +146,8 @@ Logic modules have no GTK dependency and are tested without a display.
 | Area | Modules |
 |---|---|
 | Core | `model` (profiles, settings, layout, search), `applications` (discovery, window matching), `workspaces`, `ownership`, `profile_draft`, `pinlock`, `hotkeys` |
-| System | `window_manager` (i3 / sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `flatpak_env` |
-| Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_datetime`, `control_updates`, `control_flatpak`, `control_ssh`, `control_sysinfo` |
+| System | `window_manager` (i3 / sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `flatpak_env`, `appearance` (light/dark for apps, background colour), `screensaver` |
+| Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_datetime`, `control_storage`, `control_updates`, `control_flatpak`, `control_ssh`, `control_sysinfo` |
 | GTK interface | `main` (app, CLI), `ui_window` (Quick Menu, Applications, dialogs, on-screen keyboard), `ui_editors` (profile editor), `ui_control` and `ui_control_pages` (Settings), `widgets`, `theme` |
 
 ```

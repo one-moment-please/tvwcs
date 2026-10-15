@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 
 from tvwcs.control_cmd import have, key_values, run
 
-ACTIONS=("screen_off","lock","sleep")
-LABELS={"screen_off":"Turn off the screen after","lock":"Lock after","sleep":"Sleep after"}
+ACTIONS=("screensaver","screen_off","lock","sleep")
+LABELS={"screensaver":"Screen saver after","screen_off":"Turn off the screen after","lock":"Lock after","sleep":"Sleep after"}
 CHOICES=(0,60,120,300,600,900,1200,1800,2700,3600,7200)   # seconds; 0 is Never
 
 def duration_text(seconds):
@@ -31,7 +31,7 @@ def duration_text(seconds):
 def clean_idle(raw):
     """The "idle" option: {"screen_off": seconds, 0 (Never) or None, "lock": seconds or 0, "sleep": ...}. A screen_off of
     None leaves the screen to the system (X's own blanking and DPMS); unknown values become that, or Never."""
-    out={"screen_off":None,"lock":0,"sleep":0}
+    out={"screensaver":0,"screen_off":None,"lock":0,"sleep":0}
     if isinstance(raw,dict):
         for a in ACTIONS:
             v=raw.get(a)

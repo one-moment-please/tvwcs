@@ -5,7 +5,7 @@ systemd's timedatectl reads and changes these. polkit usually wants a password f
 polkit agent to ask for it, so the panel runs the same command as root when polkit refuses. Without timedatectl the
 time zone is read from the /etc/localtime link and set by pointing that link at another zone (as root)."""
 from __future__ import annotations
-import os, time
+import datetime, os, time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -105,6 +105,38 @@ def ntp_argv(on): return ["timedatectl","set-ntp","true" if on else "false"]
 def timezone_argv(zone, timedatectl=True):
     if timedatectl: return ["timedatectl","set-timezone",zone]
     return ["ln","-sfn",str(ZONEINFO/zone),str(LOCALTIME)]
+
+def set_time_argv(when):
+    """Set the clock to a datetime (local time). timedatectl refuses while network time is on."""
+    return ["timedatectl","set-time",when.strftime("%Y-%m-%d %H:%M:00")]
+
+# Settings > Date and time > Set the time: three ways to get to a time with a remote (model.TIME_ENTRY)
+FIELDS=("year","month","day","hour","minute")
+def adjust(when, field, delta):
+    """`when` with one field moved by `delta`, wrapping within its range (day 31 + 1 is day 1 of the same month; a
+    month change keeps the day inside the new month). Years stay between 2000 and 2099."""
+    if field=="minute": return when.replace(minute=(when.minute+delta)%60)
+    if field=="hour": return when.replace(hour=(when.hour+delta)%24)
+    if field=="day":
+        days=_days_in(when.year,when.month); return when.replace(day=(when.day-1+delta)%days+1)
+    if field=="month":
+        month=(when.month-1+delta)%12+1; return when.replace(month=month,day=min(when.day,_days_in(when.year,month)))
+    if field=="year":
+        year=min(2099,max(2000,when.year+delta)); return when.replace(year=year,day=min(when.day,_days_in(year,when.month)))
+    raise ValueError(field)
+def _days_in(year, month):
+    nxt=datetime.date(year+(month==12),month%12+1,1); return (nxt-datetime.timedelta(days=1)).day
+def step(when, minutes):
+    """`when` moved forward (or back) by a number of minutes: the "steps" way."""
+    return when+datetime.timedelta(minutes=minutes)
+STEPS=((-1440,"−1 day"),(-60,"−1 h"),(-10,"−10 min"),(-1,"−1 min"),(1,"+1 min"),(10,"+10 min"),(60,"+1 h"),(1440,"+1 day"))
+def from_digits(when, text):
+    """The "digits" way: HHMM (or HMM) typed on the number pad, on the same day. Raises ValueError for a time that is not one."""
+    t=(text or "").strip()
+    if not t.isdigit() or len(t) not in (3,4): raise ValueError("Type the time as four digits, such as 1905 for 19:05 (7:05 PM).")
+    hour,minute=int(t[:-2]),int(t[-2:])
+    if hour>23 or minute>59: raise ValueError(f"{t[:-2]}:{t[-2:]} is not a time of day.")
+    return when.replace(hour=hour,minute=minute,second=0,microsecond=0)
 
 def valid_zone(zone, zones):
     return zone in zones and ".." not in zone and not zone.startswith("/")

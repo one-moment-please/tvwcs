@@ -18,10 +18,10 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
 from tvwcs import privilege
-from tvwcs.hotkeys import HotkeyCapture, describe
+from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints
 from tvwcs.theme import render_css
-from tvwcs.widgets import METRO_COLORS, NavGroup, S, clear_box, glyph, held_modifiers, icon_button, screen_height, set_scale, usable
+from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, icon_button, screen_height, set_scale, usable
 
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
@@ -29,34 +29,34 @@ PASSWORD_TRIES=3
 PAGE_FADE_MS=150   # pages cross-fade (unless Options > Reduce motion), so it is clear what changed
 
 CONTROL_CSS="""
-.tab-column { background: #1b1b1b; }
+.tab-column { background: @PANE@; }
 button.tab-button { min-height: 48px; padding: 0 18px; font-size: 18px; font-weight: 300; background: transparent; }
-button.tab-button:hover { background: #2d2d2d; }
-button.tab-button.active { background: #2d2d2d; box-shadow: inset 6px 0 0 @ACCENT@; }
+window.pointer button.tab-button:hover { background: @RAISED@; }
+button.tab-button.active { background: @RAISED@; box-shadow: inset 6px 0 0 @ACCENT@; }
 button.tab-button:focus, button.tab-button:focus-visible { background: @ACCENT@; box-shadow: none; }
 button.tab-button label { font-weight: 300; }
 button.tab-button:focus label { font-weight: 700; }
 button.info-row:focus .setting-value { color: #ffffff; }
-.display-box { background: alpha(@ACCENT@, 0.6); border: 2px solid #1b1b1b; }
+.display-box { background: alpha(@ACCENT@, 0.6); border: 2px solid @PANE@; }
 .display-box.primary { background: @ACCENT@; }
 .display-number { font-size: 30px; font-weight: 700; color: #ffffff; }
 .display-name { font-size: 12px; color: #ffffff; }
 /* secondary text: the theme’s #8a8a8a at 12px is about 4:1 on a #2d2d2d row, too faint from a sofa */
-.row-detail, .description { color: #b5b5b5; font-size: 13px; }
-.muted { color: #b5b5b5; font-size: 14px; }
-.accent-swatch { min-width: 26px; min-height: 26px; border: 2px solid alpha(#ffffff, 0.7); }
+.row-detail, .description { color: @MUTED@; font-size: 13px; }
+.muted { color: @MUTED@; font-size: 14px; }
+.accent-swatch { min-width: 26px; min-height: 26px; border: 2px solid alpha(@FG@, 0.7); }
 .accent-current { background: @ACCENT@; }
 button:focus .row-detail { color: #e3eefa; }
-.state-on { color: #6ccb5f; font-weight: 700; }
+.state-on { color: @ON@; font-weight: 700; }
 button:focus .state-on { color: #ffffff; }
 .volume-value { font-size: 20px; font-weight: 300; min-width: 64px; }
 scale { padding: 0 6px; }
-scale trough { background: #3a3a3a; border: none; border-radius: 0; min-height: 10px; }
+scale trough { background: @TROUGH@; border: none; border-radius: 0; min-height: 10px; }
 scale highlight { background: @ACCENT@; border: none; border-radius: 0; min-height: 10px; margin: 0; }
 scale.muted highlight { background: #6e6e6e; }
-scale slider { background: #ffffff; border: none; border-radius: 0; min-width: 14px; min-height: 22px; margin: -6px 0; box-shadow: none; }
+scale slider { background: @FG@; border: none; border-radius: 0; min-width: 14px; min-height: 22px; margin: -6px 0; box-shadow: none; }
 textview.console, textview.console text { background: #0c0c0c; color: #d0d0d0; font-family: "DejaVu Sans Mono", "Noto Mono", monospace; font-size: 13px; }
-.console-frame { border: 2px solid #333333; }
+.console-frame { border: 2px solid @LINE@; }
 button.key { min-height: 48px; min-width: 40px; padding: 0 6px; font-size: 18px; }
 button.key.wide { font-size: 15px; }
 entry.text-field { font-size: 22px; min-height: 52px; }
@@ -66,12 +66,17 @@ button.app-tile { padding: 16px 10px 12px 10px; min-height: 170px; }
 .app-name { font-size: 16px; font-weight: 600; }
 button:focus .app-name { font-weight: 700; }
 .app-summary { font-size: 17px; }
+.wallpaper-swatch { min-width: 64px; min-height: 48px; padding: 0; border: 2px solid @LINE@; }
+button.wallpaper-swatch:focus, button.wallpaper-swatch:focus-visible { outline: 4px solid @ACCENT@; outline-offset: 2px; }
+.time-field { font-size: 40px; font-weight: 300; min-width: 84px; }
+.time-now { font-size: 26px; font-weight: 300; }
 """
 
 def colour_swatch(colour):
     """A square of `colour` (a Metro colour, or the current accent): theme.render_css paints .tile-N in METRO_COLORS[N]."""
+    from tvwcs.model import WALLPAPERS
     c=(colour or "").lower(); box=Gtk.Box(); box.add_css_class("accent-swatch"); box.set_valign(Gtk.Align.CENTER)
-    box.add_css_class(f"tile-{METRO_COLORS.index(c)}" if c in METRO_COLORS else "accent-current"); return box
+    box.add_css_class(f"tile-{METRO_COLORS.index(c)}" if c in METRO_COLORS else f"wall-{WALLPAPERS.index(c)}" if c in WALLPAPERS else "accent-current"); return box
 
 def scroll_to_show(scroll, widget):
     """Scroll as little as needed for the widget to be wholly in sight (the tabs: moving down them never jumps)."""
@@ -139,6 +144,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         self._capture=None; self._capture_cb=None; self._capture_cancel=None
         self.add_css_class("tvwcs-window"); self.set_icon_name("preferences-system")
         self.set_default_size(S(1180),S(760))
+        self.pointer=PointerWatch(self)   # hover colours only while the mouse is in use
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key.connect("key-pressed",self._key_pressed); key.connect("key-released",self._key_released); self.add_controller(key)
         self.connect("notify::focus-widget",self._focus_changed)
@@ -146,12 +152,16 @@ class ControlWindow(Gtk.ApplicationWindow):
         if display: Gtk.StyleContext.add_provider_for_display(display,self._provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._load_css(); self._build()
 
-    def _load_css(self): self._provider.load_from_data(render_css(self.app.accent,self.app.scale,CONTROL_CSS).encode("utf-8"))
+    def _load_css(self):
+        self._provider.load_from_data(render_css(self.app.accent,self.app.scale,CONTROL_CSS,theme=self.app.theme).encode("utf-8"))
+        gtk_settings=Gtk.Settings.get_default()
+        if gtk_settings is not None: gtk_settings.set_property("gtk-application-prefer-dark-theme",self.app.theme!="light")
 
     def settings_changed(self, settings):
         """Options saved a change: draw this window with its accent, size, key names and motion too."""
         app=self.app; scale=effective_scale(settings.get("scale"),screen_height()); resized=scale!=app.scale
         app.accent=settings.get("accent",app.accent); app.use=settings.get("use",""); app.reduce_motion=bool(settings.get("reduce_motion"))
+        app.theme=settings.get("theme","dark"); app.password_keyboard=settings.get("password_keyboard","full")
         if resized and self._running():   # rebuilding would lose the run's output: the new size waits for the next time
             self._load_css(); self._apply_settings()
             self.notice("Interface size","TVWCS uses the new size now. Settings uses it the next time it opens, once what is running here has finished."); return
@@ -392,12 +402,35 @@ class ControlWindow(Gtk.ApplicationWindow):
         self._finish_modal(groups,cancel_action,focus)
         if focus is not None and holder is not self.modal_card: GLib.timeout_add(80,lambda:(scroll_into_view(scroll,focus),GLib.SOURCE_REMOVE)[1])
 
+    def choose_swatch(self, title, message, colours, current, callback, per_row=6):
+        """Colours as a grid of squares without names (Options > Background colour); the current one has a ✓.
+        The arrows move around the grid, OK chooses."""
+        from tvwcs.model import WALLPAPERS
+        self._begin_modal(title)
+        if message: self._message(message)
+        groups=[]; focus=None
+        for start in range(0,len(colours),per_row):
+            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_margin_bottom(S(6)); made=[]
+            for colour in colours[start:start+per_row]:
+                b=Gtk.Button(); b.add_css_class("wallpaper-swatch")
+                if colour in WALLPAPERS: b.add_css_class(f"wall-{WALLPAPERS.index(colour)}")
+                if colour==current:
+                    mark=Gtk.Label(label="✓"); mark.add_css_class("pane-title"); b.set_child(mark); focus=b
+                    dark=sum(int(colour[i:i+2],16) for i in (1,3,5))<380
+                    mark.set_markup(f"<span foreground='{'#ffffff' if dark else '#000000'}'>✓</span>")
+                b.set_tooltip_text(colour)
+                b.connect("clicked",lambda _b,c=colour:(self.close_modal(),callback(c))); line.append(b); made.append(b)
+            self.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
+        cancel,=self._buttons(("Cancel",self.close_modal,None)); groups.append([cancel])
+        self._finish_modal(groups,self.close_modal,focus)
+
     # ---------------------------------------------------------- choosing a hotkey (Options)
     def capture_hotkey(self, label, callback, can_clear=False, cancelled=None):
         """Wait for a key or combination and pass its spec to callback; with can_clear, a Clear button passes "".
         cancelled() runs when it is cancelled."""
         self._begin_modal("New hotkey")
-        self._message(f"Press the key or key combination for “{label}”.\nTap a modifier on its own (such as Super) to use it by itself. Esc cancels.")
+        self._message(f"Press the key or key combination for “{label}”.\nTap a modifier on its own (such as Super) to use it by itself. "
+                      "The arrow keys and OK move to and press Cancel or Clear; Back cancels.")
         specs=[("Cancel",lambda:self._end_capture(None),None)]+([("Clear",lambda:self._end_capture(""),None)] if can_clear else [])
         buttons=self._buttons(*specs)
         self._capture=HotkeyCapture(); self._capture_cb=callback; self._capture_cancel=cancelled
@@ -405,8 +438,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def _capture_key(self, keyval, state):
         name=Gdk.keyval_name(keyval) or ""; held=held_modifiers(state)
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back) and not held: self._end_capture(None); return True
-        if keyval in (Gdk.KEY_Left,Gdk.KEY_Right,Gdk.KEY_Up,Gdk.KEY_Down,Gdk.KEY_Return,Gdk.KEY_KP_Enter) and not held:
-            return False   # moves between Cancel and Clear and presses them
+        if is_navigation(name,held): return False   # moves between Cancel and Clear and presses them
         spec=self._capture.press(name,held)
         if spec: self._end_capture(spec)
         return True
@@ -462,9 +494,12 @@ class ControlWindow(Gtk.ApplicationWindow):
     KEYS={"lower":("1234567890","qwertyuiop","asdfghjkl'","zxcvbnm,.-"),
           "upper":("1234567890","QWERTYUIOP","ASDFGHJKL\"","ZXCVBNM;:_"),
           "symbols":("!@#$%^&*()","`~-_=+[]{}","\\|;:'\",.<>","/?€£¥§°·×÷")}
-    def ask_text(self, title, message, callback, initial="", secret=False, ok_label="OK", back=None, error=""):
+    def ask_text(self, title, message, callback, initial="", secret=False, ok_label="OK", back=None, error="", digits=None):
         """Ask for a line of text: typed on a keyboard, or picked letter by letter on the on-screen keyboard with
-        the D-pad. callback(text) runs on OK or Enter; Cancel (or Esc) runs back() or just closes."""
+        the D-pad. callback(text) runs on OK or Enter; Cancel (or Esc) runs back() or just closes. A password (secret)
+        opens with the full keyboard or the number pad, as Options > Password keyboard says, and a key switches
+        between the two, keeping what is typed."""
+        if digits is None: digits=secret and self.app.password_keyboard=="digits"
         self._begin_modal(title)
         if message: self._message(message)
         if error: self._message(error,"error")
@@ -474,23 +509,37 @@ class ControlWindow(Gtk.ApplicationWindow):
         cancel_action=back or self.close_modal
         def submit(*_):
             text=entry.get_text(); self.close_modal(); callback(text)
+        def switch():
+            typed=entry.get_text(); self.ask_text(title,message,callback,typed,secret,ok_label,back,error,not digits)
         entry.connect("activate",submit)
-        self._text={"entry":entry,"layer":"lower","keys":[]}
+        self._text={"entry":entry,"layer":"lower","keys":[],"digits":digits}
         groups=[NavGroup([entry])]
-        for r in range(4):
-            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(3)); line.set_homogeneous(True); row=[]
-            for c in range(10):
-                b=Gtk.Button(); b.add_css_class("key"); b.connect("clicked",lambda _b,rc=(r,c):self._type(self.KEYS[self._text["layer"]][rc[0]][rc[1]]))
-                line.append(b); row.append(b); self._text["keys"].append((r,c,b))
-            self.modal_card.append(line); g=NavGroup(row); g.column=True; groups.append(g)
+        if digits:
+            for row in (("1","2","3"),("4","5","6"),("7","8","9"),("⌫","0",None)):
+                line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(3)); line.set_homogeneous(True); made=[]
+                for d in row:
+                    if d is None: continue
+                    b=Gtk.Button(label=d); b.add_css_class("key")
+                    b.connect("clicked",lambda _b,d=d:self._erase() if d=="⌫" else self._type(d)); line.append(b); made.append(b)
+                self.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
+        else:
+            for r in range(4):
+                line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(3)); line.set_homogeneous(True); row=[]
+                for c in range(10):
+                    b=Gtk.Button(); b.add_css_class("key"); b.connect("clicked",lambda _b,rc=(r,c):self._type(self.KEYS[self._text["layer"]][rc[0]][rc[1]]))
+                    line.append(b); row.append(b); self._text["keys"].append((r,c,b))
+                self.modal_card.append(line); g=NavGroup(row); g.column=True; groups.append(g)
         controls=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(3)); controls.set_homogeneous(True); controls.set_margin_top(S(3)); made=[]
-        for label,handler in (("⇧ Shift",lambda:self._layer("upper" if self._text["layer"]!="upper" else "lower")),
-                              ("&123",lambda:self._layer("symbols" if self._text["layer"]!="symbols" else "lower")),
-                              ("Space",lambda:self._type(" ")),("⌫",self._erase)):
+        specs=[] if digits else [("⇧ Shift",lambda:self._layer("upper" if self._text["layer"]!="upper" else "lower")),
+                                 ("&123",lambda:self._layer("symbols" if self._text["layer"]!="symbols" else "lower")),
+                                 ("Space",lambda:self._type(" ")),("⌫",self._erase)]
+        if secret: specs.append(("ABC  Full keyboard" if digits else "123  Number pad",switch))
+        for label,handler in specs:
             b=Gtk.Button(label=label); b.add_css_class("key"); b.add_css_class("wide"); b.connect("clicked",lambda _b,h=handler:h()); controls.append(b); made.append(b)
-        self.modal_card.append(controls); g=NavGroup(made); g.column=True; groups.append(g)
+        if made: self.modal_card.append(controls); g=NavGroup(made); g.column=True; groups.append(g)
         cancel,ok=self._buttons(("Cancel",cancel_action,None),(ok_label,submit,"active")); groups.append(NavGroup([cancel,ok]))
-        self._label_keys(); self._finish_modal(groups,cancel_action,entry)
+        if not digits: self._label_keys()
+        self._finish_modal(groups,cancel_action,entry)
         # the keyboard rows keep their column when moving up and down; the last row of keys has 4, so it maps 10 -> 4
     def _label_keys(self):
         layer=self.KEYS[self._text["layer"]]
@@ -498,7 +547,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def _layer(self, name): self._text["layer"]=name; self._label_keys()
     def _type(self, text):
         e=self._text["entry"]; pos=len(e.get_text()); e.set_text(e.get_text()+text); e.set_position(pos+len(text))
-        if self._text["layer"]=="upper": self._layer("lower")   # Shift is for one letter
+        if self._text["layer"]=="upper" and not self._text["digits"]: self._layer("lower")   # Shift is for one letter
     def _erase(self):
         e=self._text["entry"]; e.set_text(e.get_text()[:-1])
     def _text_key(self, keyval):
@@ -506,7 +555,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         if keyval==Gdk.KEY_BackSpace: self._erase(); return True
         if keyval in (Gdk.KEY_Return,Gdk.KEY_KP_Enter): return False   # presses the selected key
         ch=Gdk.keyval_to_unicode(keyval)
-        if ch>=32 and chr(ch).isprintable(): e=self._text["entry"]; e.set_text(e.get_text()+chr(ch)); return True
+        if ch>=32 and chr(ch).isprintable() and (not self._text["digits"] or chr(ch).isdigit()): e=self._text["entry"]; e.set_text(e.get_text()+chr(ch)); return True
         return False
 
     # ================================================================== commands that need root
@@ -552,6 +601,7 @@ class ControlPanelApp(Gtk.Application):
         settings=ConfigStore().settings   # TVWCS's interface size, accent colour, use and motion; Options changes them (settings_changed)
         self.scale_key=settings.get("scale"); self.scale=SCALE_PRESETS.get(self.scale_key,1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
         self.use=settings.get("use",""); self.reduce_motion=bool(settings.get("reduce_motion"))
+        self.theme=settings.get("theme","dark"); self.password_keyboard=settings.get("password_keyboard","full")
     def do_startup(self):
         Gtk.Application.do_startup(self); self.scale=effective_scale(self.scale_key,screen_height()); set_scale(self.scale)   # fitted to the screen, now there is one
     def do_command_line(self, command_line):

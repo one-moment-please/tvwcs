@@ -117,4 +117,17 @@ class WindowManagerTests(unittest.TestCase):
     def test_workspace_name_is_quoted(self):
         wm=FakeWM(workspaces=[{"name":'we"ird',"output":"A","num":-1,"focused":True}],outputs=[{"name":"A"}]); wm.focus_output_under_mouse=lambda:"A"
         wm.focus_workspace('we"ird'); self.assertEqual(wm.sent[0],'workspace "we\\"ird"')
+class ScreenTests(unittest.TestCase):
+    def test_only_windows_on_a_shown_workspace_count(self):
+        shown=FakeWM(workspaces=[{"name":"1: main","visible":True}])
+        self.assertTrue(shown.screen_has_windows())
+        hidden=FakeWM(workspaces=[{"name":"1: main","visible":False},{"name":"2","visible":False}])
+        self.assertFalse(hidden.screen_has_windows())
+        self.assertTrue(FakeWM(workspaces=[{"name":"2","visible":True}]).screen_has_windows())
+    def test_where_tvwcs_is(self):
+        self.assertFalse(FakeWM(workspaces=[{"name":"1: main","visible":True}]).tvwcs_on_screen())
+        self.assertTrue(FakeWM(workspaces=[{"name":"3","visible":True}]).tvwcs_on_screen())
+    def test_urgent_windows(self):
+        self.assertEqual(FakeWM().urgent_ids(),{12})
+
 if __name__=="__main__": unittest.main()
