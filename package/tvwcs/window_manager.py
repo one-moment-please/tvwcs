@@ -230,6 +230,23 @@ class I3WindowManager:
             self._call(f"[con_id={int(w['con_id'])}] fullscreen enable")   # i3 keeps the focus where it is for another workspace's window
 
     def reload(self): return bool(self._call("reload"))
+    def has_windows(self):
+        """True when any application window is open, on any workspace (TVWCS's own windows and bars do not count)."""
+        return bool(self._all_windows())
+
+    # ------------------------------------------------------------ bars
+    def bar_modes(self):
+        """{bar id: mode} of the bars in the i3 / sway config ("dock", "hide", "invisible" or "overlay")."""
+        ids=self._json("-t","get_bar_config")
+        modes={}
+        for bar_id in ids if isinstance(ids,list) else []:
+            cfg=self._json("-t","get_bar_config",str(bar_id))
+            if isinstance(cfg,dict) and cfg.get("mode"): modes[str(bar_id)]=cfg["mode"]
+        return modes
+    def set_bar_mode(self, bar_id, mode):
+        # i3: bar mode <mode> <id>; sway: bar <id> mode <mode>
+        args=("bar",bar_id,"mode",mode) if self.sway else ("bar","mode",mode,bar_id)
+        return _all_ok(self._call(*args))
 
     def close_window(self, con_id):
         if not self.binary: return False

@@ -196,7 +196,8 @@ as_root() {   # run a command as root, asking for the password on this terminal
 
 # ------------------------------------------------------------------ a window manager, when there is none (optional)
 # TVWCS runs in i3 or sway. With neither installed, offer to install one with the package manager: i3 (recommended:
-# TVWCS places its window best there) together with Xorg, startx, xdotool and xrandr, or sway. Afterwards the rest of
+# TVWCS places its window best there) together with Xorg (unless an X server, such as XLibre, is already installed),
+# startx, xdotool and xrandr, or sway. Afterwards the rest of
 # the installer sets it up, and can set the computer to log in and start it at boot. Only offered on a terminal, and
 # not when TVWCS_WMS names the window managers to set up.
 wm_packages() {   # wm_packages <i3|sway>: what to install for it here, or "" when this distribution is not known
@@ -212,6 +213,21 @@ wm_packages() {   # wm_packages <i3|sway>: what to install for it here, or "" wh
         unknown:*) echo "" ;;
         *:sway) echo sway ;;
     esac
+}
+x_server() {   # the X server already installed: XLibre, Xorg, or "" for none
+    if [ -n "${TVWCS_X_SERVER+set}" ]; then echo "$TVWCS_X_SERVER"; return 0; fi   # tests: as if this one (or none) were installed
+    for X in Xlibre Xorg X; do
+        P=$(command -v "$X" 2>/dev/null) || continue
+        if [ "$X" = Xlibre ] || "$P" -version 2>&1 | grep -qi xlibre; then echo XLibre; return 0; fi
+    done
+    for P in /usr/bin/Xlibre /usr/lib/xorg/Xlibre /usr/libexec/Xlibre; do [ -x "$P" ] && { echo XLibre; return 0; }; done
+    for P in /usr/bin/Xorg /usr/lib/xorg/Xorg /usr/libexec/Xorg; do [ -x "$P" ] && { echo Xorg; return 0; }; done
+    echo ""
+}
+without_x_server() {   # the packages given, less the X server's (XLibre replaces Xorg; installing Xorg over it would undo that)
+    for P in "$@"; do
+        case "$P" in xserver-xorg|xorg-server|xorg-x11-server-Xorg|xorg-x11-server|xorg-minimal|x11-base/xorg-server) ;; *) printf '%s ' "$P" ;; esac
+    done
 }
 pkg_install() {   # pkg_install <packages>: install them with this distribution's package manager, as root
     case "$(distro)" in
@@ -229,10 +245,14 @@ offer_wm_install() {
     if command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1; then return 0; fi
     [ -t 0 ] && [ -z "${TVWCS_WMS:-}" ] && [ -n "$(wm_packages i3)" ] || return 0
     echo; echo "Neither i3 nor sway is installed, and TVWCS runs in one of them."
-    printf "Install one now? 1) i3 with Xorg (recommended)  2) sway  3) neither [1]: "
+    XSERVER=$(x_server)
+    if [ -n "$XSERVER" ]; then I3_CHOICE="i3, for the $XSERVER already installed (recommended)"; else I3_CHOICE="i3 with Xorg (recommended)"; fi
+    printf "Install one now? 1) %s  2) sway  3) neither [1]: " "$I3_CHOICE"
     read -r ANSWER || ANSWER=3
     case "$ANSWER" in ""|1*|[Ii]*) WM=i3 ;; 2*|[Ss]*) WM=sway ;; *) echo "Nothing was installed."; return 0 ;; esac
     PKGS=$(wm_packages "$WM")
+    # shellcheck disable=SC2086   # one word per package
+    if [ "$WM" = i3 ] && [ -n "$XSERVER" ]; then PKGS=$(without_x_server $PKGS); PKGS=${PKGS% }; fi
     echo "Installing $WM with: $PKGS (your password may be asked for)"
     # shellcheck disable=SC2086   # one word per package
     if pkg_install $PKGS; then echo "Installed $WM."
