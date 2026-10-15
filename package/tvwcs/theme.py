@@ -18,7 +18,6 @@ button:focus, button:focus-visible, button:active { background: @ACCENT@; color:
 button:focus .channel-number, button:focus .muted, button:focus .child-marker { color: #ffffff; }
 button:focus label { font-weight: 700; }
 button.active { background: @ACCENT@; }
-button.launch-row { text-align: left; }
 button.dialog-button { padding: 0 16px; }
 button.danger:focus, button.danger:focus-visible { background: #e81123; }
 button.square { min-width: 44px; min-height: 44px; padding: 0; }

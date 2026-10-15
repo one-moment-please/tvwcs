@@ -28,7 +28,7 @@ PASSWORD_TRIES=3
 
 CONTROL_CSS="""
 .tab-column { background: #1b1b1b; }
-button.tab-button { min-height: 56px; padding: 0 18px; font-size: 18px; font-weight: 300; background: transparent; }
+button.tab-button { min-height: 48px; padding: 0 18px; font-size: 18px; font-weight: 300; background: transparent; }
 button.tab-button:hover { background: #2d2d2d; }
 button.tab-button.active { background: #2d2d2d; box-shadow: inset 6px 0 0 @ACCENT@; }
 button.tab-button:focus, button.tab-button:focus-visible { background: @ACCENT@; box-shadow: none; }
@@ -132,7 +132,9 @@ class ControlWindow(Gtk.ApplicationWindow):
         brand=Gtk.Label(label="Settings"); brand.add_css_class("brand"); brand.set_xalign(0); brand.set_hexpand(True); header.append(brand)
         self.close_button=icon_button("window-close-symbolic","✕","Close Settings"); self.close_button.add_css_class("close-button"); self.close_button.add_css_class("square")
         self.close_button.connect("clicked",lambda *_:self.close()); header.append(self.close_button); column.append(header)
-        tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); tabs.set_vexpand(True); column.append(tabs)
+        tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2))
+        tab_scroll=Gtk.ScrolledWindow(); tab_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); tab_scroll.set_vexpand(True)
+        tab_scroll.set_child(tabs); column.append(tab_scroll)   # in TV Mode on a 1080p screen the tabs can be taller than it; they scroll
         # ---- the page, beside them
         self.stack=Gtk.Stack(); self.stack.set_hexpand(True); self.stack.set_vexpand(True); self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
         self.stack.add_css_class("pane"); self.stack.set_margin_start(S(12)); panes.append(self.stack)
