@@ -6,6 +6,12 @@ from pathlib import Path
 from tvwcs import control_bluetooth as bt, control_network as net, control_sound as sound, control_sysinfo as info, control_updates as upd
 from tvwcs.control_cmd import Result, key_values, split_terse
 
+class SessionTypeTests(unittest.TestCase):
+    def test_startx_from_a_console_is_x11(self):
+        self.assertEqual(info.session_type({"XDG_SESSION_TYPE":"tty","DISPLAY":":0"}),"X11")
+        self.assertEqual(info.session_type({"XDG_SESSION_TYPE":"tty","WAYLAND_DISPLAY":"wayland-1","DISPLAY":":0"}),"Wayland")
+        self.assertEqual(info.session_type({"XDG_SESSION_TYPE":"tty"}),"tty")
+
 SINKS="""Sink #52
 \tState: RUNNING
 \tName: alsa_output.pci-0000_00_1f.3.analog-stereo

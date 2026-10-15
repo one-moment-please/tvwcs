@@ -20,6 +20,19 @@ class ReleaseTests(unittest.TestCase):
     def test_picks_the_release_zip(self):
         r=selfupdate.release_from_json(release_json(names=("notes.txt","TVWCS-2.6.0-beta.1.zip","TVWCS-2.6.0.zip")))
         self.assertEqual((r.version,r.tag,r.zip_url),("2.6.0","v2.6.0","https://example/TVWCS-2.6.0.zip"))
+    def test_prereleases_only_when_asked_and_newer(self):
+        listing=[dict(release_json("v2.10.3",("TVWCS-2.10.3.zip",)),prerelease=True),dict(release_json("v2.10.4"),draft=True),
+                 release_json("beta-12",("TVWCS-2.5.0-beta.12.zip",)),release_json("v2.10.2",("TVWCS-2.10.2.zip",)),
+                 dict(release_json("v2.10.9",("notes.txt",)),prerelease=True)]
+        newest=selfupdate.newest_release(listing)
+        self.assertEqual((newest.version,newest.prerelease),("2.10.3",True))   # not the draft, the beta tag or the one without a zip
+        self.assertIsNone(selfupdate.newest_release([])); self.assertIsNone(selfupdate.newest_release({"message":"rate limited"}))
+        answers={selfupdate.LATEST_URL:release_json("v2.10.2",("TVWCS-2.10.2.zip",)),selfupdate.RELEASES_URL:listing}
+        with patch.object(selfupdate,"_get_json",answers.get):
+            self.assertEqual(selfupdate.latest_release().version,"2.10.2")
+            self.assertEqual(selfupdate.latest_release(prereleases=True).version,"2.10.3")
+            answers[selfupdate.RELEASES_URL]=[dict(release_json("v2.10.1",("TVWCS-2.10.1.zip",)),prerelease=True)]
+            self.assertEqual(selfupdate.latest_release(prereleases=True).version,"2.10.2")   # an older prerelease is not offered
     def test_no_zip_is_an_error(self):
         with self.assertRaises(UpdateError): selfupdate.release_from_json(release_json(names=("notes.txt",)))
 

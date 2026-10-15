@@ -47,7 +47,7 @@ class Page:
     def content(self):
         scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
         self.body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); self.body.set_margin_start(S(24)); self.body.set_margin_end(S(24)); self.body.set_margin_bottom(S(16))
-        scroll.set_child(self.body); return scroll
+        scroll.set_child(self.body); self.scroll=scroll; return scroll
 
     def nav_groups(self):
         return ([NavGroup(self.header)] if self.header else [])+self.groups
@@ -100,8 +100,11 @@ class Page:
         stale={id(w):i for i,w in self._ids.items()}
         wanted=getattr(self,"focus_after",None); self.focus_after=None   # the row a change turns the focused one into
         if wanted is not None and old is not None: old=wanted
+        scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
         clear_box(self.body); self.groups=[]; self._ids={}
-        self.draw(self.state); self.subtitle.set_text(self.status or self.summary())
+        self.draw(self.state)
+        if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
+            GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
             w=getattr(self.win,widget_ref,None)
             if w is not None and id(w) in stale and stale[id(w)] in self._ids: setattr(self.win,widget_ref,self._ids[stale[id(w)]])
@@ -248,6 +251,11 @@ class OptionsPage(Page):
         self.section("TVWCS UPDATES")
         self.row("Check for updates",self.update_text or f"Version {__version__}",None if self.updating else self.check_updates,ident="opt:update")
         self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
+        self.option("Include prereleases","update_prereleases",
+                    "Every change is released as a prerelease first, and marked as the latest release once it has been tested "
+                    "on a TV computer. On: Check for updates offers prereleases too.")
+        self.row("Roll back to the latest release","",None if self.updating else self.roll_back,ident="opt:rollback")
+        self.note("Installs the release marked latest, even when it is older than this version: the way back from a prerelease.")
 
     def note(self, text, css=None):
         l=super().note(text,css); l.set_margin_bottom(S(6)); return l
@@ -302,7 +310,22 @@ class OptionsPage(Page):
     def check_updates(self):
         self.updating=True; self.update_text="Checking…"; self.redraw()
         def failed(exc): self.updating=False; self.update_text="Check failed"; self.redraw(); self.win.notice("TVWCS updates",f"Could not check for updates: {exc}")
-        in_background(selfupdate.latest_release,self.checked,failed)
+        prereleases=bool(ConfigStore().settings["update_prereleases"])
+        in_background(lambda:selfupdate.latest_release(prereleases),self.checked,failed)
+    def roll_back(self):
+        self.updating=True; self.update_text="Checking…"; self.redraw()
+        def failed(exc): self.updating=False; self.update_text="Check failed"; self.redraw(); self.win.notice("TVWCS updates",f"Could not check for updates: {exc}")
+        def found(release):
+            self.updating=False; self.update_text=""; self.redraw()
+            if selfupdate.parse_version(release.version)==selfupdate.parse_version(__version__):
+                self.win.notice("TVWCS updates",f"This is already the latest release, TVWCS {__version__}."); return
+            dest=selfupdate.install_dir(Path(selfupdate.__file__).parent)
+            if dest is None: self.win.notice("TVWCS updates","This copy runs from a source checkout: change its version with git."); return
+            target=selfupdate.update_target(dest)
+            self.win.confirm("Roll back TVWCS?",f"Install TVWCS {release.version}, the latest release, in place of {__version__}? "
+                             "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install "+release.version,
+                             lambda:self.install(release,target,target!=dest),danger=False)
+        in_background(selfupdate.latest_release,found,failed)
     def checked(self, release):
         self.updating=False
         if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
@@ -313,7 +336,8 @@ class OptionsPage(Page):
         target=selfupdate.update_target(dest); moving=target!=dest
         move=(f" It also moves TVWCS from {dest} to {target} and updates the include line in your i3 / sway config to match "
               "(the config is backed up first)." if moving else "")
-        self.win.confirm("Update TVWCS?",f"TVWCS {release.version} is available (you have {__version__}). Download and install it now?{move} "
+        kind=" prerelease" if release.prerelease else ""
+        self.win.confirm("Update TVWCS?",f"TVWCS {release.version}{kind} is available (you have {__version__}). Download and install it now?{move} "
                          "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
                          lambda:self.install(release,target,moving),danger=False)
     def install(self, release, target, moving):

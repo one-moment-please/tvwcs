@@ -1,10 +1,13 @@
 name: Release
 
+# Prerelease workflow: every push to `main` whose VERSION has no release yet builds TVWCS-<version>.zip and
+#   publishes it as the prerelease v<version>. Once it has been tested on a TV computer, the Promote workflow marks
+#   it as the latest release, which is what TVWCS's updater installs by default.
 # Beta workflow: every push to `beta` builds a prerelease you can download and test.
-# Publish workflow: pushing a tag like `v2.5.0` creates the final, published release.
+# Tag workflow: pushing a tag like `v2.5.0` by hand creates that release, published as the latest at once.
 on:
   push:
-    branches: [beta]
+    branches: [main, beta]
     tags: ["v*"]
 
 permissions:
@@ -15,31 +18,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Decide what to release
+        id: kind
+        run: |
+          version=$(cat VERSION)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "kind=tag" >> "$GITHUB_OUTPUT"; echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+              echo "v$version is already released; nothing to do."; echo "kind=none" >> "$GITHUB_OUTPUT"
+            else
+              echo "kind=prerelease" >> "$GITHUB_OUTPUT"; echo "tag=v$version" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "kind=beta" >> "$GITHUB_OUTPUT"; echo "tag=beta-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v5
+        if: steps.kind.outputs.kind != 'none'
         with: { python-version: "3.12" }
       - name: Run unit tests
+        if: steps.kind.outputs.kind != 'none'
         run: ./scripts/run-tests.sh
       - name: Build zip
         id: build
+        if: steps.kind.outputs.kind != 'none'
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            ./scripts/make-release.sh
-            echo "file=$(ls -t resources/TVWCS-*.zip | grep -v beta | head -1)" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
+          if [ "${{ steps.kind.outputs.kind }}" = beta ]; then
             ./scripts/make-release.sh --beta
             echo "file=$(ls -t resources/TVWCS-*beta*.zip | head -1)" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            ./scripts/make-release.sh
+            echo "file=$(ls -t resources/TVWCS-*.zip | grep -v beta | head -1)" >> "$GITHUB_OUTPUT"
           fi
-      - name: Upload artifact (every beta push — always downloadable)
+      - name: Upload artifact
+        if: steps.kind.outputs.kind != 'none'
         uses: actions/upload-artifact@v4
         with:
           name: tvwcs-build
           path: ${{ steps.build.outputs.file }}
       - name: Create GitHub release
+        if: steps.kind.outputs.kind != 'none'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('beta-{0}', github.run_number) }}
-          prerelease: ${{ steps.build.outputs.prerelease == 'true' }}
+          tag_name: ${{ steps.kind.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ steps.kind.outputs.kind != 'tag' }}
+          make_latest: ${{ steps.kind.outputs.kind == 'tag' && 'true' || 'false' }}
           generate_release_notes: true
           files: ${{ steps.build.outputs.file }}

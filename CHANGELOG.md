@@ -1,8 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.10.2 — 2026-10-15
+
+**Releases**
+- Each change merged into TVWCS is now released at once as a prerelease, and marked as the latest release once it has been tested on a TV computer (the Promote workflow).
 
 **Settings app**
+- Options: **Include prereleases** makes Check for updates offer prereleases too, and **Roll back to the latest release** installs the release marked latest, even when it is older than the one installed.
+- System information: a session started with `startx` from a console shows as X11, not "tty".
+- A page's rows drawn again behind a dialog (such as the update dialog) keep their scroll position.
 - Power and sleep: where `xss-lock` runs (Debian's and Ubuntu's stock i3 config starts `xss-lock -- i3lock`), turning the screen off also locked the computer, even with "Lock after" set to Never, so a TV woke up to a password prompt. The page now says so, and a **Locks when the screen turns off** row comments the line out of the i3 config (keeping a copy as `config.before-tvwcs`) and stops xss-lock.
 - Power and sleep: "Closing the lid" is only shown on a computer that has a lid.
 - Sound: when the volume or mute cannot be changed, the reason is shown and the page shows the real values again, instead of looking changed. − from a volume above 100 % (set by another program) goes down 5 % at a time rather than straight to 100 %. After choosing an output, the selection stays on it.
