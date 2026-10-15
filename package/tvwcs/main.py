@@ -652,14 +652,14 @@ def main():
     if args==["guide"]: return send_signal(signal.SIGUSR2)
     if args==["stop"]: return send_signal(signal.SIGTERM)
     if args==["reload"]: return send_request("reload")
-    if args==["lock"]:   # TVWCS's lock screen (Settings > Power and sleep), run by the power menu's Lock and the idle lock
+    if args in (["lock"],["lock","--nofork"]):   # TVWCS's lock screen (Settings > Power and sleep): the power menu's Lock, the idle lock, xss-lock
         from tvwcs.lockscreen import lock
-        return lock(ConfigStore().settings)   # read the options again (install.sh, after changing them)
+        return lock(ConfigStore().settings,nofork=len(args)==2)   # read the options again (install.sh, after changing them)
     if len(args)==2 and args[0]=="idle" and args[1] in (*power.ACTIONS,"resume"): return idle_action(args[1])
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
-    if args: print("Usage: tvwcs [toggle|guide|stop|reload|lock|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    if args: print("Usage: tvwcs [toggle|guide|stop|reload|lock [--nofork]|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())

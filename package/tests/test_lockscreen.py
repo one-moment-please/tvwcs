@@ -19,6 +19,7 @@ class LockScreenTests(unittest.TestCase):
     def test_locker_arguments(self):
         self.assertEqual(lockscreen.locker_argv("i3lock",[("","/run/lock.png")]),["i3lock","-e","-f","-c","1b1b1b","-i","/run/lock.png"])
         self.assertEqual(lockscreen.locker_argv("i3lock",[]),["i3lock","-e","-f","-c","1b1b1b"])
+        self.assertEqual(lockscreen.locker_argv("i3lock",[],nofork=True),["i3lock","-e","-f","-c","1b1b1b","-n"])
         self.assertEqual(lockscreen.locker_argv("swaylock",[("HDMI-A-1","/a.png"),("DP-1","/b.png")]),
                          ["swaylock","-f","-e","-F","-c","1b1b1b","-i","HDMI-A-1:/a.png","-i","DP-1:/b.png"])
     def test_it_says_a_password_is_needed(self):

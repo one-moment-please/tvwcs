@@ -241,6 +241,47 @@ def stop_xss_lock(path):
     if have("pkill"): run(["pkill","-x","xss-lock"],timeout=5)
     return ""
 
+XSS_LOCKER_NOTE="# TVWCS lock screen (Settings > Power and sleep). xss-lock ran before: "
+def xss_lock_locker(text):
+    """The locker command of the first active xss-lock line (after its "--"), or ""."""
+    lines=text.splitlines()
+    for i in xss_lock_lines(text):
+        if " -- " in lines[i]: return lines[i].split(" -- ",1)[1].strip()
+    return ""
+def with_xss_locker(text, tvwcs_locker):
+    """The config with xss-lock running TVWCS's lock screen (`tvwcs_locker`), or, with "", the locker it ran before
+    (remembered in a note above the line; i3lock --nofork when the note is gone)."""
+    lines=text.splitlines(keepends=True); found=set(xss_lock_lines(text)); out=[]
+    for i,line in enumerate(lines):
+        if i in found and " -- " in line:
+            head,locker=line.rstrip("\n").split(" -- ",1)
+            prev=out[-1] if out else ""
+            if prev.startswith(XSS_LOCKER_NOTE): before=prev[len(XSS_LOCKER_NOTE):].strip(); out.pop()
+            else: before=locker.strip()
+            if tvwcs_locker: out+=[XSS_LOCKER_NOTE+before+"\n",f"{head} -- {tvwcs_locker}\n"]
+            else: out.append(f"{head} -- {before or 'i3lock --nofork'}\n")
+        else: out.append(line)
+    return "".join(out)
+def use_tvwcs_locker(path, tvwcs_locker):
+    """Point the i3 config's xss-lock at TVWCS's lock screen (or back, with ""), then restart xss-lock with the new line.
+    Returns "" when it worked, else why not."""
+    try: text=open(path,encoding="utf-8").read()
+    except OSError as exc: return f"Could not read {path}: {exc.strerror}"
+    new=with_xss_locker(text,tvwcs_locker)
+    if new==text: return ""
+    try:
+        backup=path+".before-tvwcs"
+        if not os.path.exists(backup): shutil.copy2(path,backup)
+        tmp=path+".tvwcs-new"
+        with open(tmp,"w",encoding="utf-8") as f: f.write(new)
+        os.replace(tmp,path)
+    except OSError as exc: return f"Could not change {path}: {exc.strerror}"
+    line=new.splitlines()[xss_lock_lines(new)[0]]
+    command=re.sub(r"^\s*exec(?:_always)?\s+(?:--no-startup-id\s+)?","",line)
+    if have("pkill"): run(["pkill","-x","xss-lock"],timeout=5)
+    if have("i3-msg"): run(["i3-msg","exec --no-startup-id "+command],timeout=5)
+    return ""
+
 # ---------------------------------------------------------------------- sway: swayidle
 def swayidle_argv(settings, launcher):
     """swayidle with one timeout per action; each calls `tvwcs idle <action>` back, which checks sound and inhibitors."""

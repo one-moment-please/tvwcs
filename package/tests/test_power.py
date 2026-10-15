@@ -45,6 +45,15 @@ class PowerTests(unittest.TestCase):
             os.makedirs(os.path.join(acpi,"PNP0C0D:00")); self.assertTrue(power.has_lid((proc,acpi)))
             os.makedirs(os.path.join(proc,"LID0")); self.assertTrue(power.has_lid((proc,os.path.join(tmp,"none"))))
 
+    def test_xss_lock_can_use_the_tvwcs_lock_screen_and_go_back(self):
+        config="# i3 config\nexec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork\nexec --no-startup-id nm-applet\n"
+        mine=power.with_xss_locker(config,"/opt/tvwcs/tvwcs lock --nofork")
+        self.assertEqual(power.xss_lock_locker(mine),"/opt/tvwcs/tvwcs lock --nofork"); self.assertIn(power.XSS_LOCKER_NOTE+"i3lock --nofork\n",mine)
+        self.assertEqual(power.with_xss_locker(mine,"/new/tvwcs lock --nofork").count(power.XSS_LOCKER_NOTE),1)   # moved install: still one note
+        self.assertEqual(power.with_xss_locker(power.with_xss_locker(mine,"/new/tvwcs lock --nofork"),""),config)
+        self.assertEqual(power.with_xss_locker(config,""),config)
+        self.assertEqual(power.with_xss_locker("exec xss-lock\n","x"),"exec xss-lock\n")   # no locker given: left alone
+
     def test_xss_lock_is_commented_out_of_the_i3_config(self):
         config="# i3 config\nexec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork\n#exec xss-lock -- i3lock\nexec_always xss-lock -l -- i3lock\nexec --no-startup-id nm-applet\n"
         self.assertEqual(power.xss_lock_lines(config),[1,3])

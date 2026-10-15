@@ -425,7 +425,8 @@ class PowerPage(Page):
         self.section("LOCKING")
         own=bool(ConfigStore().settings["tvwcs_lock_screen"])
         self.row("Lock screen",LOCK_SCREENS[own],self.choose_lock_screen,icon="system-lock-screen-symbolic",fallback="🔒",ident="lock:screen")
-        self.note("TVWCS's lock screen says the TV is locked and asks for your password. It uses i3lock (or swaylock on sway)."
+        self.note("TVWCS's lock screen says the TV is locked and asks for your password. It uses i3lock (or swaylock on sway), "
+                  "and xss-lock uses it too when it locks the screen."
                   if own else "Lock (after the time above, or from the power menu) uses the screen locker the system has, such as i3lock or swaylock.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
@@ -465,7 +466,13 @@ class PowerPage(Page):
 
     def choose_lock_screen(self):
         def picked(key):
-            store=ConfigStore(); store.settings["tvwcs_lock_screen"]=key=="tvwcs"; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
+            store=ConfigStore(); store.settings["tvwcs_lock_screen"]=key=="tvwcs"; store.save(); tell_tvwcs("reload")
+            path=getattr(self.state,"xss_lock","")
+            if path and path!="?":   # xss-lock (locking when the screen turns off) shows the same lock screen
+                from tvwcs.lockscreen import launcher
+                why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if key=="tvwcs" else "")
+                if why: self.win.notice("Lock screen",why)
+            self.refresh(quiet=True)
         self.win.choose_option("Lock screen",[("tvwcs",LOCK_SCREENS[True]),("system",LOCK_SCREENS[False])],
                                "tvwcs" if ConfigStore().settings["tvwcs_lock_screen"] else "system",picked)
 

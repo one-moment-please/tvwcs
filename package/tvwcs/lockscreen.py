@@ -35,14 +35,14 @@ def command(settings, env=None, which=shutil.which):
     if not (settings or {}).get("tvwcs_lock_screen") or not available(env,which): return None
     return [launcher(),"lock"]
 
-def locker_argv(locker, images, color=BACKGROUND[1:]):
+def locker_argv(locker, images, color=BACKGROUND[1:], nofork=False):
     """The locker's command line. `images` is [(output name, png path)] for swaylock, or [("", one png for the whole
     X screen)] for i3lock. -e: an empty Enter is not a wrong password; -f (i3lock) / -F (swaylock): failed attempts show."""
     if locker=="swaylock":
         argv=["swaylock","-f","-e","-F","-c",color]
         for output,path in images: argv+=["-i",f"{output}:{path}" if output else path]
         return argv
-    argv=["i3lock","-e","-f","-c",color]
+    argv=["i3lock","-e","-f","-c",color]+(["-n"] if nofork else [])   # -n: xss-lock waits for it (as with Debian's `i3lock --nofork`)
     if images: argv+=["-i",images[0][1]]
     return argv
 
@@ -109,8 +109,9 @@ def render(out_dir, accent="#0078d7", user=None, sway=False):
         if keep is not None: keep.destroy()
     return images
 
-def lock(settings=None, env=None):
-    """`tvwcs lock`: paint the picture and start the locker. Falls back to a plain dark lock if painting fails."""
+def lock(settings=None, env=None, nofork=False):
+    """`tvwcs lock [--nofork]`: paint the picture and start the locker. Falls back to a plain dark lock if painting fails.
+    --nofork: i3lock stays in the foreground until unlocked (xss-lock runs it that way)."""
     from tvwcs.session import runtime_dir
     env=os.environ if env is None else env; settings=settings or {}
     locker=available(env)
@@ -119,5 +120,5 @@ def lock(settings=None, env=None):
     try: images=render(runtime_dir()/"lockscreen",settings.get("accent","#0078d7"),sway=locker=="swaylock")
     except Exception as exc:   # never leave the computer unlocked because the picture could not be drawn
         print(f"Could not draw the lock screen ({exc}); locking with a plain screen.",file=__import__("sys").stderr); images=[]
-    argv=locker_argv(locker,images)
+    argv=locker_argv(locker,images,nofork=nofork)
     os.execvp(argv[0],argv)
