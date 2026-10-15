@@ -43,7 +43,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._groups={"quick":[],"guide":[],"options":[]}; self._header_group=[]
         self._search_results=[]; self._selected_result=0; self._result_groups=[]; self._result_mains=[]; self._stars={}
         self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None; self._password=None
-        self._open_row=None
+        self._open_row=None; self._text=None
 
     # ================================================================== construction
     def _build(self):
@@ -58,7 +58,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.modal_layer=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.modal_layer.add_css_class("modal-scrim"); self.modal_layer.set_visible(False)
         self.modal_card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(6)); self.modal_card.add_css_class("modal-card")
         self.modal_card.set_halign(Gtk.Align.CENTER); self.modal_card.set_valign(Gtk.Align.CENTER); self.modal_card.set_hexpand(True); self.modal_card.set_vexpand(True)
-        self.modal_card.set_size_request(min(S(440),max(S(280),layout.quick_width-S(40))),-1)
+        self._card_width=min(S(440),max(S(280),layout.quick_width-S(40))); self.modal_card.set_size_request(self._card_width,-1)
         self.modal_layer.append(self.modal_card); overlay.add_overlay(self.modal_layer)
         self.set_child(overlay)
         self.set_panels(self.guide_open,self.options_open); self._refresh_search_results()
@@ -620,6 +620,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self._escape(); return True   # the remote's Back key (XF86Back) is Esc
         if self._pin is not None and self._pin_key(keyval): return True
         if self._password is not None and not editable and self._password_key(keyval): return True
+        if self._text is not None and not editable and self._text_key(keyval): return True
         # Typing anywhere starts a search (not while a dialog is up, in another text field, or with a shortcut modifier held).
         if not self._modal_groups and not editable and not (state & _TYPING_BLOCKED):
             ch=Gdk.keyval_to_unicode(keyval)
@@ -647,7 +648,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             if g.expand and g.toggle is not None: g.expand(); g.toggle.grab_focus(); return True
         if keyval in (Gdk.KEY_Left,Gdk.KEY_Right) and not editable:
             if self._move_within_group(1 if keyval==Gdk.KEY_Right else -1): return True
-        if keyval in (Gdk.KEY_Return,Gdk.KEY_KP_Enter) and typing: self._activate_search(); return True
+        if keyval in (Gdk.KEY_Return,Gdk.KEY_KP_Enter) and typing:
+            if not self.search_entry.get_text().strip(): self.ask_search(); return True   # Enter on an empty search: the on-screen keyboard
+            self._activate_search(); return True
         return False
     def _key_released(self,_controller,keyval,_keycode,state):
         if self._capture is not None:
@@ -680,9 +683,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     # ---------------------------------------------------------- dialogs (drawn over the panels, remote-navigable)
     def _begin_modal(self):
         if not self._modal_groups: self._return_focus=self.get_focus()
-        clear_box(self.modal_card); self.modal_layer.set_visible(True)
+        clear_box(self.modal_card); self.modal_card.set_size_request(self._card_width,-1); self.modal_layer.set_visible(True)
     def close_modal(self):
-        self._modal_groups=[]; self._modal_back=None; self.modal_layer.set_visible(False); self._capture=None; self._pin=None
+        self._modal_groups=[]; self._modal_back=None; self.modal_layer.set_visible(False); self._capture=None; self._pin=None; self._text=None
         if self._password is not None: self._password["entry"].set_text(""); self._password=None   # never left in the widget
         back=self._return_focus
         if back is not None and usable(back): back.grab_focus()
@@ -804,15 +807,98 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if ch>=32 and chr(ch).isprintable(): self._password_type(chr(ch)); return True
         return False
 
-    def choose_option(self,title,options,current,callback):
-        """A small pop-up listing the choices for a setting, with the current one ticked."""
+    # ---------------------------------------------------------- the on-screen keyboard (typing with a remote)
+    KEYS={"lower":("1234567890","qwertyuiop","asdfghjkl'","zxcvbnm,.-"),
+          "upper":("1234567890","QWERTYUIOP","ASDFGHJKL\"","ZXCVBNM;:_"),
+          "symbols":("!@#$%^&*()","~`+=[]{}\\|","/?<>€£¥§°¿","…·•×÷¡«»¢¤")}
+    def ask_text(self,title,callback,initial="",message="",back=None,digits=False,secret=False,ok_label="OK",max_len=0):
+        """Type a piece of text with the D-pad: a full keyboard (letters, capitals, symbols) or, with digits, a number
+        keypad. A real keyboard types into it too. callback(text) runs on OK or Enter; Cancel or Back runs back()
+        (or just closes)."""
+        self._begin_modal(); self._title(title)
+        if message:
+            m=muted_label(message); m.set_margin_bottom(S(8)); self.modal_card.append(m)
+        entry=Gtk.PasswordEntry() if secret else Gtk.Entry()
+        if secret: entry.set_show_peek_icon(True)
+        entry.add_css_class("pin-display" if digits else "text-display"); entry.set_text(initial or ""); entry.set_margin_bottom(S(8))
+        if max_len and not secret: entry.set_max_length(max_len)
+        self.modal_card.append(entry)
+        cancelled=back or self.close_modal
+        def submit(*_):
+            text=entry.get_text(); self.close_modal(); callback(text)
+        entry.connect("activate",submit)
+        self._text={"entry":entry,"submit":submit,"layer":"lower","keys":[],"digits":digits,"max":max_len}
+        groups=[NavGroup([entry])]
+        def key(text,handler,css=None):
+            b=Gtk.Button(label=text); b.add_css_class("pin-key")
+            if css: b.add_css_class(css)
+            b.connect("clicked",lambda *_:handler()); return b
+        def line(buttons):
+            box=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); box.set_homogeneous(True); box.set_margin_bottom(S(4))
+            for b in buttons: box.append(b)
+            self.modal_card.append(box); g=NavGroup(buttons); g.column=True; groups.append(g)
+        if digits:
+            for row in (("1","2","3"),("4","5","6"),("7","8","9")): line([key(d,lambda d=d:self._type(d)) for d in row])
+            line([key("⌫",self._erase),key("0",lambda:self._type("0")),key(ok_label,submit,"active")])
+        else:
+            for r in range(4):
+                buttons=[key("",lambda r=r,c=c:self._type(self.KEYS[self._text["layer"]][r][c]),"kb-key") for c in range(10)]
+                self._text["keys"].append(buttons); line(buttons)
+            shift=key("⇧",lambda:self._layer("lower" if self._text["layer"]=="upper" else "upper"))
+            symbols=key("&123",lambda:self._layer("lower" if self._text["layer"]=="symbols" else "symbols"))
+            space=key("Space",lambda:self._type(" ")); erase=key("⌫",self._erase); ok=key(ok_label,submit,"active")
+            box=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); box.set_margin_bottom(S(4))
+            for b in (shift,symbols,space,erase,ok): b.add_css_class("kb-key"); box.append(b)
+            space.set_hexpand(True)
+            for b,w in ((shift,56),(symbols,64),(erase,56),(ok,88)): b.set_size_request(S(w),-1)
+            self.modal_card.append(box); g=NavGroup([shift,symbols,space,erase,ok]); groups.append(g)
+            self._text["shift"]=shift; self._text["symbols"]=symbols; self._label_keys()
+        cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(6)); cancel.connect("clicked",lambda *_:cancelled()); self.modal_card.append(cancel); groups.append(NavGroup([cancel]))
+        self._modal_groups=groups; self._modal_back=cancelled
+        first=groups[1][0]; first.grab_focus()
+        GLib.timeout_add(150,lambda:(self._text is not None and self._text["entry"] is entry and self.get_focus() is None and first.grab_focus(),GLib.SOURCE_REMOVE)[1])
+    def _label_keys(self):
+        st=self._text; rows=self.KEYS[st["layer"]]
+        for r,buttons in enumerate(st["keys"]):
+            for c,b in enumerate(buttons): b.set_label(rows[r][c])
+        (st["shift"].add_css_class if st["layer"]=="upper" else st["shift"].remove_css_class)("active")
+        st["symbols"].set_label("abc" if st["layer"]=="symbols" else "&123")
+    def _layer(self,name):
+        self._text["layer"]=name; self._label_keys()
+    def _type(self,text):
+        st=self._text; e=st["entry"]; value=e.get_text()
+        if st["max"] and len(value)>=st["max"]: return
+        e.set_text(value+text)
+        if st["layer"]=="upper" and not st["digits"]: self._layer("lower")   # one capital, like a phone keyboard
+    def _erase(self):
+        e=self._text["entry"]; e.set_text(e.get_text()[:-1])
+    def _text_key(self,keyval):
+        """With a key of the on-screen keyboard selected, a real keyboard still types into the text."""
+        if keyval==Gdk.KEY_BackSpace: self._erase(); return True
+        if keyval in (Gdk.KEY_Return,Gdk.KEY_KP_Enter): return False   # activates the selected key
+        ch=Gdk.keyval_to_unicode(keyval)
+        if ch>=32 and chr(ch).isprintable() and (not self._text["digits"] or chr(ch).isdigit()):
+            e=self._text["entry"]; value=e.get_text()
+            if not self._text["max"] or len(value)<self._text["max"]: e.set_text(value+chr(ch))
+            return True
+        return False
+    def ask_search(self):
+        """The search field typed with the on-screen keyboard (Enter on the empty search field)."""
+        def done(text):
+            self.search_entry.set_text(text); self.search_entry.grab_focus(); self.search_entry.set_position(-1)
+        self.ask_text("Search",done,self.search_entry.get_text(),"Apps, channels, workspaces or window titles.",ok_label="Search")
+
+    def choose_option(self,title,options,current,callback,back=None):
+        """A small pop-up listing the choices for a setting, with the current one ticked. back() runs on Cancel."""
         self._begin_modal(); self._title(title); groups=[]; focus=None
         for key,label in options:
             chosen=key==current
             b=self.dialog_button("object-select-symbolic" if chosen else None,"✓" if chosen else "",label)
             b.connect("clicked",lambda _b,k=key:(self.close_modal(),callback(k))); self.modal_card.append(b); groups.append(NavGroup([b]))
             if chosen: focus=b
-        self._modal_groups=groups; self._modal_back=self.close_modal; (focus or groups[0][0]).grab_focus()
+        cancelled=back or self.close_modal
+        cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(8)); cancel.connect("clicked",lambda *_:cancelled()); self.modal_card.append(cancel); groups.append(NavGroup([cancel]))
+        self._modal_groups=groups; self._modal_back=cancelled; (focus or groups[0][0]).grab_focus()
 
     def choose_profile(self,callback):
         """Pick an application: favorites first, then apps with channel numbers, then everything else."""

@@ -32,6 +32,8 @@ button.category-header:focus, button.category-header:focus-visible { background:
 button:focus .description, .tvwcs-selected .description { color: #e3eefa; }
 .pin-display { font-size: 34px; font-weight: 300; letter-spacing: 4px; }
 button.pin-key { font-size: 24px; min-height: 64px; }
+button.pin-key.kb-key { font-size: 18px; min-height: 46px; min-width: 0; padding: 0 2px; }
+.text-display { font-size: 22px; min-height: 48px; }
 .setting-value { color: @ACCENT@; font-weight: 700; }
 button:focus .setting-value { color: #ffffff; }
 .tvwcs-selected { background: @ACCENT@; color: #ffffff; outline: 3px solid #ffffff; outline-offset: -3px; }
