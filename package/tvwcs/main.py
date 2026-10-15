@@ -14,7 +14,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
-from tvwcs.model import CONFIG_HOME, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
+from tvwcs.model import CONFIG_HOME, apply_use, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import power, privilege, quick_status, tv_mode
@@ -172,6 +172,7 @@ def idle_action(action):
 class TVWCSApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.NON_UNIQUE)
+        self._welcomed=False
         self.window=None; self.catalogue=ApplicationCatalogue(); self.store=ConfigStore(); self.wm=I3WindowManager()
         self.layout=None; self._owns_pid=False
         self.pin_gate=PinGate(); self.owners=WindowOwners()
@@ -302,6 +303,8 @@ class TVWCSApp(Gtk.Application):
         self._update_layout(guide,False,focus_output=True)
         w.set_default_size(self.layout.width,self.layout.height); w._build(); w.present(); self.apply_geometry()
         w.focus_pane_soon("guide" if guide else "quick")
+        if not self.store.settings.get("use") and not self._welcomed:   # first run: TV or desk?
+            self._welcomed=True; GLib.timeout_add(120,lambda:(w.first_run(None),GLib.SOURCE_REMOVE)[1])
         return False
     def show_panels(self,guide,options,focus=None):
         """Open or close the Guide / Settings panels of the visible window and resize it to fit."""
@@ -402,8 +405,27 @@ class TVWCSApp(Gtk.Application):
     def activate_result(self,result):
         if result["kind"]=="profile": self.launch_profile(result["profile"])
         elif result["kind"]=="window": self.focus_window(result["window"]["con_id"])
-    def _launched(self,profile,started=False):
-        self.store.record_last_profile(profile.id); self.hide_window(launched=started)
+    STARTING_SLOW=20   # seconds before "Starting …" says the app may not have started
+    STARTING_GIVE_UP=60
+    def _launched(self,profile,started=False,before=None):
+        self.store.record_last_profile(profile.id)
+        w=self.window
+        if not started or before is None or w is None or not w.is_visible() or not self.wm.available: self.hide_window(launched=started); return
+        # "Starting Kodi…" until the app's first window appears: a slow app otherwise looks like nothing happened.
+        state={"done":False,"t":0.0}
+        def finish():
+            if state["done"]: return
+            state["done"]=True
+            if w._modal_groups: w.close_modal()
+            self.hide_window(launched=True)
+        def check():
+            if state["done"]: return GLib.SOURCE_REMOVE
+            if not w.is_visible() or not w._modal_groups: state["done"]=True; return GLib.SOURCE_REMOVE   # closed some other way
+            state["t"]+=0.4
+            if any(int(x["con_id"]) not in before for x in self.wm.windows()) or state["t"]>=self.STARTING_GIVE_UP: finish(); return GLib.SOURCE_REMOVE
+            if abs(state["t"]-self.STARTING_SLOW)<0.2: w.starting_slow(profile.name)
+            return GLib.SOURCE_CONTINUE
+        w.show_starting(profile.name,finish); GLib.timeout_add(400,check)
     def launch_profile(self,profile,bypass_pin=False):
         if profile is None: return
         app=self.catalogue.by_id().get(profile.desktop_id)
@@ -420,7 +442,8 @@ class TVWCSApp(Gtk.Application):
         if self.wm.focus(window["con_id"],self.launch_mode(profile)): self._launched(profile)
         else: self._start(profile,app)
     def _start(self,profile,app):
-        known={int(w["con_id"]) for w in self.wm.windows()} if any(p.pin_hash for p in self.store.profiles) else None
+        before={int(w["con_id"]) for w in self.wm.windows()}
+        known=before if any(p.pin_hash for p in self.store.profiles) else None
         mode=self.launch_mode(profile)
         try:
             if profile.desktop_action and app:
@@ -438,7 +461,7 @@ class TVWCSApp(Gtk.Application):
                 self.wm.prepare_for_launch(mode)
                 if not info.launch([],None): raise RuntimeError(f"Linux refused to launch {profile.name}.")
             if known is not None: self._remember_windows(profile,app,known)
-            self._launched(profile,started=True)
+            self._launched(profile,started=True,before=before)
         except (OSError,ValueError,RuntimeError) as exc: self.notify_message(f"Could not launch {profile.name}: {exc}")
     def _remember_windows(self,profile,app,known):
         """Note which windows this launch opened, so a later 'show' knows whose PIN applies. The app needs a moment to map them."""
@@ -597,8 +620,17 @@ class TVWCSApp(Gtk.Application):
         if self.window is not None and not self.window.is_visible(): self.show_mode("toggle")
         return GLib.SOURCE_REMOVE
 
+    def set_use(self,use):
+        """First run: where TVWCS is used (TV or desk), as in Settings > Options > Used on."""
+        old=self.store.settings["scale"]; apply_use(self.store.settings,use); self.store.save()
+        self.apply_hotkeys(); self.idle.apply(); self.watch.apply_bar()
+        if self.store.settings["scale"]!=old and self.window is not None: set_scale(self.scale_factor); self.apply_scale()
     def notify_message(self,message):
-        # Gtk.MessageDialog exists on every GTK 4 release shipped by supported Mint/Debian/Ubuntu versions.
+        """A problem to tell the user about, shown in the TVWCS window (opened for it when hidden)."""
+        w=self.window
+        if w is not None:
+            if not w.is_visible(): self.show_mode("toggle")
+            w.show_message(message); return
         d=Gtk.MessageDialog(application=self,transient_for=self.window,modal=True,message_type=Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.OK,text=message)
         d.connect("response",lambda w,*_:w.destroy()); d.present()
 
