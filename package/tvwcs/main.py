@@ -323,6 +323,7 @@ class TVWCSApp(Gtk.Application):
         """Open or close the Guide / Settings panels of the visible window and resize it to fit."""
         w=self.window
         if w is None or not w.is_visible(): return
+        if w.guide_open and not guide and self.has_dialogs(): self.dismiss_dialogs()   # an app's dialog from Applications closes with it
         self._update_layout(guide,options,focus_output=False)
         w.set_panels(guide,options); w.set_default_size(self.layout.width,self.layout.height); self.apply_geometry()
         if focus: w.focus_pane_soon(focus)

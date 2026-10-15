@@ -86,7 +86,9 @@ class ProfileEditor:
         def got(text): self.draft.name=text.strip() or self.draft.name; self.show()
         self.win.ask_text("Profile name",got,self.draft.name,back=self.show,max_len=80)
     def _edit_channel(self):
-        def got(text): self.draft.channel=text.strip(); self.show()
+        def got(text):
+            t=text.strip(); self.draft.channel=str(int(t)) if t.isdigit() else t   # "002" is the same channel as "2": not a change
+            self.show()
         self.win.ask_channel("Channel number",got,self.draft.channel,back=self.show)
     def _edit_opens(self):
         def got(k): self.draft.new_workspace=k=="new"; self.show()
