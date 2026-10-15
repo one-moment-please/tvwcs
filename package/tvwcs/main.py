@@ -650,6 +650,7 @@ def main():
     args=sys.argv[1:]
     if args==["toggle"]: return send_signal(signal.SIGUSR1)
     if args==["guide"]: return send_signal(signal.SIGUSR2)
+    if args in (["--version"],["version"]): from tvwcs import __version__; print(f"TVWCS {__version__}"); return 0
     if args==["stop"]: return send_signal(signal.SIGTERM)
     if args==["reload"]: return send_request("reload")
     if args in (["lock"],["lock","--nofork"]):   # TVWCS's lock screen (Settings > Power and sleep): the power menu's Lock, the idle lock, xss-lock
@@ -660,6 +661,6 @@ def main():
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
-    if args: print("Usage: tvwcs [toggle|guide|stop|reload|lock [--nofork]|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    if args: print("Usage: tvwcs [toggle|guide|stop|reload|--version|lock [--nofork]|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())

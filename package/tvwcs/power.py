@@ -278,8 +278,9 @@ def use_tvwcs_locker(path, tvwcs_locker):
     except OSError as exc: return f"Could not change {path}: {exc.strerror}"
     line=new.splitlines()[xss_lock_lines(new)[0]]
     command=re.sub(r"^\s*exec(?:_always)?\s+(?:--no-startup-id\s+)?","",line)
-    if have("pkill"): run(["pkill","-x","xss-lock"],timeout=5)
-    if have("i3-msg"): run(["i3-msg","exec --no-startup-id "+command],timeout=5)
+    if xss_lock_running():   # restarted with the new locker; one that is not running starts with it next time i3 starts
+        if have("pkill"): run(["pkill","-x","xss-lock"],timeout=5)
+        if have("i3-msg"): run(["i3-msg","exec --no-startup-id "+command],timeout=5)
     return ""
 
 # ---------------------------------------------------------------------- sway: swayidle

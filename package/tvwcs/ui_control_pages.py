@@ -214,10 +214,10 @@ class OptionsPage(_ConfigPage):
         self.option("Close button (✕)","quick_close_button","Esc and the remote's Back key close the Quick Menu too.")
         locker=command_for("lock",st)
         self.option("Lock in the power menu","quick_lock_button",
-                    "The power menu (⏻) always has Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
+                    "The power menu always has Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
                     ". It has no Log out here: without a login screen, logging out would only leave a text console.")
                     +("" if locker else " No screen locker is installed (such as i3lock, or swaylock on sway), so Lock would not work yet."))
-        self.option("Options buttons on rows (☰)","hide_options_buttons","Even hidden, a row's options open by pressing ← on it, or by right-clicking it.",invert=True)
+        self.option("Options buttons on rows (⋮)","hide_options_buttons","Even hidden, a row's options open by pressing ← on it, or by right-clicking it.",invert=True)
         self.option("Button hints","button_hints","Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
 
         self.section("DISPLAY")
@@ -468,11 +468,12 @@ class PowerPage(Page):
         def picked(key):
             store=ConfigStore(); store.settings["tvwcs_lock_screen"]=key=="tvwcs"; store.save(); tell_tvwcs("reload")
             path=getattr(self.state,"xss_lock","")
+            if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
             if path and path!="?":   # xss-lock (locking when the screen turns off) shows the same lock screen
                 from tvwcs.lockscreen import launcher
                 why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if key=="tvwcs" else "")
                 if why: self.win.notice("Lock screen",why)
-            self.refresh(quiet=True)
+            self.redraw()
         self.win.choose_option("Lock screen",[("tvwcs",LOCK_SCREENS[True]),("system",LOCK_SCREENS[False])],
                                "tvwcs" if ConfigStore().settings["tvwcs_lock_screen"] else "system",picked)
 

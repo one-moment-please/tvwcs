@@ -102,6 +102,7 @@ install_files() {
     for MD in README.md CHANGELOG.md PROJECT_OVERVIEW.md TODO.md LICENSE; do [ -f "$DOCS/$MD" ] && cp "$DOCS/$MD" "$DEST/"; done
     chmod +x "$DEST/bin/tvwcs"
     [ -f "$LAUNCHER" ] && cp "$LAUNCHER" "$DEST/"
+    if [ -f "$(dirname "$LAUNCHER")/tvwcs-settings.svg" ]; then cp "$(dirname "$LAUNCHER")/tvwcs-settings.svg" "$DEST/"; fi
 }
 
 # The Settings app's launcher, so it is listed with the other applications (in the guide's System category). Its
@@ -112,7 +113,9 @@ install_launcher() {
     case "$DEST" in *'$'*|*'`'*|*'\'*) echo "Skipped the Settings app's menu entry: $DEST has a character a .desktop file cannot hold. Run: '$DEST/bin/tvwcs' settings" >&2; return 0 ;; esac
     APPS=${XDG_DATA_HOME:-$HOME/.local/share}/applications
     mkdir -p "$APPS"
-    P="$DEST/bin/tvwcs" awk '/^Exec=tvwcs / { sub(/^Exec=tvwcs/, "Exec=\"" ENVIRON["P"] "\""); } { print }' "$LAUNCHER" > "$APPS/com.tvwcs.ControlPanel.desktop"
+    # Its icon is TVWCS's own picture (icon themes such as Adwaita 4x no longer have a full-colour preferences-system).
+    ICON=""; if [ -f "$DEST/tvwcs-settings.svg" ]; then ICON="$DEST/tvwcs-settings.svg"; fi
+    P="$DEST/bin/tvwcs" I="$ICON" awk '/^Exec=tvwcs / { sub(/^Exec=tvwcs/, "Exec=\"" ENVIRON["P"] "\""); } /^Icon=/ && ENVIRON["I"] != "" { $0 = "Icon=" ENVIRON["I"] } { print }' "$LAUNCHER" > "$APPS/com.tvwcs.ControlPanel.desktop"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$APPS" 2>/dev/null || true
 }
 

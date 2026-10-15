@@ -349,6 +349,8 @@ def search_items(query, profiles, applications, windows):
     """Return tagged search results as dictionaries; search is case-insensitive."""
     q=(query or "").strip().casefold()
     results=[]
+    # A profile whose application was uninstalled cannot start (unless it runs its own command): it is not offered.
+    profiles=[p for p in profiles if p.desktop_id in applications or p.command.strip()]
     def window_result(w):
         title,badge=extract_badge(w.get("title",""),w.get("urgent",False))
         return {"kind":"window","id":str(w.get('con_id')),"label":title or w.get("class") or "Untitled window","detail":"Open window","window":w,"badge":badge}

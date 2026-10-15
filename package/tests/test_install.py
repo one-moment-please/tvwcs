@@ -50,7 +50,7 @@ class InstallTests(unittest.TestCase):
         entry=(self.home/".local"/"share"/"applications"/"com.tvwcs.ControlPanel.desktop").read_text()
         self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" settings\n',entry)   # quoted: this home folder has a space
         self.assertIn(f'\nExec="{self.dest}/bin/tvwcs" settings network\n',entry); self.assertNotIn("Exec=tvwcs",entry)
-        self.assertIn("Categories=Settings;System;",entry); self.assertTrue((self.dest/"com.tvwcs.ControlPanel.desktop").is_file())
+        self.assertIn("Categories=Settings;System;",entry); self.assertIn(f"Icon={self.dest}/tvwcs-settings.svg",entry); self.assertTrue((self.dest/"com.tvwcs.ControlPanel.desktop").is_file())
         self.assertIn("\nName=TVWCS Settings\n",entry); self.assertIn("\nNotShowIn=GNOME;KDE;\n",entry)   # not next to GNOME's or KDE's own Settings
     def test_adds_the_include_line_when_allowed_and_only_once(self):
         self.write_i3("set $mod Mod4\n")
