@@ -5,6 +5,7 @@ without systemd), else the plain commands (zzz, reboot, poweroff), which usually
 from __future__ import annotations
 import os, shlex, shutil
 from dataclasses import dataclass
+from tvwcs import lockscreen
 
 @dataclass(frozen=True)
 class SystemAction:
@@ -79,7 +80,8 @@ def lock_command(configured="", env=None, which=shutil.which):
 def command_for(action_id, settings=None, env=None, which=shutil.which, systemd=None):
     """The command for a system action, or None when this system has nothing that does it (or it is not a command)."""
     settings=settings or {}
-    if action_id=="lock": return lock_command(settings.get("lock_command",""),env,which)
+    if action_id=="lock":   # TVWCS's own lock screen when chosen (lockscreen.py), else the usual locker
+        return lockscreen.command(settings,env,which) or lock_command(settings.get("lock_command",""),env,which)
     if action_id=="logout": return logout_command(env,which)
     if action_id in POWER_VERBS: return power_command(action_id,which,systemd)
     return None

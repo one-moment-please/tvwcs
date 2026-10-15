@@ -1,0 +1,123 @@
+"""TVWCS's lock screen (Settings > Power and sleep > Lock screen): i3lock, or swaylock on sway, showing a picture in
+TVWCS's style that says the computer is locked and how to unlock it.
+
+TVWCS does not draw the lock itself: a screen locker must grab the keyboard and keep the screen covered even if it
+crashes, which i3lock and swaylock are built for. TVWCS only paints the picture they show (`tvwcs lock` renders it with
+GTK, one per monitor, then starts the locker). Unlocking is as with any i3lock: type the password and press Enter.
+The command half has no GTK dependency."""
+from __future__ import annotations
+import getpass, os, shutil, socket
+from pathlib import Path
+
+BACKGROUND="#1b1b1b"
+TITLE="Locked"
+def message(user):
+    return f"A password is needed. Type {user}'s password, then press Enter to unlock."
+HINT="Nothing shows while you type. A wrong password flashes in the circle in the middle of the screen."
+
+def _sway(env): return bool(env.get("SWAYSOCK"))
+
+def available(env=None, which=shutil.which):
+    """The locker TVWCS's lock screen runs here: "swaylock" on sway, "i3lock" elsewhere, or "" when it is not installed."""
+    env=os.environ if env is None else env
+    name="swaylock" if _sway(env) else "i3lock"
+    return name if which(name) else ""
+
+def launcher():
+    """The tvwcs launcher script, next to the package (as main.LAUNCHER finds it)."""
+    here=Path(__file__).resolve().parent
+    for cand in (here.parent/"bin"/"tvwcs",here/"tvwcs",here.parent.parent/"bin"/"tvwcs"):
+        if cand.exists(): return str(cand)
+    return "tvwcs"
+
+def command(settings, env=None, which=shutil.which):
+    """`tvwcs lock` when the TVWCS lock screen is chosen and its locker is installed, else None (the usual locker is used)."""
+    if not (settings or {}).get("tvwcs_lock_screen") or not available(env,which): return None
+    return [launcher(),"lock"]
+
+def locker_argv(locker, images, color=BACKGROUND[1:]):
+    """The locker's command line. `images` is [(output name, png path)] for swaylock, or [("", one png for the whole
+    X screen)] for i3lock. -e: an empty Enter is not a wrong password; -f (i3lock) / -F (swaylock): failed attempts show."""
+    if locker=="swaylock":
+        argv=["swaylock","-f","-e","-F","-c",color]
+        for output,path in images: argv+=["-i",f"{output}:{path}" if output else path]
+        return argv
+    argv=["i3lock","-e","-f","-c",color]
+    if images: argv+=["-i",images[0][1]]
+    return argv
+
+# ---------------------------------------------------------------------- painting the picture (GTK)
+def _renderer(Gdk, Gsk, Gtk):
+    r=Gsk.CairoRenderer.new()
+    try: r.realize_for_display(Gdk.Display.get_default()); return r,None
+    except (AttributeError,TypeError): pass
+    try:
+        if r.realize(None): return r,None
+    except Exception: pass
+    win=Gtk.Window(); win.realize(); return win.get_renderer(),win   # GTK before 4.14: an unmapped window's renderer
+
+def _paint(snap, Gdk, Graphene, Pango, ctx, x, y, w, h, user, accent):
+    def rgba(spec): c=Gdk.RGBA(); c.parse(spec); return c
+    snap.append_color(rgba(BACKGROUND),Graphene.Rect().init(x,y,w,h))
+    unit=max(0.6,h/1080)
+    left=x+round(110*unit); width=min(w-2*round(110*unit),round(1100*unit))
+    def text(markup, size, weight, color, top):
+        layout=Pango.Layout.new(ctx); layout.set_width(width*Pango.SCALE); layout.set_wrap(Pango.WrapMode.WORD_CHAR)
+        fd=Pango.FontDescription.from_string(f"Segoe UI, Selawik, Open Sans, Noto Sans, sans {weight} {size*unit:.0f}px")
+        fd.set_absolute_size(size*unit*Pango.SCALE); layout.set_font_description(fd); layout.set_text(markup,-1)
+        snap.save(); snap.translate(Graphene.Point().init(left,top)); snap.append_layout(layout,rgba(color)); snap.restore()
+        return layout.get_pixel_size()[1]
+    bottom=y+h-round(120*unit)
+    top=bottom-round(330*unit)
+    snap.append_color(rgba(accent),Graphene.Rect().init(left,top,round(90*unit),round(8*unit)))   # the Metro accent bar
+    top+=round(34*unit)
+    top+=text(TITLE,96,"Light","#ffffff",top)+round(14*unit)
+    top+=text(message(user),30,"Normal","#ffffff",top)+round(12*unit)
+    text(HINT,20,"Normal","#9a9a9a",top)
+    host=socket.gethostname().split(".")[0]
+    text(host,20,"Normal","#7d7d7d",y+round(60*unit))
+
+def render(out_dir, accent="#0078d7", user=None, sway=False):
+    """Paint the lock picture(s) into out_dir: one per monitor on sway, one for the whole X screen otherwise.
+    Returns [(output name, path)] ([] when there is no display)."""
+    import gi
+    gi.require_version("Gtk","4.0"); gi.require_version("Gdk","4.0"); gi.require_version("Gsk","4.0"); gi.require_version("Graphene","1.0")
+    from gi.repository import Gdk, Graphene, Gsk, Gtk, Pango
+    Gtk.init(); display=Gdk.Display.get_default()
+    if display is None: return []
+    user=user or getpass.getuser(); out_dir=Path(out_dir); out_dir.mkdir(parents=True,exist_ok=True)
+    monitors=display.get_monitors(); rects=[]
+    for i in range(monitors.get_n_items()):
+        m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
+        rects.append((m.get_connector() or f"output{i}",g.x*f,g.y*f,g.width*f,g.height*f))
+    if not rects: rects=[("",0,0,1920,1080)]
+    ctx=Gtk.Label().create_pango_context()
+    renderer,keep=_renderer(Gdk,Gsk,Gtk); images=[]
+    try:
+        groups=[[r] for r in rects] if sway else [rects]
+        for group in groups:
+            ox=min(r[1] for r in group); oy=min(r[2] for r in group)
+            W=max(r[1]+r[3] for r in group)-ox; H=max(r[2]+r[4] for r in group)-oy
+            snap=Gtk.Snapshot(); snap.append_color(Gdk.RGBA(red=0.106,green=0.106,blue=0.106,alpha=1),Graphene.Rect().init(0,0,W,H))
+            for _name,x,y,w,h in group: _paint(snap,Gdk,Graphene,Pango,ctx,x-ox,y-oy,w,h,user,accent)
+            tex=renderer.render_texture(snap.to_node(),Graphene.Rect().init(0,0,W,H))
+            path=out_dir/(f"lock-{group[0][0]}.png" if sway else "lock.png"); tex.save_to_png(str(path))
+            images.append((group[0][0] if sway else "",str(path)))
+    finally:
+        try: renderer.unrealize()
+        except Exception: pass
+        if keep is not None: keep.destroy()
+    return images
+
+def lock(settings=None, env=None):
+    """`tvwcs lock`: paint the picture and start the locker. Falls back to a plain dark lock if painting fails."""
+    from tvwcs.session import runtime_dir
+    env=os.environ if env is None else env; settings=settings or {}
+    locker=available(env)
+    if not locker:
+        print("TVWCS's lock screen needs i3lock (or swaylock on sway).",file=__import__("sys").stderr); return 1
+    try: images=render(runtime_dir()/"lockscreen",settings.get("accent","#0078d7"),sway=locker=="swaylock")
+    except Exception as exc:   # never leave the computer unlocked because the picture could not be drawn
+        print(f"Could not draw the lock screen ({exc}); locking with a plain screen.",file=__import__("sys").stderr); images=[]
+    argv=locker_argv(locker,images)
+    os.execvp(argv[0],argv)
