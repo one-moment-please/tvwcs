@@ -24,7 +24,7 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications guide open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">The Quick Menu, a full-height column at the left of the screen. At the top, ⚙ opens Settings, ⏻ opens the power menu, the red ✕ closes it and ☰ opens Applications. Below the search field, <b>Open applications</b> lists what is running, by workspace (nothing is open here). <b>Favorites</b> are pinned apps; the ☰ beside a row, or ← on it, opens its options. The key hints are at the bottom.</td>
+    <td valign="top">The Quick Menu, a full-height column at the left of the screen. At the top, ⚙ opens Settings, ⏻ opens the power menu, the red ✕ closes it and ☰ opens Applications. Below the search field, <b>Open applications</b> lists what is running, by workspace (nothing is open here). <b>Favorites</b> are pinned apps; the ☰ beside a row, or ← on it, opens its options. Below them are the key hints, and at the very bottom the clock and date, then icons for the network, the volume and Bluetooth (and waiting updates, when there are any); each opens its page in Settings, and the clock opens Date and time.</td>
     <td valign="top">The Applications guide open beside the Quick Menu. <b>Channel Guide</b> lists the launch profiles that have a channel number (none yet here). <b>All applications</b> lists every installed app by category (Media, Internet, Utilities, System); Enter folds or opens a category. Each row shows the app's logo, its channel (— for none), name and description, then a favorite star (★ when it is a favorite) and an edit button (✎).</td>
   </tr>
   <tr>

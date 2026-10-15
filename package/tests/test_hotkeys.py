@@ -32,6 +32,9 @@ class HotkeyTests(unittest.TestCase):
         self.assertIn("bindcode --release 134 exec --no-startup-id t toggle",conf)
         self.assertIn("bindcode --release 64 exec --no-startup-id t guide",conf); self.assertIn("bindcode --release 37 exec --no-startup-id t toggle",conf)
         self.assertEqual(binding("Mod4+space"),"bindsym Mod4+space")
+        # GTK names a remote's multimedia keys without XF86; i3 rejects them that way
+        self.assertEqual(binding("Mail"),"bindsym XF86Mail"); self.assertEqual(binding("Shift+Search"),"bindsym Shift+XF86Search")
+        self.assertEqual(binding("XF86Tools"),"bindsym XF86Tools"); self.assertEqual(binding("F2"),"bindsym F2")
     def test_remote_fullscreen_key_toggles_the_focused_app_but_never_tvwcs(self):
         hk=clean_hotkeys({"remote":{"fullscreen":"F11"},"keyboard":{"fullscreen":"F12"}})   # only the remote has one
         self.assertEqual((hk["remote"]["fullscreen"],"fullscreen" in hk["keyboard"]),("F11",False))

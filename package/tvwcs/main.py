@@ -92,7 +92,7 @@ class StatusWatcher:
     Everything that runs a command runs on a worker thread."""
     TICK=2            # seconds between looks
     READ_EVERY=4      # seconds between reads of the status while the Quick Menu is on screen
-    BAR_EVERY=10      # seconds between checks that the bar is still hidden (an i3 reload shows it again)
+    BAR_EVERY=4       # seconds between checks that the bar is still hidden (an i3 reload shows it again)
     UPDATES_EVERY=3*3600   # seconds between update checks (the package lists, Flathub)
     def __init__(self, app):
         self.app=app; self.source=0; self.reading=False; self.last_read=0.0; self.last_bar=0.0; self.updates=0
@@ -171,7 +171,8 @@ class TVWCSApp(Gtk.Application):
         self._fullscreen=set()   # windows that were fullscreen when TVWCS was shown; they are made fullscreen again when it hides
         self.idle=IdleWatcher(self)
         self.status=quick_status.Status(); self.watch=StatusWatcher(self)
-        self.grace_until=time.monotonic()+10   # TV mode: the start-up action may be about to open an app
+        # TV mode: the start-up action may be about to open an app (it runs 1.5 s after start)
+        self.grace_until=time.monotonic()+(10 if self.store.settings["startup"]["mode"] in ("app","last") else 0)
 
     @property
     def scale_factor(self): return SCALE_PRESETS[self.store.settings["scale"]]

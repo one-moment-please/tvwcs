@@ -34,6 +34,27 @@ MODIFIER_KEYS={"Super_L":"Mod4","Super_R":"Mod4","Alt_L":"Mod1","Alt_R":"Mod1","
 MODIFIER_KEYSYMS={"Mod4":"Super_L","Mod1":"Alt_L","Control":"Control_L","Shift":"Shift_L"}   # the left-hand key of each
 DEFAULT_KEYCODES={"Mod4":133,"Mod1":64,"Control":37,"Shift":50}   # their X keycodes on standard (evdev) keyboards
 
+# The multimedia keys of remotes and keyboards (X's XF86 keysyms). GTK 4 names them without their "XF86" prefix
+# ("Mail" for XF86Mail), which is how a captured hotkey is stored; i3 only knows them with it.
+XF86_KEYS=frozenset("""
+ModeLock MonBrightnessUp MonBrightnessDown KbdLightOnOff KbdBrightnessUp KbdBrightnessDown Standby AudioLowerVolume
+AudioMute AudioRaiseVolume AudioPlay AudioStop AudioPrev AudioNext HomePage Mail Start Search AudioRecord Calculator
+Memo ToDoList Calendar PowerDown ContrastAdjust RockerUp RockerDown RockerEnter Back Forward Stop Refresh PowerOff
+WakeUp Eject ScreenSaver WWW Sleep Favorites AudioPause AudioMedia MyComputer VendorHome LightBulb Shop History
+OpenURL AddFavorite HotLinks BrightnessAdjust Finance Community AudioRewind BackForward Launch0 Launch1 Launch2
+Launch3 Launch4 Launch5 Launch6 Launch7 Launch8 Launch9 LaunchA LaunchB LaunchC LaunchD LaunchE LaunchF
+ApplicationLeft ApplicationRight Book CD WindowClear Close Copy Cut Display DOS Documents Excel Explorer Game Go
+iTouch LogOff Market Meeting MenuKB MenuPB MySites New News OfficeHome Open Option Paste Phone Reply Reload
+RotateWindows RotationPB RotationKB Save ScrollUp ScrollDown ScrollClick Send Spell SplitScreen Support TaskPane
+Terminal Tools Travel UserPB User1KB User2KB Video WheelButton Word Xfer ZoomIn ZoomOut Away Messenger WebCam
+MailForward Pictures Music Battery Bluetooth WLAN UWB AudioForward AudioRepeat AudioRandomPlay Subtitle
+AudioCycleTrack CycleAngle FrameBack FrameForward Time SelectButton View TopMenu Red Green Yellow Blue Suspend
+Hibernate TouchpadToggle TouchpadOn TouchpadOff AudioMicMute""".split())
+
+def x_keysym(key):
+    """A key name as i3 and X know it: "Mail" -> "XF86Mail"; other names unchanged."""
+    return f"XF86{key}" if key in XF86_KEYS else key
+
 def parse_spec(spec):
     """-> (modifiers, key) where key is None for a lone modifier; raises ValueError if malformed."""
     parts=[p for p in (spec or "").split("+") if p]
@@ -67,7 +88,8 @@ def describe(spec) -> str:
 def binding(spec,keycodes=None) -> str:
     """What follows `bindsym`/`bindcode` in i3's config for a hotkey. A lone modifier binds its key's keycode on release.
     `keycodes` maps modifiers to this keyboard's keycodes (the running X server knows them); defaults otherwise."""
-    if not is_modifier_only(spec): return f"bindsym {spec}"
+    if not is_modifier_only(spec):
+        mods,key=parse_spec(spec); return "bindsym "+"+".join(mods+[x_keysym(key)])
     mod=parse_spec(spec)[0][0]
     return f"bindcode --release {(keycodes or {}).get(mod,DEFAULT_KEYCODES[mod])}"
 
