@@ -16,7 +16,7 @@ SYSTEM_DIR=Path("/var/lib/flatpak")
 _LANG="{http://www.w3.org/XML/1998/namespace}lang"
 
 # Apps that suit a TV, shown first ("Featured"); ids that are not in the catalog are skipped.
-FEATURED=("tv.kodi.Kodi","org.videolan.VLC","com.github.iwalton3.jellyfin-media-player","tv.plex.PlexHTPC","com.valvesoftware.Steam",
+FEATURED=("tv.kodi.Kodi","org.videolan.VLC","org.jellyfin.JellyfinDesktop","com.github.iwalton3.jellyfin-media-player","tv.plex.PlexHTPC","com.valvesoftware.Steam",
           "com.moonlight_stream.Moonlight","com.spotify.Client","io.freetubeapp.FreeTube","com.stremio.Stremio","org.libretro.RetroArch",
           "io.mpv.Mpv","org.mozilla.firefox","com.google.Chrome","org.chromium.Chromium","net.lutris.Lutris","com.heroicgameslauncher.hgl",
           "org.DolphinEmu.dolphin-emu","io.github.hmlendea.geforcenow-electron","com.obsproject.Studio","org.gnome.Rhythmbox3")

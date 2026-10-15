@@ -914,7 +914,8 @@ class AppsPage(_Console, Page):
         if a.description: win._message(_shorten(a.description,600))
         if inst: specs=[("Open",lambda:self.open_app(a),"active"),("Remove",lambda:self.remove(a,inst),"danger"),("Close",win.close_modal,None)]
         else: specs=[("Install",lambda:self.install(a),"active"),("Close",win.close_modal,None)]
-        made=win._buttons(*specs); win._finish_modal([made],win.close_modal,made[0])
+        made=win._buttons(*specs)
+        win._finish_modal([made],win.close_modal,made[0] if inst else made[-1])   # Close first: a stray Enter never starts a download
     def install(self, a):
         self.win.close_modal(); s=self.state
         steps=([] if "user" in s.remote else [(flatpak.setup_argv()[0],False)])+[(flatpak.install_argv(a.id),False)]
