@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.10.3 — 2026-10-15
+
+- Flatpak apps launch from the Quick Menu and the guide, and show their icons, when the session's `XDG_DATA_DIRS` lacks Flatpak's folders (X started with `startx`, or Flatpak installed during this login): TVWCS adds them for itself at start-up, the way Flatpak's profile script does. Before, such an app was listed but nothing happened when it was chosen.
+- `install.sh` no longer lists libXss (`libxss1`) as missing when it is installed: it asked `ldconfig`, which is not on an ordinary user's PATH on Debian.
+- README: new screenshots of the Quick Menu and the Applications guide, taken on a TV.
+
 ## 2.10.2 — 2026-10-15
 
 **Releases**
