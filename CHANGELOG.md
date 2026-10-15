@@ -25,7 +25,7 @@
 - Apps no longer take up to half a minute to start when TVWCS is started from `startx`: the session's display is now passed to systemd and D-Bus, so the desktop portal that Flatpak apps wait for can start. Run the installer again (or log in again after updating) to get it.
 - Updating TVWCS from Settings now checks first whether the new version needs packages that are not installed, lists them with what each is for, and installs them (asking for your password) before updating. This works from 3.1.0 on: the update to 3.1.0 itself still only lists them on the pages that need them.
 - `install.sh --help` explains the installer's options, and `install.sh --missing` lists what is missing without installing anything. An unknown option no longer runs a full install.
-- The installer offers udisks2, gvfs-backends, xdg-desktop-portal-gtk and x11-xserver-utils for the new features.
+- The installer offers udisks2, gvfs-backends, xdg-desktop-portal-gtk, python3-gi-cairo and x11-xserver-utils for the new features.
 - The README lists what does not work on systems that are not Debian-based.
 
 ## 3.0.3 — 2026-10-15

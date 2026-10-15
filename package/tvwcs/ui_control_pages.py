@@ -528,6 +528,8 @@ class PowerPage(Page):
                           ConfigStore().settings["screensaver_image"] or "~/Pictures/",error=error)
     def preview_saver(self):
         from tvwcs.lockscreen import launcher
+        from tvwcs import screensaver
+        if screensaver.cairo_missing(): self.win.notice("Screen saver",screensaver.MISSING_CAIRO); return
         try: subprocess.Popen([launcher(),"screensaver","--preview"],start_new_session=True,stdin=subprocess.DEVNULL)
         except OSError as exc: self.win.notice("Screen saver",f"Could not start it: {exc}")
     def stop_xss_lock(self):

@@ -314,13 +314,13 @@ class InstallTests(unittest.TestCase):
         self.assertRegex(out,r"python3-gi gir1\.2-gtk-4\.0 +GTK 4 for Python: TVWCS's windows \(required\)")
         self.assertRegex(out,r"gir1\.2-vte-3\.91 +Settings: the terminal page")
         self.assertNotIn("Settings: sound",out); self.assertNotIn("xdotool",out)   # installed here, so not listed
-        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91\n",(bin_/"apt").read_text())
+        self.assertIn("apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91 python3-gi-cairo\n",(bin_/"apt").read_text())
         (bin_/"unclutter").unlink()
         if not shutil.which("unclutter",path=self.env["PATH"]):   # a computer with unclutter installed has it anyway
             self.assertRegex(self.converse(["n","n","n"],**env),r"unclutter-xfixes +hides the mouse pointer after 3 seconds")
         (bin_/"unclutter").write_text("#!/bin/sh\n"); (bin_/"unclutter").chmod(0o755)
         out=self.converse(["n","n","n"],**env)
-        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91",out)
+        self.assertIn("To install them:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-vte-3.91 python3-gi-cairo",out)
 
     # ---------------------------------------------------------------- the two setups
     def test_suggests_a_setup_from_what_is_found_and_remembers_the_choice(self):

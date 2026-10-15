@@ -21,5 +21,9 @@ class ScreensaverTests(unittest.TestCase):
     def test_logo_size(self):
         self.assertEqual(S.logo_size(1920,1080),(384,192))
         w,h=S.logo_size(1920,400,2.0); self.assertLessEqual(h,100); self.assertEqual(w,h*2)
+    def test_start_says_what_is_missing_without_cairo(self):
+        from unittest import mock
+        with mock.patch.object(S,"running",return_value=None), mock.patch.object(S,"cairo_missing",return_value=True):
+            self.assertIn("python3-gi-cairo",S.start("/nonexistent/tvwcs"))
 
 if __name__=="__main__": unittest.main()

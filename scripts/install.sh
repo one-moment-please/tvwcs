@@ -202,6 +202,7 @@ pkg() {
         debian:xss) echo libxss1 ;;   *:xss) echo libXScrnSaver ;;
         debian:xrandr) echo x11-xserver-utils ;;
         debian:vte) echo gir1.2-vte-3.91 ;;
+        debian:cairo) echo python3-gi-cairo ;;   *:cairo) echo "PyGObject-cairo" ;;
         *:vte) echo "VTE-for-GTK-4" ;;
         # the look: an icon theme (without one, apps show letter tiles and buttons text symbols), and Open Sans, the
         # first font of TVWCS's Metro theme that distributions package (Segoe UI and Selawik are not packaged)
@@ -379,6 +380,7 @@ libexec_has xdg-desktop-portal-gtk || need "xdg-desktop-portal xdg-desktop-porta
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth"
 command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)"
 python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page"
+python3 -c 'import gi; gi.require_foreign("cairo")' 2>/dev/null || need "$(pkg cairo)" "the screen saver (drawing with cairo)"
 icon_theme_installed || need "$(pkg icons)" "icons for apps and buttons (Papirus, papirus-icon-theme, has more app icons)"
 metro_font_installed || need "$(pkg font)" "Open Sans: the font of TVWCS's Metro look"
 start_pipewire() {   # PipeWire just installed: start it in a session that runs now (systemd starts it by itself from the next log-in)

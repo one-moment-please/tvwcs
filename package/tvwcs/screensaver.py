@@ -5,7 +5,7 @@ the remote, a click or a mouse movement; TVWCS starts it after the "Screen saver
 The logo is the DVD Video logo, TVWCS's own in the same style, or a picture the user chose. The movement has no GTK
 dependency (step, logo_size) and is unit-tested; the window is GTK and is only imported when it runs."""
 from __future__ import annotations
-import os, random, signal
+import os, random, signal, sys
 
 from tvwcs.session import runtime_dir
 
@@ -34,6 +34,13 @@ def logo_size(width, height, aspect=2.0):
     if h>height/4: h=max(40,round(height/4)); w=round(h*aspect)
     return w,h
 
+MISSING_CAIRO="The screen saver needs python3-gi-cairo. Install it with:  sudo apt install python3-gi-cairo"
+def cairo_missing():
+    """The screen saver draws with cairo through PyGObject (python3-gi-cairo): True when that is not installed."""
+    try:
+        import gi; gi.require_foreign("cairo"); return False
+    except (ImportError,AttributeError): return True
+
 def running(env=None):
     """The pid of a screen saver that is showing now, or None."""
     try:
@@ -44,6 +51,7 @@ def start(launcher, env=None):
     """Start `tvwcs screensaver` unless one is showing. Returns "" or why not."""
     import subprocess
     if running(env): return ""
+    if cairo_missing(): return MISSING_CAIRO
     try: subprocess.Popen([str(launcher),"screensaver"],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     except OSError as exc: return f"Could not start the screen saver: {exc}"
     return ""
@@ -71,6 +79,7 @@ def run(settings, preview=False):
     import gi
     gi.require_version("Gtk","4.0"); gi.require_version("Gdk","4.0"); gi.require_version("PangoCairo","1.0")
     from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo
+    if cairo_missing(): print(MISSING_CAIRO,file=sys.stderr); return 1
     pid_file=runtime_dir()/PID_NAME
     if running() and not preview: return 0
     try: pid_file.parent.mkdir(parents=True,exist_ok=True); pid_file.write_text(str(os.getpid()))
