@@ -62,6 +62,20 @@ class PowerTests(unittest.TestCase):
             self.assertEqual(open(path+".before-tvwcs").read(),config)
             self.assertEqual(power.stop_xss_lock(path),""); self.assertEqual(open(path+".before-tvwcs").read(),config)   # the first copy is kept
 
+    def test_xss_lock_fix_goes_to_tvwcs_session_config_in_its_own_session(self):
+        """In TVWCS's own session (tvwcs-session exports TVWCS_SESSION), the config i3 runs with is TVWCS's, not the user's."""
+        with tempfile.TemporaryDirectory() as tmp:
+            usual=os.path.join(tmp,".config","i3","config"); os.makedirs(os.path.dirname(usual)); open(usual,"w").write("exec xss-lock -- i3lock\n")
+            session=os.path.join(tmp,".config","tvwcs","i3-session.conf"); os.makedirs(os.path.dirname(session))
+            env={"HOME":tmp}
+            self.assertEqual(power.i3_config_path(env),usual)
+            self.assertIsNone(power.i3_config_path({**env,"TVWCS_SESSION":"i3"}))   # never falls back to the usual one
+            open(session,"w").write("exec xss-lock -- i3lock\n")
+            self.assertEqual(power.i3_config_path({**env,"TVWCS_SESSION":"i3"}),session)
+            other=os.path.join(tmp,"elsewhere.conf"); open(other,"w").write("")
+            self.assertEqual(power.i3_config_path({**env,"TVWCS_SESSION":"i3","TVWCS_SESSION_CONFIG":other}),other)
+            self.assertEqual(power.stop_xss_lock(power.i3_config_path({**env,"TVWCS_SESSION":"i3"})),"")
+            self.assertEqual(open(usual).read(),"exec xss-lock -- i3lock\n"); self.assertIn("# exec xss-lock",open(session).read())
     def test_xss_lock_running(self):
         with tempfile.TemporaryDirectory() as tmp:
             for pid,name in (("1","systemd"),("42","i3"),("self","bash")):

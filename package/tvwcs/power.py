@@ -199,10 +199,17 @@ def xss_lock_running(proc="/proc"):
     return False
 
 def i3_config_path(env=None):
-    """The i3 config i3 reads first (~/.config/i3/config, else ~/.i3/config), or None."""
+    """The config this i3 runs with, or None. In TVWCS's own session (install.sh's "next to my other desktops" setup)
+    that is TVWCS's session config: its tvwcs-session wrapper exports TVWCS_SESSION and the `i3 -c` path in
+    TVWCS_SESSION_CONFIG, so a fix made here never touches the user's usual i3 config. Otherwise it is the config i3
+    reads first (~/.config/i3/config, else ~/.i3/config)."""
     env=os.environ if env is None else env
     home=env.get("HOME") or os.path.expanduser("~")
-    for p in (os.path.join(env.get("XDG_CONFIG_HOME") or os.path.join(home,".config"),"i3","config"),os.path.join(home,".i3","config")):
+    config_home=env.get("XDG_CONFIG_HOME") or os.path.join(home,".config")
+    if env.get("TVWCS_SESSION"):
+        session=env.get("TVWCS_SESSION_CONFIG") or os.path.join(config_home,"tvwcs","i3-session.conf")
+        return session if os.path.isfile(session) else None
+    for p in (os.path.join(config_home,"i3","config"),os.path.join(home,".i3","config")):
         if os.path.isfile(p): return p
     return None
 

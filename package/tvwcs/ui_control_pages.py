@@ -397,7 +397,7 @@ class PowerPage(Page):
                          detail="DPMS power saving",ident="sys:dpms")
             if s.xss_lock:
                 self.row("Locks when the screen turns off","Yes",self.stop_xss_lock if s.xss_lock!="?" else None,
-                         detail="xss-lock is running"+(", started by your i3 config. Choose this to stop it" if s.xss_lock!="?" else
+                         detail="xss-lock is running"+((", started by TVWCS's session config" if os.environ.get("TVWCS_SESSION") else ", started by your i3 config")+". Choose this to stop it" if s.xss_lock!="?" else
                                                        ". Remove it from the file that starts it to stop the screen locking"),
                          icon="system-lock-screen-symbolic",fallback="🔒",ident="sys:xss")
         l=s.logind
