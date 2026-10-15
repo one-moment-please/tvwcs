@@ -28,7 +28,7 @@ It works with normal desktop apps. It is not a media center and needs no plugins
     <td colspan="2"><img src="assets/options.png" alt="The Options page of the Settings app" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2" valign="top">Each row shows its current value on the right. OK/Enter changes it. (Screenshots are from 2.11; some icons have changed since.)</td>
+    <td colspan="2" valign="top">Each row shows its current value on the right. OK/Enter changes it.</td>
   </tr>
 </table>
 
