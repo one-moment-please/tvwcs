@@ -3,6 +3,10 @@
 from __future__ import annotations
 import os, shlex, signal, subprocess, sys, threading
 from pathlib import Path
+from tvwcs.applications import with_flatpak_data_dirs
+# Before GLib reads it: Flatpak apps' launchers and icons, also when this session's login did not add them.
+os.environ["XDG_DATA_DIRS"]=with_flatpak_data_dirs(os.environ.get("XDG_DATA_DIRS"),
+                                                   os.environ.get("XDG_DATA_HOME") or str(Path.home()/".local"/"share"))
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")

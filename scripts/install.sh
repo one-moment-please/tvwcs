@@ -251,7 +251,7 @@ command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg 
 command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
 command -v pipewire >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1 || need "$(pkg pipewire)" "PipeWire: sound, with its PulseAudio layer (no sound server is installed)"
 command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Settings: sound"
-if command -v i3 >/dev/null 2>&1 && ! command -v xprintidle >/dev/null 2>&1 && ! { command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q 'libXss\.so\.1'; }; then
+if command -v i3 >/dev/null 2>&1 && ! command -v xprintidle >/dev/null 2>&1 && ! python3 -c 'import ctypes.util, sys; sys.exit(not ctypes.util.find_library("Xss"))' 2>/dev/null; then   # ldconfig is in /sbin, off a user's PATH
     need "$(pkg xss)" "Settings: Power and sleep (how long the computer has been idle, in i3)"; fi
 if command -v sway >/dev/null 2>&1 && ! command -v swayidle >/dev/null 2>&1; then need swayidle "Settings: Power and sleep (in sway)"; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then need "$(pkg unclutter)" "hides the mouse pointer after 3 seconds without moving (i3)"; fi

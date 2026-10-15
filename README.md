@@ -2,6 +2,8 @@
 
 TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and window switcher for ordinary Linux desktop applications on i3 or sway. It is not a media center and needs no app-specific plugins. See `PROJECT_OVERVIEW.md` for the goals behind it.
 
+**New in 2.10.3:** Flatpak apps open from the Quick Menu, with their icons, even when the login did not set them up.
+
 **New in 2.10.2:** updates can include prereleases, with a way to roll back to the latest release; screen-off no longer locks the screen through xss-lock; Wi-Fi names with any characters; Wi-Fi no longer takes over from a wired connection.
 
 **New in 2.10.1:** an Apps page in Settings, a store for Flathub's apps with icons, search and one-button installs; the installer asks whether TVWCS is for a TV or a desktop monitor; one Open at login choice; on a TV, no border on an app alone on its workspace.
@@ -20,8 +22,8 @@ TVWCS (TV Window Channel Switcher) is a remote-friendly, TV-style launcher and w
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications guide open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">The Quick Menu, a full-height column at the left of the screen. At the top, ⚙ opens Settings, ⏻ opens the power menu, the red ✕ closes it and ☰ opens Applications (this older screenshot shows only ✕ and ☰). Below the search field, <b>Open applications</b> lists what is running by workspace: Screenshot has a workspace of its own, while <i>Gnome terminal + Files</i> is one workspace holding 3 apps. <b>Favorites</b> are pinned apps, two of them with channel numbers (003, 011). Pressing ← on a row opens its options. The key hints are at the bottom.</td>
-    <td valign="top">The Applications guide open beside the Quick Menu. <b>Channel Guide</b> lists the 4 profiles that have a channel number. <b>All applications</b> lists every installed app by category (Media, Internet, …); Enter folds a category. Each row shows the app's logo, channel, name and description, then a favorite star (★ when it is a favorite) and an edit button. <i>Jellyfin Media Player profile 2</i> is a second launch profile of Jellyfin, indented under it with a ↳.</td>
+    <td valign="top">The Quick Menu, a full-height column at the left of the screen. At the top, ⚙ opens Settings, ⏻ opens the power menu, the red ✕ closes it and ☰ opens Applications. Below the search field, <b>Open applications</b> lists what is running, by workspace (nothing is open here). <b>Favorites</b> are pinned apps; the ☰ beside a row, or ← on it, opens its options. The key hints are at the bottom.</td>
+    <td valign="top">The Applications guide open beside the Quick Menu. <b>Channel Guide</b> lists the launch profiles that have a channel number (none yet here). <b>All applications</b> lists every installed app by category (Media, Internet, Utilities, System); Enter folds or opens a category. Each row shows the app's logo, its channel (— for none), name and description, then a favorite star (★ when it is a favorite) and an edit button (✎).</td>
   </tr>
   <tr>
     <th colspan="2">Settings › Options</th>

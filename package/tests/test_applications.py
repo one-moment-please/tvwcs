@@ -10,6 +10,13 @@ class ApplicationTests(unittest.TestCase):
     def _parse(self,text):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/"test.desktop"; p.write_text(text,encoding="utf-8"); return _parse_desktop_file("test.desktop",p)
+    def test_flatpak_folders_are_added_to_xdg_data_dirs_once(self):
+        from tvwcs.applications import with_flatpak_data_dirs
+        self.assertEqual(with_flatpak_data_dirs(None,"/home/u/.local/share"),
+                         "/home/u/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share")
+        done="/home/u/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share/:/usr/share"
+        self.assertEqual(with_flatpak_data_dirs(done,"/home/u/.local/share"),done)   # already there (one with a trailing /)
+        self.assertEqual(with_flatpak_data_dirs("/usr/share:/var/lib/flatpak/exports/share","/h"),"/h/flatpak/exports/share:/usr/share:/var/lib/flatpak/exports/share")
     def test_parse_desktop_entry(self):
         a=self._parse("[Desktop Entry]\nType=Application\nName=Test App\nExec=test-app\nCategories=AudioVideo;Player;\nIcon=test-icon\n")
         self.assertEqual((a.name,a.primary_category,a.icon),("Test App","Media","test-icon"))
