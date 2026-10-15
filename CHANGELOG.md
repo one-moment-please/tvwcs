@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.10.1 — 2026-10-15
 
 **Installer**
 - `install.sh` asks whether TVWCS will be used on a TV or a desktop monitor (until it is answered), and sets the interface size and how apps open to match.
