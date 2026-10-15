@@ -52,15 +52,6 @@ class ApplicationCatalogue:
     def by_id(self) -> dict[str, Application]:
         return {app.desktop_id:app for app in self.applications}
 
-def with_flatpak_data_dirs(value: str | None, data_home: str) -> str:
-    """XDG_DATA_DIRS with Flatpak's exports folders added the way flatpak's own profile script adds them (the user's,
-    then the system's, before the rest), when they are missing: a session started before Flatpak was installed, or
-    one whose login never ran that script (startx from a console). TVWCS sets this for itself at start-up, so GLib finds
-    the apps' launchers and GTK their icons, and the apps it starts inherit it."""
-    dirs=[d for d in (value or "/usr/local/share:/usr/share").split(":") if d]
-    missing=[d for d in (f"{data_home}/flatpak/exports/share","/var/lib/flatpak/exports/share") if d not in dirs and d+"/" not in dirs]
-    return ":".join(missing+dirs)
-
 def _application_directories() -> list[Path]:
     home=Path(os.environ.get("XDG_DATA_HOME", str(Path.home()/".local/share")))
     dirs=[home/"applications"]
