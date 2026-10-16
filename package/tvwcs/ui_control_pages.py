@@ -849,7 +849,7 @@ class DisplaysPage(Page):
                                o.scale,lambda v:self.change(o,True,scale=v))
     def choose_session_scale(self):
         outs=self.state.outputs; now=display.session_scale(outs)
-        self.win.choose_option("Scale",[(v,display.scale_text(v)) for v in display.scale_choices(outs,self.state.fractional,now)],now,
+        self.win.choose_option("Scale",[(v,display.scale_text(v)) for v in display.scale_choices(outs,self.state.fractional,now,self.state.max_size)],now,
                                lambda v:self.change_all(display.scaled(outs,v),True))
     def toggle_fractional(self):
         on=not self.state.fractional

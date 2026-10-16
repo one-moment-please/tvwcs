@@ -112,8 +112,10 @@ class ArrangeTests(unittest.TestCase):
 class CommandTests(unittest.TestCase):
     def test_xrandr_argv(self):
         new=disp.edited(outputs(),"HDMI-1",mode=(1280,720,False))
-        self.assertEqual(disp.xrandr_argv(new),["xrandr","--output","HDMI-1","--mode","1280x720","--rate","60.00","--scale","1x1","--pos","0x0","--primary",
-                         "--output","DP-1","--mode","2560x1440","--rate","143.97","--scale","1x1","--pos","1280x0","--output","VGA-1","--off"])
+        self.assertEqual(disp.xrandr_argv(new),["xrandr","--output","HDMI-1","--mode","1280x720","--rate","60.00","--pos","0x0","--primary",
+                         "--output","DP-1","--mode","2560x1440","--rate","143.97","--pos","1280x0","--output","VGA-1","--off"])
+        argv=disp.xrandr_argv(new,{"DP-1"})   # scaled now: set back to 1x1
+        self.assertEqual(argv[argv.index("DP-1"):argv.index("DP-1")+9],["DP-1","--mode","2560x1440","--rate","143.97","--scale","1x1","--pos","1280x0"])
     def test_interlaced_mode_is_named_as_xrandr_names_it(self):
         new=disp.edited(outputs(),"HDMI-1",mode=(1920,1080,True))
         argv=disp.xrandr_argv(new); self.assertEqual(argv[argv.index("HDMI-1")+2],"1920x1080i")
@@ -183,6 +185,20 @@ class ScaleTests(unittest.TestCase):
         self.assertTrue(with_scale.startswith(mine)); self.assertIn("Xft.dpi: 192",with_scale)
         self.assertEqual(disp.with_xresources(disp.with_xresources(with_scale,3),1),mine)   # replaced, then taken out
         self.assertEqual(disp.with_xresources("",1),"")
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/".Xresources"
+            disp.save_xresources(2,path); self.assertIn("Xft.dpi: 192",path.read_text())
+            disp.save_xresources(1,path); self.assertFalse(path.exists())   # it held only TVWCS's lines
+    def test_fractional_scales_only_when_the_bigger_desktop_fits(self):
+        outs=outputs(SCALED)   # one 1920x1080 display
+        self.assertEqual(disp.parse_max_size(SCALED),(16384,16384))
+        self.assertEqual(disp.scale_choices(outs,True,None,(1920,1080)),[1.0,2.0])           # Xvfb: no room to shrink from
+        self.assertEqual(disp.scale_choices(outs,True,None,(8192,8192)),[1.0,1.25,1.5,1.75,2.0])
+    def test_xrandr_problems_in_words(self):
+        from tvwcs.control_cmd import Result
+        err="X Error of failed request:  BadValue (integer parameter out of range for operation)\n  Major opcode of failed request:  140 (RANDR)\n  Current serial number in output stream:  21\n"
+        self.assertEqual(disp.xrandr_problem(Result(False,1,"",err)),"The displays did not accept the change: BadValue (integer parameter out of range for operation)")
+        self.assertIn("Try a whole step",disp.xrandr_problem(Result(False,1,"","xrandr: screen cannot be larger than 1920x1080 (desired size 2560x1440)\n")))
 
 class SavedTests(unittest.TestCase):
     def test_saved_settings_come_back_only_for_the_same_displays(self):

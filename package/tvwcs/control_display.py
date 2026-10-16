@@ -80,6 +80,7 @@ class DisplayState:
     outputs: list=field(default_factory=list)   # connected displays only
     ui: float=1.0                # X11: Xft.dpi / 96
     fractional: bool=False       # X11: fractional scales are offered (Settings > Displays > Fractional scaling)
+    max_size: tuple=(0,0)        # X11: the largest desktop the X server allows (a fractional scale needs a bigger one)
     @property
     def can_set_primary(self): return self.backend=="xrandr"   # sway has no primary display
 
@@ -194,7 +195,7 @@ def read_state():
     if not outputs: return DisplayState(False,tool,"No display was found.")
     if tool=="sway": return DisplayState(True,tool,"",outputs)
     ui=read_ui(); with_ui(outputs,ui)
-    return DisplayState(True,tool,"",outputs,ui,fractional_on(outputs))
+    return DisplayState(True,tool,"",outputs,ui,fractional_on(outputs),parse_max_size(r.out))
 
 # ---------------------------------------------------------------------- scale
 def scale_text(s):
@@ -216,11 +217,13 @@ def set_fractional(on, path=None):
     entries=_entries(saved); entries.setdefault("xrandr",{})["fractional"]=bool(on)
     tmp=path.with_suffix(".tmp"); tmp.write_text(json.dumps(entries,indent=2)+"\n",encoding="utf-8"); os.replace(tmp,path)
 
-def scale_choices(outputs, fractional, current=None):
+def scale_choices(outputs, fractional, current=None, max_size=None):
     """The scales to offer for these displays (one on sway; every one that is on, on X11): those that still leave each
-    at least MIN_SCALED_HEIGHT pixels high, and the one in use."""
+    at least MIN_SCALED_HEIGHT pixels high, and the one in use. With max_size (X11), a fractional scale only when the
+    bigger desktop it needs fits the X server."""
     heights=[(o.width if o.rotated else o.height) for o in outputs if o.enabled and o.width]
     out=[s for s in (FRACTIONAL_SCALES if fractional else SCALES) if s==1 or all(h/s>=MIN_SCALED_HEIGHT for h in heights)]
+    if max_size: out=[s for s in out if is_whole(s) or fits(scaled(outputs,s),max_size)]
     if current and not any(abs(current-s)<0.005 for s in out): out=sorted(out+[current])
     return out
 
@@ -365,14 +368,17 @@ def edited(outputs, name, **changes):
             where.pop(name); where[anchor]=({"right":"left","left":"right","below":"above","above":"below"}.get(rel,rel),name)
     return arrange(new,where)
 
-def xrandr_argv(outputs):
+def xrandr_argv(outputs, zoomed=()):
+    """zoomed: the outputs xrandr shows scaled now. --scale is given only to those and to the ones to scale, since
+    some X servers and drivers (Xvfb, some virtual machines) refuse any transform, even 1x1."""
     argv=["xrandr"]
     for o in outputs:
         if not o.enabled: argv+=["--output",o.name,"--off"]; continue
         m=o.mode(); name=(m.names.get(o.rate) or next(iter(m.names.values()),None)) if m else None
         argv+=["--output",o.name,"--mode",name or f"{o.width}x{o.height}"]
         if o.rate: argv+=["--rate",f"{o.rate:.2f}"]
-        z=f"{o.zoom:.10g}"; argv+=["--scale",f"{z}x{z}","--pos",f"{o.x}x{o.y}"]
+        if abs(o.zoom-1)>1e-6 or o.name in zoomed: z=f"{o.zoom:.10g}"; argv+=["--scale",f"{z}x{z}"]
+        argv+=["--pos",f"{o.x}x{o.y}"]
         if o.primary: argv+=["--primary"]
     if not any(o.primary and o.enabled for o in outputs): argv+=["--noprimary"]
     return argv
@@ -389,13 +395,38 @@ def apply(state, outputs):
     """Use these settings now. "" when it worked, else why not."""
     if not any(o.enabled for o in outputs): return "At least one display has to stay on."
     if state.backend=="sway": r=run(["swaymsg",sway_command(outputs)],timeout=20)
-    else: r=run(xrandr_argv(outputs),timeout=20)
+    else:
+        now=run(["xrandr","--query"],timeout=10)   # what is scaled now (going back may have to undo a scale)
+        zoomed={o.name for o in parse_xrandr(now.out) if o.enabled and abs(o.scale-1)>1e-3} if now.ok else set()
+        r=run(xrandr_argv(outputs,zoomed),timeout=20)
     if r.ok and state.backend=="sway" and '"success": false' in r.out.replace("\n",""): return "sway did not accept the change."
-    if not r.ok: return r.message or "The displays did not accept the change."
+    if not r.ok: return xrandr_problem(r) if state.backend=="xrandr" else (r.message or "The displays did not accept the change.")
     if state.backend=="xrandr":
         ui=next((o.ui for o in outputs if o.enabled),1.0)
         if abs(ui-read_ui())>0.001 or ui!=1: return set_ui(ui)
     return ""
+
+def xrandr_problem(r):
+    """xrandr's failure in words: an X error's first line (its last is only a serial number)."""
+    text=r.err or r.out or ""
+    if "cannot be larger than" in text:
+        return "The graphics cannot make the picture that big (" + text.strip().splitlines()[-1].replace("xrandr: ","") + "). Try a whole step instead."
+    m=re.search(r"^X Error of failed request:\s*(.*)$",text,re.M)
+    if m: return f"The displays did not accept the change: {m.group(1).strip()}"
+    return r.message or "The displays did not accept the change."
+
+def parse_max_size(text):
+    """`xrandr --query`'s first line -> the largest desktop the X server allows, (0, 0) when unknown."""
+    m=re.search(r"maximum (\d+) x (\d+)",text or "")
+    return (int(m.group(1)),int(m.group(2))) if m else (0,0)
+
+def fits(outputs, max_size):
+    """Whether the desktop these outputs cover fits the X server's largest one."""
+    if not max_size or not max_size[0]: return True
+    on=[o for o in outputs if o.enabled]
+    if not on: return True
+    w=max(o.x+o.size[0] for o in on)-min(o.x for o in on); h=max(o.y+o.size[1] for o in on)-min(o.y for o in on)
+    return w<=max_size[0] and h<=max_size[1]
 
 # ---------------------------------------------------------------------- X11: the scale apps draw at
 def xresources_text(ui):
@@ -454,6 +485,8 @@ def save_xresources(ui, path=None):
     except FileNotFoundError: old=""
     new=with_xresources(old,ui)
     if new==old: return
+    if not new.strip() and _MARK[0] in old:   # only TVWCS's lines were in it
+        path.unlink(missing_ok=True); return
     tmp=path.with_name(path.name+".tvwcs-tmp"); tmp.write_text(new,encoding="utf-8"); os.replace(tmp,path)
 
 # ---------------------------------------------------------------------- keeping it
