@@ -922,7 +922,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def ask_password(self,action_label,on_ok,message=""):
         """The administrator (sudo) password for a power action, typed on a keyboard (such as the one on the back of a
         remote) or on the on-screen keyboard: the full one, or the number pad when Settings > Options > Password
-        keyboard says so. Either can switch to the other. on_ok(password) runs on OK; the field is emptied when it closes."""
+        keyboard says: the one a password was last typed on (the full one at first). Either can switch to the other.
+        on_ok(password) runs on OK; the field is emptied when it closes."""
         def got(password):
             if password: on_ok(password)
         self.ask_text(f"Password for {action_label}",got,"",f"{action_label} needs administrator rights. Enter your password (the one sudo asks for). "
@@ -948,7 +949,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.modal_card.append(entry)
         cancelled=back or self.close_modal
         def submit(*_):
-            text=entry.get_text(); self.close_modal(); callback(text)
+            text=entry.get_text(); self.close_modal()
+            if secret and switchable: self._remember_keyboard(digits)
+            callback(text)
         entry.connect("activate",submit)
         self._text={"entry":entry,"submit":submit,"layer":"lower","keys":[],"digits":digits,"max":max_len,"secret":secret}
         def switch():   # the other keyboard, with what is typed so far
@@ -986,6 +989,13 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._modal_groups=groups; self._modal_back=cancelled
         first=groups[1][0]; first.grab_focus()
         GLib.timeout_add(150,lambda:(self._text is not None and self._text["entry"] is entry and self.get_focus() is None and first.grab_focus(),GLib.SOURCE_REMOVE)[1])
+    def _remember_keyboard(self,digits):
+        """A password was typed on this keyboard: the next password dialog opens with it (Settings > Options > Password keyboard)."""
+        store=self.app.store; kind="digits" if digits else "full"
+        if store.settings.get("password_keyboard")!=kind:
+            store.settings["password_keyboard"]=kind
+            try: store.save()
+            except OSError: pass
     def _label_keys(self):
         st=self._text; rows=self.KEYS[st["layer"]]
         for r,buttons in enumerate(st["keys"]):

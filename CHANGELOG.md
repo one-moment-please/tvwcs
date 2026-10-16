@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.4.0 — 2026-10-16
+
+**TVWCS's login screen**
+- A login screen in TVWCS's look: big tiles for the people who can log in, the password typed on a keyboard or with the remote on an on-screen keyboard (the full one, or a number pad), and a choice of session: TVWCS's own i3 and sway sessions, plain i3 and sway, and any other desktop installed. Sleep, Restart and Shut down are at the bottom. It remembers who logged in last, and each person's session and keyboard. It runs on greetd with cage, and starts X sessions such as i3 through startx and Wayland ones such as sway directly.
+- The installer installs it by default where there is no login screen, also when the computer logs in by itself: the automatic login then goes through the login screen, which shows after logging out. Next to another login screen it is offered, and the default is no.
+- Setting TVWCS up for sway with a login screen that cannot start sway (such as LightDM) now offers TVWCS's login screen first, then SDDM, then keeping it anyway or leaving sway out.
+- Settings › Features turns it on or off. Off goes back to the login screen used before; with none, it asks whether to have no login screen (logging you in by itself) or to install SDDM or LightDM. Going back to one that cannot start sway, while in sway, warns and offers SDDM. Changes show from the next start. It also offers to update the login screen when its copy of TVWCS or its colours are out of date.
+
+**Settings › User** (new)
+- Change your name and password, see whether you are an administrator and which login screen is in use, and turn the automatic login at start-up on or off (with TVWCS's login screen, LightDM, SDDM or no login screen).
+
+**On-screen keyboard**
+- Password dialogs open with the keyboard a password was last typed on: the full keyboard at first, the number pad once a password was typed on it. Settings › Options › Password keyboard shows and changes it.
+
 ## 3.3.1 — 2026-10-16
 
 - The Quick Menu no longer shows a line of key hints (OK Select, Back Close, ...) under its title and buttons.

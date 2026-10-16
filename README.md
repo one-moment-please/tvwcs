@@ -94,10 +94,12 @@ You can delete the downloaded folder afterwards.
 
 It first prints what it found (for example `Found: no login screen, no desktop sessions, i3 installed, sway not installed.`). Then it asks how TVWCS should be set up:
 
-1. **This computer is only for TVWCS.** It can log you in automatically at start-up and go straight into TVWCS, like a TV. It adds one `include` line to your i3/sway config (or creates a config). Automatic login is only offered when there is no login screen, and is off unless you say yes: anyone who switches the computer on gets your session.
+1. **This computer is only for TVWCS.** It can log you in automatically at start-up and go straight into TVWCS, like a TV. It adds one `include` line to your i3/sway config (or creates a config). Automatic login is off unless you say yes: anyone who switches the computer on gets your session.
 2. **Next to my other desktops.** It adds **TVWCS (i3)** and/or **TVWCS (sway)** to your login screen. That session uses its own config in `~/.config/tvwcs/`, so your usual i3 or sway is not changed. It never sets up automatic login. Adding TVWCS to your usual i3/sway config as well is a separate question, and the default is no.
 
-Some login screens, such as LightDM (Linux Mint's), cannot reliably start Wayland sessions like sway. When yours is one of them, the installer warns before setting TVWCS up for sway and asks whether to go on. If you do, install a login screen that supports Wayland, such as SDDM (`sudo apt install sddm`) or greetd with tuigreet. i3 works with any login screen.
+**TVWCS's login screen.** TVWCS has a login screen of its own in its look: it shows who can log in, takes the password from a keyboard or from the remote on an on-screen keyboard (the full one, or a number pad for a password of digits), and starts i3, sway or any other desktop installed. It runs on [greetd](https://sr.ht/~kennylevinsen/greetd/) and cage, which the installer installs. With no login screen on the computer, the installer installs it unless you say no (Enter is yes). Automatic login still works with it: the login screen then only shows after logging out. Next to another login screen it is only offered, and the default is no. **Settings › Features** turns it on or off later.
+
+Some login screens, such as LightDM (Linux Mint's), cannot reliably start Wayland sessions like sway. When yours is one of them, the installer warns before setting TVWCS up for sway and offers, in order: TVWCS's login screen, SDDM (a standard one that starts both), keeping yours anyway, or leaving sway out. i3 works with any login screen.
 
 Hiding the mouse pointer only affects TVWCS's own session. If unclutter was set up to start in every X session (Debian's `unclutter-startup` package, which earlier TVWCS versions installed along with `unclutter-xfixes`), the installer offers to turn that off.
 
@@ -108,6 +110,7 @@ After that it may ask to:
 - install i3 (with Xorg) or sway, if neither is installed;
 - install missing packages, each listed with what it is for (GTK, sound, the Settings app's tools, an icon theme, the Open Sans font);
 - create an i3/sway config, choosing the `$mod` key and keyboard layout;
+- install TVWCS's login screen (see above);
 - let TVWCS sleep, reboot and shut down without your password (adds a narrow sudo rule; default no);
 - whether TVWCS is used on a TV or a desktop monitor.
 
@@ -147,8 +150,10 @@ Open **TVWCS Settings** with ⚙ in the Quick Menu, from Applications (under Sys
 
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
-| **Options** (`options`) | TV or desktop monitor (TV also turns on button hints), hiding the mouse pointer after a few seconds without moving (on by default on a TV, off at a desk; a hidden pointer is moved to the corner of the window so nothing stays highlighted), light or dark mode (dark by default; passed on to apps that follow the system's choice), background colour, interface size (applies at once), accent colour, screen edge margin for TVs that cut off the edges (overscan), Reduce motion, Quick Menu buttons, where apps open (full screen one per workspace, side by side, or as each app's profile says), what opens at login, and whether password dialogs open with the full keyboard or a number pad. |
+| **Options** (`options`) | TV or desktop monitor (TV also turns on button hints), hiding the mouse pointer after a few seconds without moving (on by default on a TV, off at a desk; a hidden pointer is moved to the corner of the window so nothing stays highlighted), light or dark mode (dark by default; passed on to apps that follow the system's choice), background colour, interface size (applies at once), accent colour, screen edge margin for TVs that cut off the edges (overscan), Reduce motion, Quick Menu buttons, where apps open (full screen one per workspace, side by side, or as each app's profile says), what opens at login, and whether password dialogs open with the full keyboard or a number pad (the one a password was last typed on; the full keyboard at first). |
+| **User** (`user`) | Your name (as the login screen shows it) and password, whether you are an administrator, the login screen in use, and whether the computer logs you in by itself at start-up. With TVWCS's login screen, LightDM, SDDM or no login screen, Settings turns the automatic login on and off; with others, use their own settings. |
 | **Features** (`features`) | Turn the features that need extra software on or off: sound, Bluetooth, network, storage, the terminal, Flathub apps, the screen saver, the screen saver when locked, and hiding the pointer. Turning one on installs what it needs. Turning one off can also uninstall its packages, but only when nothing else installed needs them. A feature that is off keeps its tab, which offers to turn it on. |
+| **TVWCS login screen** (in Features) | Turn TVWCS's login screen on (it installs greetd and cage) or off. Off goes back to the login screen used before. With none to go back to, it asks whether to have no login screen (log you in and start TVWCS by itself) or to install a standard one (SDDM, or LightDM for i3 only). Under sway, going back to a login screen that cannot start sway warns and offers SDDM instead. Changes show from the next start. When the login screen's copy of TVWCS is older than TVWCS, or its colours differ, it offers to update it. |
 | **Remote and hotkeys** (`hotkeys`) | Keys for the keyboard, remote and gamepad, and apps that have their own hotkey. |
 | **Sound** (`sound`) | Volume, mute, and output (speakers, HDMI, headphones) and microphone. |
 | **Displays** (`displays`) | Resolution, refresh rate and arrangement. A change goes back after 15 seconds unless you keep it. |

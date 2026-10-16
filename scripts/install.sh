@@ -262,6 +262,19 @@ sway_login_screen_ok() {   # 0: go on with sway; 1: leave sway out (the login sc
     if [ "$LS" = unknown ]; then LSN="This computer's login screen"; else LSN="This computer's login screen ($LS)"; fi
     echo "Warning: $LSN may not be able to start Wayland sessions such as sway reliably. Choosing sway"
     echo "there can fail to start, or start without a working keyboard and mouse. i3 works with any login screen."
+    if [ -t 0 ] && [ "$(distro)" = debian ] && [ "$(init_system)" = systemd ]; then
+        # Another login screen first: TVWCS's own (it starts i3 and sway), then a standard one.
+        printf "What should start sway?\n  1) TVWCS's login screen (recommended: it starts i3 and sway, and works with the remote)\n  2) SDDM, a standard login screen that starts i3 and sway\n  3) Keep %s and set TVWCS up for sway anyway\n  4) Leave sway out\nChoose 1, 2, 3 or 4 [1]: " "$LS"
+        read -r ANSWER || ANSWER=4
+        case "$ANSWER" in
+            ""|1*) if install_login_screen "$LS"; then return 0; fi; echo "Set TVWCS up for sway anyway; install a login screen that starts sway later (Settings > Features)." ;;
+            2*) if pkg_install sddm && login_root switch sddm; then echo "SDDM is the login screen from the next start ($LS stays installed)."; return 0; fi
+                echo "Could not install SDDM. Install it yourself with:  $(install_hint sddm)" >&2 ;;
+            3*) ;;
+            *) echo "Left sway out."; return 1 ;;
+        esac
+        mkdir -p "$(dirname "$SWAY_LOGIN_OK")"; echo "$LS" > "$SWAY_LOGIN_OK"; return 0
+    fi
     if [ -t 0 ]; then
         ask_no "Set TVWCS up for sway anyway?" || { echo "Left sway out."; return 1; }
         mkdir -p "$(dirname "$SWAY_LOGIN_OK")"; echo "$LS" > "$SWAY_LOGIN_OK"
@@ -269,6 +282,21 @@ sway_login_screen_ok() {   # 0: go on with sway; 1: leave sway out (the login sc
     echo "For sway, install a login screen that supports Wayland, such as SDDM ($(install_hint sddm)) or"
     echo "greetd with tuigreet ($(install_hint "greetd tuigreet")). Installing one asks which login screen to use at boot."
     return 0
+}
+# ---- TVWCS's own login screen (Settings > Features > Login screen; tvwcs/loginscreen.py does the work, as root)
+GREETER_LIB=${TVWCS_ROOT:-}/usr/local/lib/tvwcs-greeter
+login_root() { as_root env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$DEST" python3 -m tvwcs.loginscreen "$@"; }
+login_screen_is_tvwcs() { [ "$(login_screen_name)" = greetd ] && grep -q 'tvwcs-greeter/greeter' "$ETC/greetd/config.toml" 2>/dev/null; }
+LOGIN_SCREEN_SET=""   # TVWCS's login screen was turned on by this run
+install_login_screen() {   # install_login_screen <the login screen now, or ""> [--autologin <user> <session>]
+    PREV=$1; shift
+    if [ "$PREV" = unknown ]; then PREV=$(login_manager); [ "$PREV" = display-manager.service ] && PREV=""; fi
+    MISSING=""; for P in greetd cage; do deb_installed "$P" || MISSING="$MISSING $P"; done
+    echo "Installing TVWCS's login screen$( [ -n "$MISSING" ] && echo " with:$MISSING") (your password may be asked for)"
+    # shellcheck disable=SC2086   # one word per package
+    if [ -n "$MISSING" ] && ! pkg_install $MISSING; then echo "Could not install$MISSING; the login screen was not changed." >&2; return 1; fi
+    if login_root enable --config "$CONFIG_HOME/tvwcs/config.json" --previous "$PREV" "$@"; then LOGIN_SCREEN_SET=1; return 0; fi
+    echo "Could not set up TVWCS's login screen; the login screen was not changed." >&2; return 1
 }
 init_system() {   # systemd or other (TVWCS supports systemd only; TODO.md says what others would need)
     if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd; else echo other; fi
@@ -953,6 +981,7 @@ setup_autologin() {
     ME=$(id -un); [ "$(id -u)" = 0 ] && return 0   # never log root in by itself
     case "$ME" in [a-z_]*) ;; *) return 0 ;; esac
     case "$ME" in *[!a-zA-Z0-9_.-]*) return 0 ;; esac
+    if [ -n "$LOGIN_SCREEN_SET" ] || login_screen_is_tvwcs; then greeter_autologin; return 0; fi
     [ -z "$(login_manager)" ] || return 0
     if [ "$(init_system)" != systemd ]; then
         echo; echo "Logging in and starting TVWCS at boot needs systemd, so it was not offered (TODO.md has what other systems need)."; return 0
@@ -1010,6 +1039,78 @@ start_console_session() {
     if command -v chvt >/dev/null 2>&1; then as_root chvt 1 >/dev/null 2>&1 || true; fi   # put the first console on the screen
     echo "Started $WM: the computer's screen logs in as $(id -un) and shows it now."
 }
+# ---- TVWCS's login screen, offered on both setups: installed by default (Enter) when there is no login screen, also
+# when the computer logs in by itself (the automatic login then goes through it, and it shows after logging out); next
+# to another login screen only on a clear yes. Already in use: its copy of TVWCS is brought up to date.
+start_lines_wm() {   # the window manager the login shell's start lines start: i3, sway, or ""
+    PF=$(profile_file); FILE=${PF#* }
+    if grep -q '^    exec startx$' "$FILE" 2>/dev/null; then echo i3; elif grep -q '^    exec sway$' "$FILE" 2>/dev/null; then echo sway; fi
+}
+remove_start_lines() {
+    PF=$(profile_file); FILE=${PF#* }
+    grep -qxF "$START_BEGIN" "$FILE" 2>/dev/null || return 0
+    TMP=$(mktemp); backup "$FILE"
+    B="$START_BEGIN" E="$START_END" awk '$0 == ENVIRON["B"] { skip = 1 } !skip { print } $0 == ENVIRON["E"] { skip = 0 }' "$FILE" > "$TMP"
+    cat "$TMP" > "$FILE"; rm -f "$TMP"; echo "Removed the lines that started the window manager on the first console from $FILE (backup: $FILE.tvwcs-backup)."
+}
+update_login_screen() {
+    [ "$(cat "$GREETER_LIB/VERSION" 2>/dev/null)" != "$VERSION" ] || return 0
+    echo
+    if [ -t 0 ] && ask_yes "Update TVWCS's login screen to $VERSION? (It asks for your password.)"; then
+        login_root update --config "$CONFIG_HOME/tvwcs/config.json" || echo "Could not update it; do it in Settings > Features." >&2
+    else echo "TVWCS's login screen still runs the version before; update it in Settings > Features (or run install.sh again)."; fi
+}
+offer_login_screen() {
+    [ -z "$LOGIN_SCREEN_SET" ] || return 0   # set up just now (for sway)
+    if login_screen_is_tvwcs; then update_login_screen; return 0; fi
+    [ -t 0 ] && [ "$(distro)" = debian ] && [ "$(init_system)" = systemd ] || return 0
+    LS=$(login_manager); echo
+    if [ -z "$LS" ]; then
+        echo "There is no login screen on this computer. TVWCS has its own: it shows who can log in, takes the password from"
+        echo "the remote (on its on-screen keyboard) or a keyboard, and starts i3 or sway. Logging in by itself still works with"
+        echo "it: the login screen then shows only after logging out."
+        ask_yes "Install TVWCS's login screen? (It installs greetd and cage.)" || return 0
+        if console_login_set; then   # the automatic login moves to the login screen
+            WHO=$(sed -n 's/.*--autologin \([^ ]*\) .*/\1/p' "$GETTY_OVERRIDE" | sed -n 1p); SWM=$(start_lines_wm)
+            [ -n "$SWM" ] || SWM=$(set -- $WMS; echo "${1:-i3}")
+            install_login_screen "" --autologin "$WHO" "$SWM" || return 0
+            [ "$WHO" != "$(id -un)" ] || remove_start_lines
+            echo "$WHO is still logged in automatically at start-up, now by the login screen (it shows after logging out)."
+        else install_login_screen "" || return 0; fi
+    else
+        LSN=$(login_screen_name); [ "$LSN" = unknown ] && LSN=$LS
+        ask_no "Use TVWCS's login screen instead of $LSN? It starts i3 and sway and works with the remote; $LSN stays installed, and Settings > Features switches back." || return 0
+        install_login_screen "$LSN" || return 0
+    fi
+    echo "TVWCS's login screen shows from the next start (Settings > Features turns it off again)."
+}
+greeter_autologin() {   # the dedicated setup's automatic login, with TVWCS's login screen: greetd's initial session
+    if grep -q '^\[initial_session\]' "$ETC/greetd/config.toml" 2>/dev/null; then
+        echo; echo "The login screen logs someone in by itself at start-up (Settings > User turns that off)."; return 0
+    fi
+    CHOICES=""; for WM in $WMS; do command -v "$WM" >/dev/null 2>&1 && CHOICES="$CHOICES $WM"; done
+    CHOICES=${CHOICES# }; [ -n "$CHOICES" ] || return 0
+    echo
+    case "$CHOICES" in
+        *" "*) ask_no "Log in as $ME automatically when the computer starts, and start i3 or sway? The login screen then shows only after logging out." || return 0
+               printf "Start which one? 1) i3  2) sway [1]: "; read -r ANSWER || ANSWER=1
+               case "$ANSWER" in 2*|s*|S*) WM=sway ;; *) WM=i3 ;; esac ;;
+        *) WM=$CHOICES
+           ask_no "Log in as $ME automatically when the computer starts, and start $WM? The login screen then shows only after logging out." || return 0 ;;
+    esac
+    echo "Anyone who switches the computer on gets your session without a password."
+    login_root autologin "$ME" "$WM" || { echo "Could not set up the automatic login; nothing was changed." >&2; return 0; }
+    open_at_login
+}
+start_login_screen() {   # just installed, and nothing graphical runs here: show it now rather than at the next start
+    [ -n "$LOGIN_SCREEN_SET" ] && [ -t 0 ] || return 0
+    [ -z "$(wm_socket i3)$(wm_socket sway)" ] && [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] || return 0
+    if command -v who >/dev/null 2>&1 && who 2>/dev/null | awk '$2 ~ /^(tty1|:0)$/ { found = 1 } END { exit !found }' && [ "$(tty 2>/dev/null || true)" != /dev/tty1 ]; then return 0; fi
+    echo
+    ask_yes "Show the login screen now?" || return 0
+    as_root systemctl start greetd.service || echo "Could not start it now; it shows at the next start." >&2
+}
+offer_login_screen
 AUTOLOGIN_WM=""
 if [ "$SETUP" = dedicated ]; then setup_autologin
 elif console_login_set; then   # left from an earlier dedicated setup: say so, but leave it alone
@@ -1109,3 +1210,4 @@ if [ "$SETUP" = alongside ] && [ -n "$LOGIN_ENTRY" ]; then
 fi
 # The dedicated setup: start the session set up above, now.
 [ -z "$AUTOLOGIN_WM" ] || start_console_session
+start_login_screen
