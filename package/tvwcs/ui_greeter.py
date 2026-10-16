@@ -9,7 +9,8 @@ from pathlib import Path
 import gi
 gi.require_version("Gtk","4.0")
 gi.require_version("Gdk","4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk
+gi.require_version("GdkPixbuf","2.0")
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
 
 from tvwcs import greeter, loginscreen
 from tvwcs.model import effective_scale
@@ -26,10 +27,10 @@ button.user-button { padding: 10px; background: transparent; }
 button.user-button:focus, button.user-button:focus-visible { background: @ACCENT@; }
 .user-name { font-size: 20px; }
 button.key { min-height: 52px; min-width: 44px; padding: 0 6px; font-size: 20px; }
-button.key.letter { min-height: 68px; min-width: 68px; padding: 0; font-size: 40px; }
-button.key.pad { min-height: 76px; min-width: 76px; padding: 0; font-size: 40px; }
+button.key.letter { min-height: 60px; min-width: 60px; padding: 0; font-size: 40px; }
+button.key.pad { min-height: 64px; min-width: 64px; padding: 0; font-size: 40px; }
 button.key.wide { font-size: 16px; min-height: 56px; }
-entry.password-field { font-size: 26px; min-height: 56px; }
+entry.password-field { font-size: 26px; min-height: 48px; }
 .signing-in { color: @MUTED@; }
 .greeter-status { font-size: 18px; }
 """
@@ -49,9 +50,11 @@ def tv_mark(size):
     """TVWCS's icon (TV, underlined with a thin oval), size pixels square, or None when its file is missing."""
     here=Path(__file__).resolve().parent
     for f in (Path(loginscreen.GREETER_LIB)/"tvwcs.svg",here.parent/"tvwcs.svg",here.parent.parent/"data"/"tvwcs.svg"):
-        if f.is_file():
-            pic=Gtk.Picture.new_for_filename(str(f)); pic.set_size_request(S(size),S(size)); pic.set_can_shrink(True)
-            pic.set_content_fit(Gtk.ContentFit.CONTAIN); pic.set_valign(Gtk.Align.CENTER); return pic
+        if f.is_file():   # drawn at exactly that size: a Picture of the file itself would grow to fill its space
+            try: texture=Gdk.Texture.new_for_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_size(str(f),S(size),S(size)))
+            except GLib.Error: return None
+            pic=Gtk.Picture.new_for_paintable(texture); pic.set_can_shrink(False); pic.set_valign(Gtk.Align.CENTER); pic.set_halign(Gtk.Align.CENTER)
+            return pic
     return None
 
 class GreeterWindow(Gtk.ApplicationWindow):
@@ -64,7 +67,7 @@ class GreeterWindow(Gtk.ApplicationWindow):
         self.rows=[]; self.modal_rows=None; self.modal_back=None; self.busy=False
         overlay=Gtk.Overlay(); self.set_child(overlay)
         root=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); root.add_css_class("tvwcs-root"); overlay.set_child(root)
-        top=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL); top.set_margin_top(S(40)); top.set_margin_start(S(60)); top.set_margin_end(S(60))
+        top=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL); top.set_margin_top(S(24)); top.set_margin_start(S(60)); top.set_margin_end(S(60))
         host=Gtk.Label(label=socket.gethostname().split(".")[0]); host.add_css_class("greeter-host"); host.set_xalign(0); host.set_hexpand(True); host.set_valign(Gtk.Align.START)
         mark=tv_mark(44)
         if mark: mark.set_margin_end(S(16)); top.append(mark); host.set_valign(Gtk.Align.CENTER)
@@ -74,7 +77,7 @@ class GreeterWindow(Gtk.ApplicationWindow):
         root.append(top)
         self.body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.body.set_vexpand(True); self.body.set_valign(Gtk.Align.CENTER)
         self.body.set_margin_start(S(110)); self.body.set_margin_end(S(110)); root.append(self.body)
-        bottom=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bottom.set_halign(Gtk.Align.END); bottom.set_margin_end(S(60)); bottom.set_margin_bottom(S(40))
+        bottom=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bottom.set_halign(Gtk.Align.END); bottom.set_margin_end(S(60)); bottom.set_margin_bottom(S(24))
         self.power=[]
         for label,icon,fallback,verb in (("Sleep","weather-clear-night-symbolic","☾","suspend"),("Restart","system-reboot-symbolic","↻","reboot"),
                                           ("Shut down","system-shutdown-symbolic","⏻","poweroff")):
@@ -127,10 +130,10 @@ class GreeterWindow(Gtk.ApplicationWindow):
         clear_box(self.body); self.rows=[]; self.keys=[]; self.layer="lower"
         cols=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(60)); self.body.append(cols)
         left=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); left.set_valign(Gtk.Align.START); cols.append(left)
-        left.append(self.tile(full,190))
+        left.append(self.tile(full,150))
         n=Gtk.Label(label=full); n.add_css_class("greeter-user"); n.set_xalign(0); n.set_max_width_chars(16); n.set_wrap(True); left.append(n)
         if full!=login: m=Gtk.Label(label=login); m.add_css_class("muted"); m.set_xalign(0); left.append(m)
-        right=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); right.set_halign(Gtk.Align.START); right.set_size_request(S(716),-1); cols.append(right)   # as wide as the full keyboard
+        right=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); right.set_halign(Gtk.Align.START); right.set_size_request(S(636),-1); cols.append(right)   # as wide as the full keyboard
         h=Gtk.Label(label="Password"); h.add_css_class("section-title"); h.set_xalign(0); right.append(h)
         self.entry=Gtk.PasswordEntry(); self.entry.add_css_class("password-field"); self.entry.set_show_peek_icon(True); self.entry.set_text(typed)
         self.entry.connect("activate",lambda *_:self.submit()); self.entry.set_margin_bottom(S(4)); right.append(self.entry)

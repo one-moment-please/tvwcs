@@ -3,6 +3,7 @@
 ## 3.4.2 — 2026-10-16
 
 - When the computer's login system stops answering (greetd waits for ever if a PAM module crashes while checking the password, as pam_ecryptfs can), the login screen says so and suggests restarting, instead of showing "Logging in…" until the computer is restarted. Any other failure while logging in is shown too.
+- The login screen fits a 1280×800 screen again: the keyboard, the Session row and Sleep / Restart / Shut down no longer overlap, the TV icon no longer crowds the user's tile, and the icon in the Session button is small.
 
 ## 3.4.1 — 2026-10-16
 
