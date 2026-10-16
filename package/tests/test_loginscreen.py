@@ -44,26 +44,19 @@ class RootTests(unittest.TestCase):
         subprocess.run([str(script),"x11","-","fake-wm","i3"],env=env,check=True)
         self.assertEqual(log.read_text(),"1 i3\n")
 
-    def test_logs_in_without_pam_ecryptfs_unless_a_home_folder_uses_it(self):
-        """pam_ecryptfs can crash greetd while it checks a password: greetd's PAM config is written without it (greetd
-        always reads /etc/pam.d/greetd), and greetd's own comes back when the login screen is turned off."""
-        pam=self.etc/"pam.d"; pam.mkdir(); own="#%PAM-1.0\n@include common-auth\n@include common-account\n"
-        (pam/"greetd").write_text(own)
-        (pam/"common-auth").write_text("auth\t[success=1 default=ignore]\tpam_unix.so nullok\nauth\trequisite\tpam_deny.so\n"
-                                       "auth\trequired\tpam_permit.so\nauth\toptional\tpam_ecryptfs.so unwrap\n")
-        (pam/"common-account").write_text("account\trequired\tpam_unix.so\n")
-        self.use("lightdm"); self.c.enable({},before="lightdm")
-        lines=[l for l in (pam/"greetd").read_text().splitlines() if not l.startswith("#")]
-        self.assertEqual(lines,["auth\t[success=1 default=ignore]\tpam_unix.so nullok","auth\trequisite\tpam_deny.so","auth\trequired\tpam_permit.so",
-                                "auth optional pam_permit.so   # was: auth\toptional\tpam_ecryptfs.so unwrap","account\trequired\tpam_unix.so"])
-        self.assertEqual((pam/"greetd.tvwcs-backup").read_text(),own)
-        self.c.update({}); self.assertEqual((pam/"greetd.tvwcs-backup").read_text(),own)   # again: still greetd's own kept
-        (self.root/"home"/".ecryptfs").mkdir(parents=True); self.c.update({})   # an encrypted home: greetd's own PAM config
+    def test_lifts_greetds_memlock_limit_and_puts_back_the_pam_config_342_wrote(self):
+        """pam_ecryptfs crashes greetd's memory-locked worker under the default memlock limit: a systemd drop-in lifts
+        it (PAM stays as it is, so eCryptfs homes unlock), and greetd's own PAM config that 3.4.2 set aside comes back."""
+        pam=self.etc/"pam.d"; pam.mkdir(); own="#%PAM-1.0\n@include common-auth\n"
+        (pam/"greetd").write_text("# Written by TVWCS for its login screen\nauth required pam_unix.so\n"); (pam/"greetd.tvwcs-backup").write_text(own)
+        dropin=self.etc/"systemd"/"system"/"greetd.service.d"/"tvwcs-memlock.conf"
+        self.use("lightdm"); self.c.enable({},before="lightdm"); self.assertEqual((pam/"greetd").read_text(),own)
+        (pam/"greetd").write_text("# Written by TVWCS for its login screen\nauth required pam_unix.so\n"); (pam/"greetd.tvwcs-backup").write_text(own)
+        dropin.unlink(); self.c.calls.clear(); self.c.update({})   # updating from 3.4.2
         self.assertEqual((pam/"greetd").read_text(),own); self.assertFalse((pam/"greetd.tvwcs-backup").exists())
-        (self.root/"home"/".ecryptfs").rmdir(); self.c.update({}); self.assertIn("pam_permit.so   # was:",(pam/"greetd").read_text())
-        self.c.disable("lightdm"); self.assertEqual((pam/"greetd").read_text(),own); self.assertFalse((pam/"greetd.tvwcs-backup").exists())
-        (pam/"common-auth").write_text("auth\trequired\tpam_unix.so\n"); self.use("lightdm"); self.c.enable({},before="lightdm")
-        self.assertEqual((pam/"greetd").read_text(),own)   # no pam_ecryptfs: greetd's own, untouched
+        self.assertIn("LimitMEMLOCK=infinity",dropin.read_text()); self.assertIn(["systemctl","daemon-reload"],self.c.calls)
+        self.c.calls.clear(); self.c.update({}); self.assertNotIn(["systemctl","daemon-reload"],self.c.calls)   # already there
+        self.c.disable("lightdm"); self.assertFalse(dropin.exists()); self.assertEqual((pam/"greetd").read_text(),own)
     def test_sessions_put_tvwcs_first_and_leave_out_hidden_and_missing_ones(self):
         (self.root/"usr"/"share"/"xsessions"/"i3-with-shmlog.desktop").write_text("[Desktop Entry]\nName=i3 (with debug log)\nExec=i3-with-shmlog\nTryExec=i3\n")
         ids=[s["id"] for s in loginscreen.sessions()]

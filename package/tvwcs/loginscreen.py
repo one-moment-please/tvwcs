@@ -241,34 +241,21 @@ command = "agreety --cmd /bin/sh"
 user = "_greetd"
 """
 
-# PAM for logging in through TVWCS's login screen. pam_ecryptfs (in Debian's common-auth whenever ecryptfs-utils is
-# installed) can crash greetd's worker while checking the password, and greetd then waits for ever. greetd always uses
-# /etc/pam.d/greetd, so where no home folder is encrypted with eCryptfs, TVWCS writes that file with the module left
-# out, keeping greetd's own as PAM_BACKUP; turning the login screen off puts it back.
+# greetd's session worker locks its memory (mlockall), and pam_ecryptfs (in Debian's common-auth whenever ecryptfs-utils
+# is installed) switches to the user's ID before putting a 256 KB array on the stack. As the user, the default 8 MB
+# memlock limit applies, so once the worker has locked more than that the stack cannot grow and greetd crashes, about
+# one login in three, then waits for ever. Lifting greetd's limit fixes it without touching PAM, so eCryptfs homes
+# still unlock. greetd runs as root and sets the user's own limits for their session.
+GREETD_DROPIN="/etc/systemd/system/greetd.service.d/tvwcs-memlock.conf"
+GREETD_DROPIN_TEXT="""# Written by TVWCS: greetd's worker locks its memory, and pam_ecryptfs (run as the user) crashes it under the default
+# 8 MB limit. Turning TVWCS's login screen off removes this file.
+[Service]
+LimitMEMLOCK=infinity
+"""
+# 3.4.2 wrote greetd's PAM config without pam_ecryptfs instead, keeping greetd's own as PAM_BACKUP: put it back.
 PAM_FILE="/etc/pam.d/greetd"
 PAM_BACKUP="/etc/pam.d/greetd.tvwcs-backup"
 PAM_MARK="# Written by TVWCS"
-ECRYPTFS_HOMES="/home/.ecryptfs"
-def pam_config() -> str:
-    """greetd's own PAM config with its @include lines spelt out and each pam_ecryptfs line replaced by pam_permit (so
-    the jumps of the lines around it still count right), or "" when greetd's own is to be used as it is."""
-    if path(ECRYPTFS_HOMES).exists(): return ""
-    base=_read(PAM_BACKUP) if PAM_MARK in _read(PAM_FILE) else _read(PAM_FILE)
-    if not base: return ""
-    out=[f"{PAM_MARK} for its login screen: greetd's PAM config without pam_ecryptfs, which can crash greetd while it",
-         f"# checks a password. greetd's own is {PAM_BACKUP}; turning TVWCS's login screen off puts it back."]
-    changed=False
-    def expand(text, depth=0):
-        nonlocal changed
-        for line in text.splitlines():
-            words=line.split()
-            if len(words)==2 and words[0]=="@include" and depth<4 and re.fullmatch(r"[\w.-]+",words[1]):
-                out.append(f"# @include {words[1]}"); expand(_read(f"/etc/pam.d/{words[1]}"),depth+1); continue
-            if "pam_ecryptfs.so" in line and not line.lstrip().startswith("#"):
-                kind=line.split()[0].lstrip("-"); out.append(f"{kind} optional pam_permit.so   # was: {line.strip()}"); changed=True; continue
-            out.append(line)
-    expand(base)
-    return "\n".join(out)+"\n" if changed else ""
 
 def write_greetd_config(user, autologin=None, vt=GREETD_VT) -> str:
     """greetd's config for TVWCS's login screen. autologin: (user, session) for the initial session, which logs that
@@ -451,23 +438,20 @@ class Changer:
         if cur=="greetd" and path(GREETD_CONF).exists() and not greetd_is_ours(cfg) and not path(GREETD_BACKUP).exists():
             shutil.copy2(path(GREETD_CONF),path(GREETD_BACKUP))
         if cur!="tvwcs": self.write(PREVIOUS,(cur or "")+"\n")
-        self.write(GREETD_CONF,write_greetd_config(user,_autologin_pair(autologin_to))); self.pam()
-        if self._getty_is_tvwcs(): self.remove(GETTY_OVERRIDE); self.systemctl("daemon-reload")
+        self.write(GREETD_CONF,write_greetd_config(user,_autologin_pair(autologin_to))); self.restore_pam()
+        self.write(GREETD_DROPIN,GREETD_DROPIN_TEXT)
+        if self._getty_is_tvwcs(): self.remove(GETTY_OVERRIDE)
+        self.systemctl("daemon-reload")
         self.switch_to("greetd")
         self.out(f"TVWCS's login screen shows from the next start{' (after '+name(cur)+')' if cur and cur!='tvwcs' else ''}.")
 
     def update(self, settings, version="", source=None):
         """Bring TVWCS's copy and look up to date (the login screen stays as it is)."""
         self.install_files(source,version); self.write_look(settings)
-        if greetd_is_ours(): self.pam()   # its PAM config too, from greetd's as it is now
+        if greetd_is_ours():
+            self.restore_pam()
+            if _read(GREETD_DROPIN)!=GREETD_DROPIN_TEXT: self.write(GREETD_DROPIN,GREETD_DROPIN_TEXT); self.systemctl("daemon-reload")
         self.out("Updated TVWCS's login screen.")
-    def pam(self):
-        """Write greetd's PAM config without pam_ecryptfs (keeping greetd's own), or put greetd's own back."""
-        text=pam_config()
-        if text:
-            if PAM_MARK not in _read(PAM_FILE): shutil.copy2(path(PAM_FILE),path(PAM_BACKUP))
-            self.write(PAM_FILE,text)
-        else: self.restore_pam()
     def restore_pam(self):
         if path(PAM_BACKUP).exists() and PAM_MARK in _read(PAM_FILE): os.replace(path(PAM_BACKUP),path(PAM_FILE))
 
@@ -480,6 +464,7 @@ class Changer:
         if not to and autologin_to: self.set_getty(autologin_to[0])
         for p in (LOOK,PREVIOUS): self.remove(p)
         self.restore_pam()
+        if self.remove(GREETD_DROPIN): self.systemctl("daemon-reload")
         shutil.rmtree(path(GREETER_LIB),ignore_errors=True)
         if to and autologin_to: self.set_autologin(autologin_to[0],autologin_to[1],to)
         self.out(f"From the next start, the computer uses {name(to)}." if to else "From the next start, the computer has no login screen.")

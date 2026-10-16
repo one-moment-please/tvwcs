@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-<!-- TVWCS: the letters TV, underlined with a thin oval -->
+<!-- TVWCS: the letters TV, underlined with a thin solid oval -->
 <rect width="128" height="128" rx="20" fill="#111318"/>
 <g fill="#ffffff">
 <path d="M16 24h46v14H46v44H32V38H16z"/>
 <path d="M64 24h15l11 40 11-40h15L97 82H83z"/>
 </g>
-<ellipse cx="64" cy="100" rx="47" ry="9" fill="none" stroke="#ffffff" stroke-width="3"/>
+<ellipse cx="64" cy="100" rx="47" ry="9" fill="#ffffff"/>
 </svg>
