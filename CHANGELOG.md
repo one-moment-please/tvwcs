@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.3 — 2026-10-16
+
+- The real cause of "Logging in…" hanging is fixed: greetd's worker locks its memory, and pam_ecryptfs ran out of stack under the default memory-lock limit about one login in three. TVWCS's login screen now lifts greetd's limit (/etc/systemd/system/greetd.service.d/tvwcs-memlock.conf, removed when the login screen is turned off) and no longer rewrites greetd's PAM config: greetd's own comes back on update, so home folders encrypted with eCryptfs unlock as usual.
+- The oval under "TV" in TVWCS's icon is filled in.
+
 ## 3.4.2 — 2026-10-16
 
 - When the computer's login system stops answering (greetd waits for ever if a PAM module crashes while checking the password, as pam_ecryptfs can), the login screen says so and suggests restarting, instead of showing "Logging in…" until the computer is restarted. Any other failure while logging in is shown too.
