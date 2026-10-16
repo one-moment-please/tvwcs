@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.3.1 — 2026-10-16
+
+- The Quick Menu no longer shows a line of key hints (OK Select, Back Close, ...) under its title and buttons.
+
 ## 3.3.0 — 2026-10-16
 
 **Quick Menu**
