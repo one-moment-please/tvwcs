@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.1 — 2026-10-16
+
+- TVWCS's login screen starts the "TVWCS (i3)" session again. Its command reached Debian's Xsession split in two, which showed "Xsession: unsupported number of arguments (2); falling back to default session."
+
 ## 3.4.0 — 2026-10-16
 
 **TVWCS's login screen**

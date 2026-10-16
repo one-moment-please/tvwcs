@@ -203,14 +203,21 @@ START_SESSION="""#!/bin/sh
 # TVWCS's login screen starts sessions with this: start-session <x11|wayland> <desktop name> <command...>.
 # Written by TVWCS (loginscreen.py). An X session gets an X server (startx) on this console, through Debian's
 # /etc/X11/Xsession when there is one, as other login screens do.
+XSESSION=${TVWCS_XSESSION:-/etc/X11/Xsession}
+if [ "$1" = --x-client ]; then
+    # Inside the X server startx started. startx splits its client's arguments at spaces, so the session's command
+    # comes here in TVWCS_X_COMMAND instead; Xsession takes it as one argument, as other login screens give it.
+    if [ -x "$XSESSION" ]; then exec "$XSESSION" "$TVWCS_X_COMMAND"; fi
+    exec $TVWCS_X_COMMAND
+fi
 KIND=$1; DESKTOP=$2; shift 2
 if [ "$DESKTOP" != - ]; then
     XDG_CURRENT_DESKTOP=$DESKTOP; XDG_SESSION_DESKTOP=$DESKTOP; export XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP
 fi
 XDG_SESSION_TYPE=$KIND; export XDG_SESSION_TYPE
 if [ "$KIND" = x11 ]; then
-    if [ -x /etc/X11/Xsession ]; then exec startx /etc/X11/Xsession "$*"; fi
-    exec startx /usr/bin/env "$@"
+    TVWCS_X_COMMAND=$*; export TVWCS_X_COMMAND
+    exec startx "$0" --x-client
 fi
 exec "$@"
 """

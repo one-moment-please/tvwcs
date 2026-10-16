@@ -1,6 +1,6 @@
 """TVWCS's login screen without GTK: turning it on and off in a pretend root folder (TVWCS_ROOT), its sessions and
 automatic login, the greetd protocol against a pretend greetd, what the greeter remembers, and changing a password."""
-import json, os, pwd, socket, stat, struct, tempfile, threading, unittest
+import json, os, pwd, socket, stat, struct, subprocess, tempfile, threading, unittest
 from pathlib import Path
 from unittest import mock
 from tvwcs import account, greeter, loginscreen
@@ -28,6 +28,21 @@ class RootTests(unittest.TestCase):
         link=self.etc/"systemd"/"system"/"display-manager.service"
         if link.is_symlink(): link.unlink()
         link.symlink_to(f"/lib/systemd/system/{unit}.service")
+
+    def test_start_session_gives_xsession_the_command_as_one_argument(self):
+        """startx splits its client's arguments at spaces (Debian's Xsession then refuses two), so a command such as
+        "tvwcs-session i3" reaches Xsession whole."""
+        d=Path(self.tmp.name)/"start"; d.mkdir(); script=d/"start-session"; script.write_text(loginscreen.START_SESSION); script.chmod(0o755)
+        log=d/"log"
+        (d/"startx").write_text('#!/bin/sh\nclient=$1; shift; exec "$client" $*\n'); (d/"startx").chmod(0o755)   # splits, as startx does
+        (d/"Xsession").write_text(f'#!/bin/sh\necho "$# $1 $XDG_SESSION_TYPE $XDG_CURRENT_DESKTOP" > "{log}"\n'); (d/"Xsession").chmod(0o755)
+        env={"PATH":f"{d}:{os.environ['PATH']}","TVWCS_XSESSION":str(d/"Xsession")}
+        subprocess.run([str(script),"x11","i3","/usr/local/bin/tvwcs-session","i3"],env=env,check=True)
+        self.assertEqual(log.read_text(),"1 /usr/local/bin/tvwcs-session i3 x11 i3\n")
+        (d/"Xsession").unlink()   # no Xsession: the command itself
+        (d/"fake-wm").write_text(f'#!/bin/sh\necho "$# $*" > "{log}"\n'); (d/"fake-wm").chmod(0o755)
+        subprocess.run([str(script),"x11","-","fake-wm","i3"],env=env,check=True)
+        self.assertEqual(log.read_text(),"1 i3\n")
 
     def test_sessions_put_tvwcs_first_and_leave_out_hidden_and_missing_ones(self):
         (self.root/"usr"/"share"/"xsessions"/"i3-with-shmlog.desktop").write_text("[Desktop Entry]\nName=i3 (with debug log)\nExec=i3-with-shmlog\nTryExec=i3\n")
