@@ -44,6 +44,26 @@ class RootTests(unittest.TestCase):
         subprocess.run([str(script),"x11","-","fake-wm","i3"],env=env,check=True)
         self.assertEqual(log.read_text(),"1 i3\n")
 
+    def test_logs_in_without_pam_ecryptfs_unless_a_home_folder_uses_it(self):
+        """pam_ecryptfs can crash greetd while it checks a password: greetd's PAM config is written without it (greetd
+        always reads /etc/pam.d/greetd), and greetd's own comes back when the login screen is turned off."""
+        pam=self.etc/"pam.d"; pam.mkdir(); own="#%PAM-1.0\n@include common-auth\n@include common-account\n"
+        (pam/"greetd").write_text(own)
+        (pam/"common-auth").write_text("auth\t[success=1 default=ignore]\tpam_unix.so nullok\nauth\trequisite\tpam_deny.so\n"
+                                       "auth\trequired\tpam_permit.so\nauth\toptional\tpam_ecryptfs.so unwrap\n")
+        (pam/"common-account").write_text("account\trequired\tpam_unix.so\n")
+        self.use("lightdm"); self.c.enable({},before="lightdm")
+        lines=[l for l in (pam/"greetd").read_text().splitlines() if not l.startswith("#")]
+        self.assertEqual(lines,["auth\t[success=1 default=ignore]\tpam_unix.so nullok","auth\trequisite\tpam_deny.so","auth\trequired\tpam_permit.so",
+                                "auth optional pam_permit.so   # was: auth\toptional\tpam_ecryptfs.so unwrap","account\trequired\tpam_unix.so"])
+        self.assertEqual((pam/"greetd.tvwcs-backup").read_text(),own)
+        self.c.update({}); self.assertEqual((pam/"greetd.tvwcs-backup").read_text(),own)   # again: still greetd's own kept
+        (self.root/"home"/".ecryptfs").mkdir(parents=True); self.c.update({})   # an encrypted home: greetd's own PAM config
+        self.assertEqual((pam/"greetd").read_text(),own); self.assertFalse((pam/"greetd.tvwcs-backup").exists())
+        (self.root/"home"/".ecryptfs").rmdir(); self.c.update({}); self.assertIn("pam_permit.so   # was:",(pam/"greetd").read_text())
+        self.c.disable("lightdm"); self.assertEqual((pam/"greetd").read_text(),own); self.assertFalse((pam/"greetd.tvwcs-backup").exists())
+        (pam/"common-auth").write_text("auth\trequired\tpam_unix.so\n"); self.use("lightdm"); self.c.enable({},before="lightdm")
+        self.assertEqual((pam/"greetd").read_text(),own)   # no pam_ecryptfs: greetd's own, untouched
     def test_sessions_put_tvwcs_first_and_leave_out_hidden_and_missing_ones(self):
         (self.root/"usr"/"share"/"xsessions"/"i3-with-shmlog.desktop").write_text("[Desktop Entry]\nName=i3 (with debug log)\nExec=i3-with-shmlog\nTryExec=i3\n")
         ids=[s["id"] for s in loginscreen.sessions()]
@@ -168,6 +188,11 @@ class GreetdTests(unittest.TestCase):
         self.assertEqual(f.got[-1],{"type":"start_session","cmd":["sway"],"env":["XDG_SESSION_TYPE=wayland"]})
         self.assertEqual([m["type"] for m in f.got[-4:]],["create_session","post_auth_message_response","post_auth_message_response","start_session"])
         self.assertNotIn("response",f.got[-3])   # nothing answered to the notice
+    def test_a_greetd_that_stops_answering_is_reported(self):
+        """greetd waits for ever when its worker crashes in PAM: the greeter says so instead of "Logging in…"."""
+        a,b=socket.socketpair(); a.settimeout(0.2)
+        try: self.assertIn("stopped answering",greeter.log_in(greeter.Greetd(sock=a),"tv","pw",["i3"]))
+        finally: a.close(); b.close()
     def test_without_greetd(self):
         with mock.patch.dict(os.environ,{},clear=True):
             with self.assertRaises(greeter.GreetdError): greeter.Greetd()
