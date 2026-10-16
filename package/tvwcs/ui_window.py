@@ -107,8 +107,6 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         header.append(controls)
         guide_btn=Gtk.Button(); guide_btn.add_css_class("square"); guide_btn.set_child(glyph("view-grid-symbolic","⊞")); guide_btn.set_tooltip_text("Open Applications (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
         pane.append(header); self._header_group=buttons+[guide_btn]
-        footer=Gtk.Label(); footer.add_css_class("muted"); footer.add_css_class("key-hints"); footer.set_xalign(0); footer.set_wrap(True); self.footer=footer; self._show_hints()
-        footer.set_margin_start(S(20)); footer.set_margin_end(S(20)); footer.set_margin_bottom(S(4)); pane.append(footer)
         # Everything below the header sits at the bottom, nearest the search field: favorites, open applications, the
         # search results, the search field, then the status row. The space left over (on a TV, or with Applications
         # open) is above them. At a desk the window is only as tall as all this (main.fit_quick_menu).
@@ -147,16 +145,6 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         (e.add_css_class if narrow else e.remove_css_class)("channel-entry")
         e.set_placeholder_text("000" if narrow else "Search, or type a channel number")
         self.channel_hint.set_visible(narrow)
-
-    def _show_hints(self):
-        """The keys that work right now, named as on a remote (OK, Back) or a keyboard (Enter, Esc)."""
-        footer=getattr(self,"footer",None)
-        if footer is None: return
-        tv=self.app.store.settings.get("use")=="tv"; ok,back=("OK","Back") if tv else ("Enter","Esc")
-        if self._modal_groups: text=f"{ok}  Select    {back}  Cancel"
-        elif tv: text=f"{ok}  Select    {back}  Close    {ok} on the search field  Keyboard"
-        else: text=f"↑ ↓ ← →  Navigate    {ok}  Select    {back}  Close    Just type to search"
-        if footer.get_text()!=text: footer.set_text(text)
 
     # ---------------------------------------------------------- the bottom: clock and status icons
     STATUS_PAGES=(("updates","updates"),("network","network"),("volume","sound"),("bluetooth","bluetooth"),("battery","power"))
@@ -770,11 +758,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not self._modal_groups: self._return_focus=self.get_focus()
         clear_box(self.modal_card); self.modal_card.set_size_request(self._card_width,-1)
         self.modal_reveal.set_visible(True); self.modal_reveal.set_can_target(True); self.modal_reveal.set_reveal_child(True)
-        GLib.idle_add(lambda:(self._show_hints(),GLib.SOURCE_REMOVE)[1])
     def close_modal(self):
         if self._text is not None and self._text.get("secret"): self._text["entry"].set_text("")   # a typed password is never left in the widget
         self._modal_groups=[]; self._modal_back=None; self._capture=None; self._pin=None; self._text=None; self._chan=None
-        self.modal_reveal.set_can_target(False); self.modal_reveal.set_reveal_child(False); self.modal_reveal.set_visible(False); self._show_hints()
+        self.modal_reveal.set_can_target(False); self.modal_reveal.set_reveal_child(False); self.modal_reveal.set_visible(False)
         back=self._return_focus
         if back is not None and usable(back): back.grab_focus()
         else: self.focus_pane("quick")
