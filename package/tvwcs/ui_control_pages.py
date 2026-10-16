@@ -11,7 +11,7 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
-from tvwcs import __version__, power, privilege, selfupdate
+from tvwcs import __version__, cursor, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, PASSWORD_KEYBOARDS, SCALE_LABELS, SCREENSAVER_LOGOS, STARTUP_LABELS, STARTUP_MODES,
                          THEMES, TIME_ENTRY, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
@@ -241,6 +241,15 @@ class OptionsPage(_ConfigPage):
         self.note("Space between the Quick Menu and the edges of the screen. Many TVs cut off the edges of the picture "
                   "(overscan): if the edges of TVWCS are missing, make this larger, or turn overscan off in the TV's own picture settings.")
         self.option("Reduce motion","reduce_motion","On: pages change at once, without fading. Suits a slow TV box.")
+        hide=cursor.hide_enabled(st); seconds=cursor.hide_seconds(st)
+        self.row("Hide the mouse pointer",_on_off(hide),self.toggle_cursor_hide,ident="opt:cursor_hide",value_css="state-on" if hide else "setting-value")
+        if hide:
+            lo,hi=cursor.SECONDS_RANGE
+            less=self.button("list-remove-symbolic","−","Sooner",lambda:self.change_cursor_seconds(-1)) if seconds>lo else None
+            more=self.button("list-add-symbolic","+","Later",lambda:self.change_cursor_seconds(1)) if seconds<hi else None
+            self.row("Hide it after",f"{seconds} second{'s' if seconds!=1 else ''}",None,ident="opt:cursor_seconds",indent=44,extras=[less,more])
+        self.note(("Hidden after that long without moving, and back as soon as it moves. " if hide else "")+
+                  "By default it is hidden on a TV and not at a desk.")
         if st["use"]=="tv":
             self.option("Hide the i3 bar","tv_hide_bar","On a TV the bottom of the Quick Menu shows the time, the network, the volume, "
                         "Bluetooth and waiting updates instead. Off: the bar shows as your i3 or sway config sets it.")
@@ -282,6 +291,12 @@ class OptionsPage(_ConfigPage):
             m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
             if is_4k(g.width*f,g.height*f): return True
         return False
+    def toggle_cursor_hide(self):
+        def edit(store): store.settings["cursor_hide"]=not cursor.hide_enabled(store.settings)
+        self.change(edit)
+    def change_cursor_seconds(self, by):
+        def edit(store): store.settings["cursor_hide_seconds"]=cursor.clamp_seconds(cursor.hide_seconds(store.settings)+by)
+        self.change(edit)
     def pick_scale(self, key): self.change(lambda s:s.settings.update(scale=key))   # settings_changed redraws Settings at it
     def choose_use(self):
         self.win.choose_option("Used on",[("tv","A TV, across the room"),("desktop","A desktop monitor, at arm's length")],self.state.settings["use"],

@@ -10,7 +10,7 @@ colour chosen in its Options (a change to them is drawn at once), and it works w
   the on-screen keyboard with the D-pad.
 - In the terminal every key goes to the shell; Esc (or Back) goes up to the buttons above it."""
 from __future__ import annotations
-import os, signal, subprocess, sys, threading
+import os, signal, subprocess, sys, threading, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -20,6 +20,7 @@ from tvwcs import privilege
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints
 from tvwcs.theme import render_css
+from tvwcs import cursor
 from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, icon_button, screen_height, scroll_into_view, scroll_to_show, set_scale, usable
 
 APP_ID="com.tvwcs.ControlPanel"
@@ -128,7 +129,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         self._capture=None; self._capture_cb=None; self._capture_cancel=None
         self.add_css_class("tvwcs-window"); self.set_icon_name("preferences-system")
         self.set_default_size(S(1180),S(760))
-        self.pointer=PointerWatch(self)   # hover colours only while the mouse is in use
+        self._hide_ms=(0.0,None); self.pointer=PointerWatch(self,self.pointer_hide_ms)   # hover colours only while the mouse is in use
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key.connect("key-pressed",self._key_pressed); key.connect("key-released",self._key_released); self.add_controller(key)
         self.connect("notify::focus-widget",self._focus_changed)
@@ -213,6 +214,12 @@ class ControlWindow(Gtk.ApplicationWindow):
     # ---- a window taller than it is wide (a tile, a monitor turned on its side): the tabs shrink to their icons
     # The window manager's size for the window is the surface's: a tile narrower than the wide layout's minimum width
     # would otherwise only clip it.
+    def pointer_hide_ms(self):
+        """The pointer's hiding time (cursor.py), read from the options at most every few seconds: it is asked at every
+        mouse movement."""
+        when,ms=self._hide_ms
+        if time.monotonic()-when>5: ms=cursor.hide_ms(ConfigStore().settings); self._hide_ms=(time.monotonic(),ms)
+        return ms
     def do_realize(self):
         Gtk.ApplicationWindow.do_realize(self)
         self.get_surface().connect("layout",lambda _s,w,h:GLib.idle_add(lambda:(self._fit_tabs(w,h),GLib.SOURCE_REMOVE)[1]))

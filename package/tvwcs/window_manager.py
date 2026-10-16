@@ -77,6 +77,18 @@ class I3WindowManager:
         walk(tree)
         return list({str(w["con_id"]):w for w in found}.values())
 
+    def focused_rect(self):
+        """The screen rectangle of the focused window ({x, y, width, height}), or None."""
+        tree=self._tree()
+        def walk(node):
+            if node.get("focused") and (node.get("window") is not None or node.get("app_id")): return node.get("rect")
+            for child in node.get("nodes",[])+node.get("floating_nodes",[]):
+                found=walk(child)
+                if found: return found
+            return None
+        rect=walk(tree) if tree else None
+        return rect if rect and rect.get("width",0)>0 and rect.get("height",0)>0 else None
+
     def windows(self):
         """Open windows, each marked with whether its workspace is currently on screen (`workspace_visible`)."""
         wins=self._all_windows(); shown={w.get("name") for w in self.workspaces() if w.get("visible")}

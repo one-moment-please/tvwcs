@@ -12,6 +12,7 @@ from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
+from tvwcs import cursor
 from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, icon_only, Marquee, muted_label, scroll_to_show, section_title, usable)
 
 FOCUS_TIP_DELAY=3000                     # ms a selected icon-only button waits before showing its tooltip (Settings > Options > Button hints)
@@ -34,7 +35,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._popovers=0; self._was_active=False; self._capture=None; self._capture_cb=None; self._pin=None
         self._reset_nav()
         self.set_decorated(False); self.set_hide_on_close(True); self.set_resizable(True); self.add_css_class("tvwcs-window")
-        self.pointer=PointerWatch(self)   # hover colours only while the mouse is in use
+        self.pointer=PointerWatch(self,lambda:cursor.hide_ms(self.app.store.settings))   # hover colours only while the mouse is in use
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key.connect("key-pressed",self._key_pressed); key.connect("key-released",self._key_released); self.add_controller(key)
         self.connect("notify::focus-widget",self._focus_changed); self.connect("notify::is-active",self._active_changed)

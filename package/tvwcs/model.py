@@ -53,6 +53,7 @@ def apply_use(settings, use):
     if not tv: settings["scale"]="desktop"
     set_apps_open(settings,"fullscreen" if tv else "side")
     if tv: settings["button_hints"]=True   # icon-only buttons explain themselves: no hovering mouse on a sofa
+    settings["cursor_hide"]=None   # the pointer hides as suits the use: on a TV, not at a desk
 
 # "Where apps open" in Settings > Options: one choice over the two keys TVWCS reads (main.launch_mode / window_mode).
 # always_new_workspace overrides everything. With both off, apps_open says whether apps always tile ("side") or follow
@@ -125,6 +126,8 @@ DEFAULT_SETTINGS={
     "time_entry":"fields",          # TIME_ENTRY
     "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
+    "cursor_hide":None,             # hide the mouse pointer when it rests (None: on in TV mode, off at a desk; see cursor.py)
+    "cursor_hide_seconds":3,        # ... after this many seconds without moving
     "screensaver_on_lock":False,    # locking shows the screen saver until a key is pressed (xsecurelock, X11 only; see lockscreen.py)
     "tvwcs_lock_screen":False,      # Lock uses TVWCS's own lock screen (i3lock / swaylock with its message), else the system's locker
     "idle":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
@@ -183,6 +186,9 @@ def _clean_settings(raw) -> dict:
                 "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
                 "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","screensaver_on_lock","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
+    if isinstance(raw.get("cursor_hide"),bool): s["cursor_hide"]=raw["cursor_hide"]
+    sec=raw.get("cursor_hide_seconds")
+    if isinstance(sec,int) and not isinstance(sec,bool) and 1<=sec<=60: s["cursor_hide_seconds"]=sec
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))
     s["battery_critical"]=clean_critical(raw.get("battery_critical"))

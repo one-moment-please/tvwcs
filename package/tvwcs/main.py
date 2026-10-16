@@ -17,7 +17,7 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs import appearance, power, privilege, quick_status, screensaver, tv_mode
+from tvwcs import appearance, cursor, power, privilege, quick_status, screensaver, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfiles, ProfileEditor
@@ -104,6 +104,35 @@ class IdleWatcher:
                 if problem: print(problem,file=sys.stderr)
             else: self.app.run_system_action(a)
     def stop(self): self.swayidle.stop()
+
+class CursorWatcher:
+    """Hides the mouse pointer after the time in Settings > Options (cursor.py), and on X11 moves the hidden pointer to
+    the bottom-right corner of the focused window, so whatever it rested on stops showing hover."""
+    TICK_MS=500
+    def __init__(self, app):
+        self.app=app; self.hider=cursor.CursorHider(); self.xpointer=None; self.parker=cursor.Parker(); self.source=0
+    def apply(self):
+        s=self.app.store.settings
+        problem=self.hider.apply(s)
+        if problem: print(problem,file=sys.stderr)
+        park=cursor.hide_enabled(s) and not cursor.sway() and bool(os.environ.get("DISPLAY"))
+        if park and not self.source:
+            if self.xpointer is None: self.xpointer=cursor.XPointer()
+            self.source=GLib.timeout_add(self.TICK_MS,self._tick)
+        elif not park and self.source: GLib.source_remove(self.source); self.source=0
+    def _tick(self):
+        position=self.xpointer.position()
+        if self.parker.tick(position,self.TICK_MS/1000,cursor.hide_seconds(self.app.store.settings)):
+            rect=self.app.wm.focused_rect()
+            if rect:
+                to=cursor.corner(rect)
+                if to!=position: self.xpointer.move(*to)
+                self.parker.moved_to(to)
+            else: self.parker.moved_to(position)   # nothing focused: left where it is
+        return GLib.SOURCE_CONTINUE
+    def stop(self):
+        if self.source: GLib.source_remove(self.source); self.source=0
+        self.hider.stop()
 
 class StatusWatcher:
     """Keeps the bottom of the Quick Menu current (the clock, and the network, volume, Bluetooth and updates icons) and
@@ -202,7 +231,7 @@ class TVWCSApp(Gtk.Application):
         self.layout=None; self._owns_pid=False
         self.pin_gate=PinGate(); self.owners=WindowOwners()
         self._fullscreen=set()   # windows that were fullscreen when TVWCS was shown; they are made fullscreen again when it hides
-        self.idle=IdleWatcher(self)
+        self.idle=IdleWatcher(self); self.cursor=CursorWatcher(self)
         self.status=quick_status.Status(); self.watch=StatusWatcher(self)
         # TV mode: the start-up action may be about to open an app (it runs 1.5 s after start)
         self.grace_until=time.monotonic()+(10 if self.store.settings["startup"]["mode"] in ("app","last") else 0)
@@ -241,10 +270,10 @@ class TVWCSApp(Gtk.Application):
         self.refresh_data(rebuild=False)
         if first:
             self.apply_look(); self._update_layout(False,False,focus_output=False); self.window=TVWCSWindow(self)
-            self.apply_hotkeys(); self.idle.apply(); self.watch.start(); GLib.timeout_add(1500,self._run_startup_action)
+            self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.start(); GLib.timeout_add(1500,self._run_startup_action)
         self.window.set_visible(False)
     def do_shutdown(self):
-        self.idle.stop(); self.watch.stop(); self._release_pid(); Gtk.Application.do_shutdown(self)
+        self.idle.stop(); self.cursor.stop(); self.watch.stop(); self._release_pid(); Gtk.Application.do_shutdown(self)
     def _claim_pid(self):
         try:
             PID_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -645,7 +674,7 @@ class TVWCSApp(Gtk.Application):
         and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
         old=self.store.settings["scale"]; look=(self.store.settings["theme"],self.store.settings["wallpaper"])
         self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
-        self.apply_hotkeys(); self.idle.apply(); self.watch.apply_bar(); self.watch.updates_changed()
+        self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.apply_bar(); self.watch.updates_changed()
         if (self.store.settings["theme"],self.store.settings["wallpaper"])!=look: self.apply_look()
         if self.window is None: return
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
@@ -693,7 +722,7 @@ class TVWCSApp(Gtk.Application):
     def set_use(self,use):
         """First run: where TVWCS is used (TV or desk), as in Settings > Options > Used on."""
         old=self.store.settings["scale"]; apply_use(self.store.settings,use); self.store.save()
-        self.apply_hotkeys(); self.idle.apply(); self.watch.apply_bar()
+        self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.apply_bar()
         if self.store.settings["scale"]!=old and self.window is not None: set_scale(self.scale_factor); self.apply_scale()
     def notify_message(self,message):
         """A problem to tell the user about, shown in the TVWCS window (opened for it when hidden)."""
