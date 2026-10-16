@@ -78,13 +78,30 @@ def screen_off(env=None):
     return parse_sway_outputs_off(out) if env.get("SWAYSOCK") else parse_monitor_off(out)
 
 # ---------------------------------------------------------------------- drawing the logo (cairo)
-BARCODE=(3,1,1,2,1,3,2,1,1,1,3,1,2,2,1,1,3,2,1,2,1,1,2,3,1)   # bar, gap, bar, gap... widths in units
+QR_ROWS=9   # the QR code in the TVWCS logo's inner oval is 9 squares tall: its finder pattern and a light square around it
+
+def qr_modules(cols, rows=QR_ROWS, finder_col=None, seed=7):
+    """The dark squares (col, row) of the QR code in the TVWCS logo's inner oval: on the left, a QR finder pattern (a
+    dark square ring around a dark square, with a light ring between them and around it), and random squares elsewhere.
+    The same every time, so the logo does not flicker."""
+    import random
+    rng=random.Random(seed)
+    f0=max(1,cols//5) if finder_col is None else finder_col   # the finder's left column
+    top=(rows-7)//2
+    dark=set()
+    for c in range(cols):
+        for r in range(rows):
+            fc,fr=c-f0,r-top
+            if -1<=fc<=7 and -1<=fr<=7:   # the finder and the light separator around it
+                if 0<=fc<=6 and 0<=fr<=6 and (fc in (0,6) or fr in (0,6) or (2<=fc<=4 and 2<=fr<=4)): dark.add((c,r))
+            elif rng.random()<0.5: dark.add((c,r))
+    return dark
 
 def _rgb(colour): return tuple(int(colour[i:i+2],16)/255 for i in (1,3,5))
 
 def _draw_disc_logo(cr, Pango, PangoCairo, w, h, colour, word, disc_word):
     """The DVD Video logo's shape: a wide italic word over a flat disc with a smaller word cut out of it. TVWCS's own
-    (disc_word None) has a smaller oval of the same shape in the disc instead, filled with the bars of a barcode."""
+    (disc_word None) has a smaller oval of the same shape in the disc instead, filled with a QR code."""
     cr.set_source_rgb(*_rgb(colour))
     layout=PangoCairo.create_layout(cr)
     font=Pango.FontDescription.from_string(f"Sans Bold Italic {max(8,int(h*0.5))}px")
@@ -97,14 +114,14 @@ def _draw_disc_logo(cr, Pango, PangoCairo, w, h, colour, word, disc_word):
     cr.save(); cr.translate(cx,cy); cr.scale(rx,ry); cr.arc(0,0,1,0,6.2832); cr.restore(); cr.fill()
     cr.set_source_rgb(0,0,0)
     if disc_word is None:
-        # an oval half the size, the same shape, and a vertical barcode cut out of the disc inside it
+        # an oval half the size, the same shape, and a QR code's squares cut out of the disc inside it, with its finder
+        # pattern far enough left that the oval's curve does not cut into it
         irx,iry=rx*0.5,ry*0.5
         cr.save(); cr.translate(cx,cy); cr.scale(irx,iry); cr.arc(0,0,1,0,6.2832); cr.restore()
         cr.save(); cr.clip()
-        unit=2*irx/sum(BARCODE); x=cx-irx
-        for i,width in enumerate(BARCODE):
-            if i%2==0: cr.rectangle(x,cy-iry,width*unit,2*iry)
-            x+=width*unit
+        unit=2*iry/QR_ROWS; cols=max(QR_ROWS,int(2*irx/unit)); x0=cx-cols*unit/2
+        finder=int(((cx-irx*0.55)-x0)/unit)
+        for c,r in qr_modules(cols,QR_ROWS,finder): cr.rectangle(x0+c*unit,cy-iry+r*unit,unit,unit)
         cr.fill(); cr.restore()
         return
     small=PangoCairo.create_layout(cr)

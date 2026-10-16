@@ -40,6 +40,14 @@ class ScreensaverTests(unittest.TestCase):
         with open(path) as f: self.assertIn("exec '/opt/tvwcs/bin/tvwcs' screensaver --xsecurelock",f.read())
     def test_the_tvwcs_logo_has_no_word_in_its_disc(self):
         self.assertIsNone(S.LOGO_WORDS["tvwcs"][1]); self.assertEqual(S.LOGO_WORDS["dvd"],("DVD","VIDEO"))
+    def test_the_qr_code_has_a_finder_pattern_on_the_left(self):
+        dark=S.qr_modules(40,9,6)
+        ring={(6+c,1+r) for c in range(7) for r in range(7) if c in (0,6) or r in (0,6)}
+        centre={(6+c,1+r) for c in range(2,5) for r in range(2,5)}
+        light={(6+c,1+r) for c in range(-1,8) for r in range(-1,8)}-ring-centre
+        self.assertTrue(ring<=dark and centre<=dark); self.assertFalse(light&dark)
+        self.assertTrue(any(c>14 for c,_r in dark))   # random squares fill the rest
+        self.assertEqual(dark,S.qr_modules(40,9,6))    # the same every time
 
 if __name__=="__main__": unittest.main()
 
