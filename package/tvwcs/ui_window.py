@@ -253,14 +253,15 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                                             "Close workspace",lambda:self.app.close_workspace(entry)),True))
             return out
         row,group=self._options_row(main,entry.label,items)
-        # Showing or hiding the individual apps is its own square button after the name, shown even when ⋯ is hidden
-        expander=Gtk.Button(); expander.add_css_class("options-toggle"); expander.add_css_class("square")
+        # Showing or hiding the individual apps is its own square button between ⋯ and the name, shown even when ⋯ is hidden
+        expander=Gtk.Button(); expander.add_css_class("square")
         def show_expander():
             shown=children.get_visible()
             expander.set_child(glyph("pan-up-symbolic" if shown else "pan-down-symbolic","▴" if shown else "▾"))
             expander.set_tooltip_text("Hide the individual apps" if shown else "Show the individual apps, to open just one")
         expander.connect("clicked",lambda *_:(children.set_visible(not children.get_visible()),show_expander()))
-        show_expander(); row.append(expander); group.append(expander)
+        show_expander(); row.insert_child_after(expander,group[0]); group.insert(1,expander)   # group[0] is ⋯, even when hidden
+        group.lead=expander   # ← on the name moves onto it; ← on it opens the row's menu
         self._groups["quick"].append(group)          # registered before its children so navigation order is top to bottom
         for w in entry.windows: children.append(self._window_row(w,nested=True))
         box.append(row); box.append(children); return box
@@ -630,8 +631,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         i=next((k for k,w in enumerate(active) if w is focused),None)
         if i is None: i=next((k for k,w in enumerate(active) if self._contains(w,focused)),0)
         open_options=getattr(group,"open_options",None)
-        if step<0 and pane=="quick" and open_options is not None and focused is group.entry and group.expanded is not None and not group.expanded():
-            return open_options()   # ← on a Quick Menu row opens its options, next to the application
+        lead=getattr(group,"lead",None)
+        if step<0 and pane=="quick" and open_options is not None and focused is (lead or group.entry) and group.expanded is not None and not group.expanded():
+            return open_options()   # ← on a Quick Menu row opens its options, next to the application (or its first button after ⋯)
         nxt=i+step
         if 0<=nxt<len(active): return active[nxt].grab_focus()
         if self._modal_groups: return active[nxt%len(active)].grab_focus()
