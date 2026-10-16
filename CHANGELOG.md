@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.2.2 — 2026-10-16
+
+- In the Quick Menu, a workspace with more than one application has a square ▾ button after its name that shows or hides its individual apps. It is always visible, even when the options buttons are hidden, and the option has left the workspace's ⋯ menu.
+
 ## 3.2.1 — 2026-10-16
 
 - The screen saver covers every monitor, each with its own bouncing logo, instead of only the one in use. Any key, click or pointer movement ends it on all of them, and focus goes back to the workspace that had it.

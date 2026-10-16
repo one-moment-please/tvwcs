@@ -248,13 +248,19 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             shown=children.get_visible(); out=[]
             for name in others:   # only offered when there is somewhere else to send it
                 out.append(("video-display-symbolic","▭",f"Move to monitor {name}",lambda n=name:self.app.move_workspace(entry.name,n),False))
-            out.append(("pan-up-symbolic" if shown else "pan-down-symbolic","▴" if shown else "▾",
-                        "Hide the individual apps" if shown else "Show the individual apps, to open just one",lambda:children.set_visible(not shown),False))
             out.append(("window-close-symbolic","✕","Close this workspace and its apps",
                         lambda:self.confirm("Close workspace?",f"Close {entry.label} and its {len(entry.windows)} applications? Unsaved work in them may be lost.",
                                             "Close workspace",lambda:self.app.close_workspace(entry)),True))
             return out
         row,group=self._options_row(main,entry.label,items)
+        # Showing or hiding the individual apps is its own square button after the name, shown even when ⋯ is hidden
+        expander=Gtk.Button(); expander.add_css_class("options-toggle"); expander.add_css_class("square")
+        def show_expander():
+            shown=children.get_visible()
+            expander.set_child(glyph("pan-up-symbolic" if shown else "pan-down-symbolic","▴" if shown else "▾"))
+            expander.set_tooltip_text("Hide the individual apps" if shown else "Show the individual apps, to open just one")
+        expander.connect("clicked",lambda *_:(children.set_visible(not children.get_visible()),show_expander()))
+        show_expander(); row.append(expander); group.append(expander)
         self._groups["quick"].append(group)          # registered before its children so navigation order is top to bottom
         for w in entry.windows: children.append(self._window_row(w,nested=True))
         box.append(row); box.append(children); return box
