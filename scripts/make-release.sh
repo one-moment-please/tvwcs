@@ -18,7 +18,7 @@ rm -f "$ROOT/resources/$NAME.zip" "$ROOT/resources/tvwcs.tar.gz"   # zip -r woul
 mkdir -p "$STAGE/tvwcs/tvwcs"
 cp "$ROOT"/package/tvwcs/*.py "$STAGE/tvwcs/tvwcs/"
 mkdir -p "$STAGE/tvwcs/bin"; cp "$ROOT/package/bin/tvwcs" "$STAGE/tvwcs/bin/"
-cp "$ROOT/data/tvwcs.conf" "$ROOT/data/com.tvwcs.ControlPanel.desktop" "$ROOT/data/tvwcs-settings.svg" "$ROOT/VERSION" "$ROOT/LICENSE" "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$ROOT/TODO.md" "$STAGE/tvwcs/"
+cp "$ROOT/data/tvwcs.conf" "$ROOT/data/com.tvwcs.ControlPanel.desktop" "$ROOT/data/tvwcs-settings.svg" "$ROOT/data/tvwcs.svg" "$ROOT/VERSION" "$ROOT/LICENSE" "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$ROOT/TODO.md" "$STAGE/tvwcs/"
 cp "$ROOT/scripts/install.sh" "$STAGE/tvwcs/"
 if command -v zip >/dev/null 2>&1; then
     (cd "$STAGE" && zip -rq "$ROOT/resources/$NAME.zip" tvwcs)

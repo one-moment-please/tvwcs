@@ -289,11 +289,49 @@ class InstallTests(unittest.TestCase):
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'
             f'case "$*" in *install*) for p in i3 startx; do printf "#!/bin/sh\\n" > "{bin_}/$p"; chmod +x "{bin_}/$p"; done ;; esac\n')
         (bin_/"apt-get").chmod(0o755)
-        out=self.converse(["","n","n","n","y"],TVWCS_WMS="",TVWCS_X_SERVER="",**env)   # Enter: i3; not the other packages; no i3 config; no power rule; yes to the automatic login
+        out=self.converse(["","n","n","n","y"],{"Install TVWCS's login screen?":"n"},TVWCS_WMS="",TVWCS_X_SERVER="",**env)   # Enter: i3; not the other packages; no i3 config; no power rule; yes to the automatic login
         apt=(bin_/"apt").read_text()
         self.assertIn("apt-get update -q\n",apt); self.assertIn("install -y i3 xserver-xorg xinit xdotool x11-xserver-utils",apt)
         self.assertIn("1) i3 with Xorg (recommended)",out); self.assertIn("Installed i3.",out)
         self.assertTrue(override.exists(),out); self.assertIn("exec startx",(self.home/".profile").read_text())
+    def login_screen_tools(self,*programs):
+        """autologin_tools on Debian, with apt-get and dpkg-query faked (nothing installed), and TVWCS_ROOT for
+        loginscreen.py (run through the fake sudo): /usr/share/xsessions has i3's session."""
+        env,override=self.autologin_tools(*programs)
+        bin_=Path(env["PATH"].split(":")[0]); root=Path(self.tmp.name)
+        (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
+        (bin_/"dpkg-query").write_text('#!/bin/sh\nexit 1\n'); (bin_/"dpkg-query").chmod(0o755)
+        (root/"usr"/"share"/"xsessions").mkdir(parents=True); (root/"usr"/"share"/"xsessions"/"i3.desktop").write_text("[Desktop Entry]\nName=i3\nExec=i3\n")
+        return {**env,"TVWCS_ROOT":str(root)},override,bin_
+    def test_installs_its_login_screen_where_there_is_none_and_keeps_the_automatic_login(self):
+        env,override,bin_=self.login_screen_tools("i3","startx")
+        self.converse(["n","n"],{"Install TVWCS's login screen?":"n","automatically when it starts":"y"},**env)   # the console's automatic login first
+        self.assertTrue(override.exists()); self.assertIn("exec startx",(self.home/".profile").read_text())
+        out=self.converse(["n","n"],{"Install TVWCS's login screen?":""},**env)   # Enter installs it
+        self.assertIn("There is no login screen on this computer. TVWCS has its own",out)
+        self.assertIn("install -y greetd cage",(bin_/"apt").read_text())
+        conf=(Path(self.env["TVWCS_ETC"])/"greetd"/"config.toml").read_text()
+        self.assertIn('command = "cage -s -d -- /usr/local/lib/tvwcs-greeter/greeter"',conf)
+        self.assertIn('[initial_session]\ncommand = "/usr/local/lib/tvwcs-greeter/start-session x11 i3 i3"\nuser = "tv"',conf)
+        self.assertFalse(override.exists(),out); self.assertNotIn("exec startx",(self.home/".profile").read_text())
+        self.assertTrue((Path(self.tmp.name)/"usr"/"local"/"lib"/"tvwcs-greeter"/"tvwcs"/"ui_greeter.py").is_file())
+        self.assertIn("still logged in automatically",out)
+        out=self.converse(["n","n"],**env)   # in use: not offered again, and nothing to update
+        self.assertNotIn("Install TVWCS's login screen?",out); self.assertNotIn("Update TVWCS's login screen",out)
+    def test_its_login_screen_next_to_another_one_only_on_a_clear_yes(self):
+        env,override,bin_=self.login_screen_tools("i3","startx","lightdm")
+        out=self.converse(["n","n",""],{"Choose 1, 2 or 3":""},**env)   # Enter is no
+        self.assertIn("Use TVWCS's login screen instead of lightdm?",out); self.assertIn("[y/N]",out)
+        self.assertFalse((Path(self.env["TVWCS_ETC"])/"greetd"/"config.toml").exists())
+    def test_offers_its_login_screen_first_for_sway_with_lightdm(self):
+        env,override,bin_=self.login_screen_tools("i3","startx","sway","lightdm")
+        out=self.converse([],{"Choose 1, 2, 3 or 4":"","Use your current keyboard layout":"y"},TVWCS_WMS="i3 sway",TVWCS_SETUP="alongside",**env)
+        self.assertIn("1) TVWCS's login screen (recommended",out); self.assertIn("2) SDDM",out)
+        self.assertIn("default_session",(Path(self.env["TVWCS_ETC"])/"greetd"/"config.toml").read_text())
+        self.assertEqual((Path(self.env["TVWCS_ETC"])/"tvwcs"/"previous-login-screen").read_text(),"lightdm\n")
+        self.assertTrue((self.home/".config"/"tvwcs"/"sway-session.conf").exists())
+        self.assertNotIn("Use TVWCS's login screen instead",out)   # not asked twice
     def test_installs_i3_without_xorg_when_xlibre_is_installed(self):
         """XLibre is a fork of Xorg that replaces it: i3 is installed for it, and the Xorg server is neither offered nor installed."""
         env,_override=self.autologin_tools()
@@ -309,10 +347,13 @@ class InstallTests(unittest.TestCase):
         env,_override=self.autologin_tools()
         bin_=Path(env["PATH"].split(":")[0]); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n"); self.without_gtk(bin_)
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt.log"\n'); (bin_/"apt-get").chmod(0o755)
-        self.assertIn("Nothing was installed.",self.converse(["3","n","n","n"],TVWCS_WMS="",**env))
+        self.assertIn("Nothing was installed.",self.converse(["4","n","n","n"],TVWCS_WMS="",**env))
         self.assertFalse((bin_/"apt.log").exists())
         self.converse(["2","n","n","n"],TVWCS_WMS="",**env)
         self.assertIn("install -y sway\n",(bin_/"apt.log").read_text())
+        (bin_/"apt.log").unlink(); out=self.converse(["3","n","n","n"],{"Choose 1, 2, 3 or 4":"1"},TVWCS_WMS="",TVWCS_X_SERVER="",**env)   # both
+        self.assertIn("3) both",out); self.assertIn("Installing i3 and sway with:",out)
+        self.assertIn("install -y i3 xserver-xorg xinit xdotool x11-xserver-utils sway\n",(bin_/"apt.log").read_text())
     def test_unsupported_distribution_says_what_to_install_by_hand(self):
         """Arch, Fedora and the rest are not supported: nothing is installed, and it says what to install and where to read more."""
         env,_override=self.autologin_tools()
@@ -399,16 +440,17 @@ class InstallTests(unittest.TestCase):
     def test_alongside_gives_tvwcs_its_own_session_at_the_login_screen(self):
         env,override=self.alongside("lightdm")
         self.write_i3("set $mod Mod4\nexec --no-startup-id xss-lock -- i3lock\n")
-        answers={"Choose 1 or 2 [1]":"1","Use your current keyboard layout":"y","to the login screen?":"y","usual i3 config":"",
-                 "1 (TV) or 2 (desktop)":"1"}   # everything else: no
+        answers={"Choose 1 or 2 [1]":"1","Use your current keyboard layout":"y","Choose 1, 2 or 3":"","1 (TV) or 2 (desktop)":"1"}   # everything else: no
         out=self.converse([],answers,**env)
-        self.assertEqual(self.i3.read_text(),"set $mod Mod4\nexec --no-startup-id xss-lock -- i3lock\n")   # your usual config: untouched (Enter is no)
-        self.assertIn("Also add TVWCS to your usual i3 config",out); self.assertIn("[y/N]",out)
+        self.assertEqual(self.i3.read_text(),"set $mod Mod4\nexec --no-startup-id xss-lock -- i3lock\n")   # your usual config: untouched (Enter: TVWCS's own session)
+        self.assertIn("Where should TVWCS start?",out); self.assertIn("Choose 1, 2 or 3 [1]",out); self.assertNotIn("to the login screen?",out)   # chosen: not asked again
+        self.assertEqual((self.home/".config"/"tvwcs"/"where").read_text(),"sessions\n")
         session=self.home/".config"/"tvwcs"/"i3-session.conf"; text=session.read_text()
         self.assertIn("set $mod Mod4",text); self.assertIn("bindcode $mod+36",text); self.assertNotIn("WARNING",text)
         self.assertTrue(text.rstrip().endswith("include ~/.local/share/tvwcs/tvwcs.conf"),text)
         entry=(self.share/"xsessions"/"tvwcs-i3.desktop").read_text()
-        self.assertIn(f"\nExec={self.bindir}/tvwcs-session i3\n",entry); self.assertIn("\nName=TVWCS (i3)\n",entry); self.assertIn("\nDesktopNames=i3\n",entry)
+        self.assertIn(f"\nExec={self.bindir}/tvwcs-session i3\n",entry); self.assertIn(f"\nIcon={self.share}/pixmaps/tvwcs.svg\n",entry)
+        self.assertTrue((self.share/"pixmaps"/"tvwcs.svg").is_file()); self.assertIn("\nName=TVWCS (i3)\n",entry); self.assertIn("\nDesktopNames=i3\n",entry)
         wrapper=self.bindir/"tvwcs-session"; self.assertTrue(os.access(wrapper,os.X_OK)); self.assertTrue(os.access(self.dest/"bin"/"tvwcs-session",os.X_OK))
         self.assertEqual(subprocess.run(["sh","-n",str(wrapper)]).returncode,0)
         self.assertIn('choose "TVWCS (i3)" at the login screen',out); self.assert_hands_off(override)
@@ -421,6 +463,24 @@ class InstallTests(unittest.TestCase):
         # again: nothing is written twice, and the root step is skipped when the entry is the same
         out=self.converse([],answers,**env)
         self.assertIn("already lists TVWCS's session",out); self.assertEqual(session.read_text().count("tvwcs.conf"),text.count("tvwcs.conf"))
+    def test_alongside_can_use_the_usual_session_instead(self):
+        """Choosing the usual session: the include line goes into your i3 config, and no TVWCS session is made."""
+        env,override=self.alongside("lightdm"); self.write_i3("set $mod Mod4\n")
+        out=self.converse([],{"Choose 1, 2 or 3":"2","Add TVWCS to your i3 config":"y"},**env)
+        self.assertTrue(self.i3.read_text().endswith("include ~/.local/share/tvwcs/tvwcs.conf\n"),out)
+        self.assertFalse((self.home/".config"/"tvwcs"/"i3-session.conf").exists()); self.assertFalse((self.share/"xsessions").exists())
+        self.assert_hands_off(override)
+    def test_only_for_tvwcs_with_a_login_screen_can_use_a_tvwcs_session_instead(self):
+        """The usual session is left alone: TVWCS gets its own session at the login screen."""
+        env,override=self.autologin_tools("i3","startx","lightdm"); self.write_i3("set $mod Mod4\n")
+        out=self.converse([],{"Choose 1, 2 or 3":"2","Use your current keyboard layout":"y"},**env)
+        self.assertIn("2) Only in a \"TVWCS\" session of its own at the login screen",out)
+        self.assertEqual(self.i3.read_text(),"set $mod Mod4\n"); self.assertNotIn("Add TVWCS to your i3 config",out)
+        self.assertTrue((self.share/"xsessions"/"tvwcs-i3.desktop").is_file())
+        self.assertEqual((self.home/".config"/"tvwcs"/"where").read_text(),"sessions\n")
+    def test_only_for_tvwcs_without_a_login_screen_is_not_asked_where(self):
+        env,override=self.autologin_tools("i3","startx")
+        self.assertNotIn("Where should TVWCS start?",self.converse([],{"Install TVWCS's login screen?":"n"},**env))
     def test_alongside_never_sets_up_a_session_that_starts_by_itself(self):
         """Even answering yes to everything, and with no login screen (where the dedicated setup would offer it)."""
         env,override=self.alongside()
@@ -429,7 +489,9 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.share/"xsessions").exists()); self.assertFalse(self.bindir.exists())   # no login screen: no entry
         self.assertIn(f"startx '{self.dest}/bin/tvwcs-session' i3",out); self.assertIn(f"'{self.dest}/bin/tvwcs-session' sway",out)
         self.assertTrue((self.home/".config"/"tvwcs"/"sway-session.conf").is_file())
-        self.write_i3("set $mod Mod4\n"); self.converse(["y"]*12,**env)   # your usual config gets TVWCS only on a clear yes
+        self.write_i3("set $mod Mod4\n"); self.converse(["y"]*12,**env)   # as last time: TVWCS's own session only
+        self.assertEqual(self.i3.read_text(),"set $mod Mod4\n")
+        self.converse(["y"]*12,{"Choose 1, 2 or 3":"3"},**env)   # both: your usual config too
         self.assertTrue(self.i3.read_text().endswith("include ~/.local/share/tvwcs/tvwcs.conf\n")); self.assert_hands_off(override)
     def test_warns_that_lightdm_cannot_start_sway_reliably(self):
         env,_override=self.alongside("lightdm","sway"); sway=self.home/".config"/"tvwcs"/"sway-session.conf"

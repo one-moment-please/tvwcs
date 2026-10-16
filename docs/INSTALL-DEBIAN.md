@@ -75,12 +75,14 @@ The rest is done from the other computer.
    | Question | Answer |
    |---|---|
    | **How should TVWCS be set up?** | Enter (**1**, only TVWCS). |
-   | **Install one now? 1) i3 with Xorg (recommended) 2) sway 3) neither** | Enter (**i3**). sudo asks for your password. |
+   | **Install one now? 1) i3 with Xorg (recommended) 2) sway 3) both 4) neither** | Enter (**i3**). sudo asks for your password. |
    | **Missing packages … Install them now?** | Enter (yes). |
    | **There is no i3 config yet. Create one from the standard template?** | Enter, then choose the `$mod` key and keyboard layout. |
    | **Add TVWCS to your i3 config?** | Enter (yes). |
    | **Let TVWCS sleep, reboot and shut down without asking for your password?** | Your choice. `y` is handy with a remote. |
-   | **There is no login screen on this computer. Log in as tv automatically when it starts, and start i3?** | `y`. Anyone who switches the computer on gets your session, which suits a TV. |
+   | **Install TVWCS's login screen? (It installs greetd and cage.)** | Enter (yes). It shows who can log in and takes the password from the remote. |
+   | **Log in as tv automatically when the computer starts, and start i3?** | `y`. Anyone who switches the computer on gets your session, which suits a TV. The login screen then shows only after logging out. |
+   | **Show the login screen now?** | Enter (yes). It logs you in by itself if you said yes above. |
    | **Will TVWCS be used on a TV or on a desktop monitor?** | Enter (**TV**). |
 
 When the installer finishes, the TV shows TVWCS, and it does so every time the computer starts. Press ⚙ in the Quick Menu to open **Settings**.

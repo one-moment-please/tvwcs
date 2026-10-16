@@ -119,7 +119,7 @@ DEFAULT_SETTINGS={
     "reduce_motion":False,          # no animated transitions (slow TV boxes)
     "theme":"dark",                 # THEMES: TVWCS's look, passed on to applications that follow the desktop's colour scheme
     "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
-    "password_keyboard":"full",     # PASSWORD_KEYBOARDS: what a password dialog opens with (it can switch to the other)
+    "password_keyboard":"full",     # PASSWORD_KEYBOARDS: what a password dialog opens with: the one last used (it can switch to the other)
     "screensaver_logo":"dvd",       # SCREENSAVER_LOGOS
     "screensaver_image":"",         # the picture for "image"
     "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses

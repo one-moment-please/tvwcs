@@ -11,7 +11,8 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
-from tvwcs import __version__, cursor, features, power, privilege, selfupdate
+from tvwcs import __version__, cursor, features, loginscreen, power, privilege, selfupdate
+from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, PASSWORD_KEYBOARDS, SCALE_LABELS, SCREENSAVER_LOGOS, STARTUP_LABELS, STARTUP_MODES,
                          THEMES, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
@@ -279,8 +280,8 @@ class OptionsPage(_ConfigPage):
 
         self.section("PASSWORDS")
         self.row("Password keyboard",PASSWORD_KEYBOARDS[st["password_keyboard"]],self.choose_password_keyboard,ident="opt:password_keyboard")
-        self.note("What the on-screen keyboard shows first when a password is asked. A key on it switches to the other. "
-                  "Choose Number pad if your password is only digits.")
+        self.note("What the on-screen keyboard shows first when a password is asked: the one a password was last typed on "
+                  "(the full keyboard at first). A key on it switches to the other, for a password of only digits.")
         if st["password_keyboard"]=="digits":
             self.note("A password of digits only is easy to guess. If the SSH server is on, set System information › "
                       "Sign in with to Keys only, so nobody can sign in over the network with it.","error")
@@ -303,6 +304,8 @@ class OptionsPage(_ConfigPage):
         self.note({"none":"Nothing opens by itself when you log in.","menu":"The Quick Menu opens when you log in.",
                    "last":"Whichever application you used most recently opens when you log in.",
                    "app":"The application chosen above opens when you log in."}[mode]+" It happens once per login, a moment after TVWCS starts.")
+        self.note("Some applications, such as Steam, have their own option to start when you log in. If you use one of those, "
+                  "set Open at login to None, so the two do not both open something.")
         self.note("Hotkeys and the remote's keys are under Remote and hotkeys; TVWCS's own updates under Software updates.")
 
     # ---------------------------------------------------------- choices
@@ -1851,11 +1854,14 @@ class FeaturesPage(Page):
     key="features"; title="Features"; icon="view-list-symbolic"; fallback="☰"
     def read(self):
         st=ConfigStore().settings
-        return [(f,features.enabled(st,f.key),features.installed(f)) for f in features.FEATURES if features.applies(f)]
+        return ([(f,features.enabled(st,f.key),features.installed(f)) for f in features.FEATURES if features.applies(f)],
+                loginscreen.status(__version__,st))
     def summary(self):
         if not self.state: return ""
-        on=sum(1 for _f,e,_i in self.state if e); return f"{on} of {len(self.state)} on"
-    def draw(self, rows):
+        rows=self.state[0]; on=sum(1 for _f,e,_i in rows if e); return f"{on} of {len(rows)} on"
+    def draw(self, state):
+        rows,login=state
+        login_ui.draw_login_screen(self,login)
         self.section("FEATURES")
         for f,on,have in rows:
             if on and have: value,detail="On",f.what
@@ -1873,4 +1879,12 @@ class FeaturesPage(Page):
             elif key=="uninstall": turn_feature_off(self,f,True)
         self.win.choose_option(f.label,[("keep","Keep it on"),("off","Turn it off"),("uninstall","Turn it off and uninstall its software")],"keep",picked)
 
-PAGES=(OptionsPage,FeaturesPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)
+# ====================================================================== User
+class UserPage(Page):
+    """This user's account (name, password) and logging in: the login screen in use and the automatic login."""
+    key="user"; title="User"; icon="avatar-default-symbolic"; fallback="☺"
+    def read(self): return login_ui.read_user()
+    def summary(self): return self.state[0].login if self.state else ""
+    def draw(self, state): login_ui.draw_user(self,state)
+
+PAGES=(OptionsPage,UserPage,FeaturesPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)

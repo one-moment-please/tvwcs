@@ -512,8 +512,8 @@ class ControlWindow(Gtk.ApplicationWindow):
     def ask_text(self, title, message, callback, initial="", secret=False, ok_label="OK", back=None, error="", digits=None):
         """Ask for a line of text: typed on a keyboard, or picked letter by letter on the on-screen keyboard with
         the D-pad. callback(text) runs on OK or Enter; Cancel (or Esc) runs back() or just closes. A password (secret)
-        opens with the full keyboard or the number pad, as Options > Password keyboard says, and a key switches
-        between the two, keeping what is typed."""
+        opens with the keyboard a password was last typed on (Options > Password keyboard; the full one at first), and a
+        key switches between the two, keeping what is typed."""
         if digits is None: digits=secret and self.app.password_keyboard=="digits"
         self._begin_modal(title)
         if message: self._message(message)
@@ -523,7 +523,9 @@ class ControlWindow(Gtk.ApplicationWindow):
         entry.add_css_class("text-field"); entry.set_text(initial); entry.set_margin_bottom(S(8)); self.modal_card.append(entry)
         cancel_action=back or self.close_modal
         def submit(*_):
-            text=entry.get_text(); self.close_modal(); callback(text)
+            text=entry.get_text(); self.close_modal()
+            if secret: self._remember_keyboard(digits)
+            callback(text)
         def switch():
             typed=entry.get_text(); self.ask_text(title,message,callback,typed,secret,ok_label,back,error,not digits)
         entry.connect("activate",submit)
@@ -556,6 +558,17 @@ class ControlWindow(Gtk.ApplicationWindow):
         if not digits: self._label_keys()
         self._finish_modal(groups,cancel_action,entry)
         # the keyboard rows keep their column when moving up and down; the last row of keys has 4, so it maps 10 -> 4
+    def _remember_keyboard(self, digits):
+        """A password was typed on this keyboard: password dialogs open with it from now on, here and in TVWCS."""
+        kind="digits" if digits else "full"
+        if self.app.password_keyboard==kind: return
+        self.app.password_keyboard=kind
+        try:
+            store=ConfigStore(); store.settings["password_keyboard"]=kind; store.save()
+        except OSError: return
+        from tvwcs.ui_control_pages import tell_tvwcs
+        tell_tvwcs("reload")
+        if self.page is not None and self.page.key=="options": self.page.refresh(quiet=True)
     def _label_keys(self):
         layer=self.KEYS[self._text["layer"]]
         for r,c,b in self._text["keys"]: b.set_label(layer[r][c])
