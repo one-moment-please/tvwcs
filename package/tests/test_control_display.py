@@ -154,6 +154,7 @@ class ScaleTests(unittest.TestCase):
         tv,laptop=disp.parse_sway(SWAY)
         new=disp.edited([tv,laptop],"HDMI-A-1",scale=1.5)
         self.assertEqual(by(new,"HDMI-A-1").size,(2560,1440)); self.assertIn("scale 1.5 ",disp.sway_command(new))
+        self.assertEqual(disp.Output("eDP-1",enabled=True,width=2560,height=1440,scale=1.5).size,(1706,960))   # as sway rounds it, down
     def test_choices(self):
         outs=outputs()   # the smallest display that is on is 1080 high
         self.assertEqual(disp.scale_choices(outs,False),[1.0,2.0])

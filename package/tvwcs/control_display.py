@@ -62,6 +62,7 @@ class Output:
         """How much of the desktop it covers."""
         w,h=(self.height,self.width) if self.rotated else (self.width,self.height)
         z=(self.ui or 1)/(self.scale or 1)
+        if (self.ui or 1)==1: return (math.floor(w*z+1e-6),math.floor(h*z+1e-6))   # sway rounds a scaled size down
         return (round(w*z),round(h*z))
     @property
     def zoom(self):
