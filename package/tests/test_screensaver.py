@@ -42,3 +42,15 @@ class ScreensaverTests(unittest.TestCase):
         self.assertIsNone(S.LOGO_WORDS["tvwcs"][1]); self.assertEqual(S.LOGO_WORDS["dvd"],("DVD","VIDEO"))
 
 if __name__=="__main__": unittest.main()
+
+class I3SpreadTests(unittest.TestCase):
+    def test_focused_workspace_from_i3(self):
+        from unittest import mock
+        ws='[{"name":"1","focused":false},{"name":"3: web","focused":true}]'
+        with mock.patch.object(S,"_i3_command",return_value=ws): self.assertEqual(S._i3_focused_workspace(),"3: web")
+        with mock.patch.object(S,"_i3_command",return_value=""): self.assertIsNone(S._i3_focused_workspace())
+        with mock.patch.object(S,"_i3_command",return_value="not json"): self.assertIsNone(S._i3_focused_workspace())
+    def test_no_i3_commands_on_sway(self):
+        from unittest import mock
+        with mock.patch.dict(__import__("os").environ,{"SWAYSOCK":"/run/x"}), mock.patch("subprocess.run") as run:
+            self.assertEqual(S._i3_command("workspace 1"),""); run.assert_not_called()

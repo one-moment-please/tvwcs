@@ -133,3 +133,34 @@ class BatteryTests(unittest.TestCase):
         settings["battery_critical"]=power.clean_critical({"action":"nothing","percent":90})
         self.assertEqual(power.critical(settings,low),"")
         self.assertEqual(power.clean_critical({"action":"explode","percent":0}),{"action":"shutdown","percent":5})
+
+class XTakeOverTests(unittest.TestCase):
+    """TVWCS keeps X's own screen times before switching them off, and gives them back when the screen is left to the
+    system again (a laptop whose battery times leave it to the system)."""
+    def test_saved_times(self):
+        self.assertEqual(power.parse_x_saved(XSET),"600 600 900 1200 1")
+        self.assertEqual(power.parse_x_saved(XSET.replace("Enabled","Disabled")),"600 600 900 1200 0")
+        self.assertEqual(power.parse_x_saved("no X here"),"")
+    def test_restore_command(self):
+        self.assertEqual(power.x_restore_argv("600 600 900 1200 1"),["xset","s","600","+dpms","dpms","600","900","1200"])
+        self.assertEqual(power.x_restore_argv("0 0 0 0 0"),["xset","s","0","-dpms","dpms","0","0","0"])
+        for bad in ("","600 600","a b c d e","1 2 3 4 5 6"): self.assertIsNone(power.x_restore_argv(bad))
+    def test_take_over_then_give_back(self):
+        from unittest import mock
+        from tvwcs.control_cmd import Result
+        calls=[]
+        def run(argv, timeout=15):
+            calls.append(argv)
+            return Result(True,0,XSET,"") if argv==["xset","q"] else Result(True,0,"","")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(power,"have",return_value=True), mock.patch.object(power,"run",run):
+            env={"XDG_RUNTIME_DIR":tmp}; saved=os.path.join(tmp,power.X_SAVED_NAME)
+            power.x_take_over(None,env)   # never taken over: nothing to give back
+            self.assertEqual(calls,[])
+            power.x_take_over(0,env)
+            self.assertEqual(calls,[["xset","q"],["xset","s","off","+dpms","dpms","0","0","0"]])
+            with open(saved) as f: self.assertEqual(f.read(),"600 600 900 1200 1")
+            calls.clear(); power.x_take_over(600,env)   # kept once: X is already switched off by then
+            self.assertEqual(calls,[["xset","s","off","+dpms","dpms","0","0","0"]])
+            calls.clear(); power.x_take_over(None,env)
+            self.assertEqual(calls,[["xset","s","600","+dpms","dpms","600","900","1200"]])
+            self.assertFalse(os.path.exists(saved))
