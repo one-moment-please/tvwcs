@@ -32,6 +32,25 @@ It works with normal desktop apps. It is not a media center and needs no plugins
   </tr>
 </table>
 
+### Demo videos
+
+The apps in these videos are mockups made for the demo (a window with a still picture), labelled MOCKUP on screen. Click a picture to play its video.
+
+<table>
+  <tr>
+    <th width="50%">TV mode</th>
+    <th width="50%">Desktop mode</th>
+  </tr>
+  <tr>
+    <td valign="top"><a href="assets/demo-tv-mode.mp4"><img src="assets/demo-tv-mode.jpg" alt="Play the TV mode demo video" width="100%"></a></td>
+    <td valign="top"><a href="assets/demo-desktop-mode.mp4"><img src="assets/demo-desktop-mode.jpg" alt="Play the desktop mode demo video" width="100%"></a></td>
+  </tr>
+  <tr>
+    <td valign="top">With the remote: open an app by its channel number, open a second one by channel, go back to the first from <b>Open applications</b>, and open a third by searching its name. Each app gets a workspace of its own.</td>
+    <td valign="top">With the keyboard and mouse, in the light theme: open apps by name so they tile side by side, fill a second workspace, switch between workspaces from the Quick Menu, then close one app and a whole workspace.</td>
+  </tr>
+</table>
+
 ## What you need
 
 - **Debian or a Debian-based system** (Ubuntu, Linux Mint, Pop!_OS, Raspberry Pi OS).
