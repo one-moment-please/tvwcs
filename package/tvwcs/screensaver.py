@@ -212,50 +212,93 @@ def run(settings, preview=False):
         try: image=Gdk.Texture.new_from_filename(os.path.expanduser(settings.get("screensaver_image","")))
         except Exception: image=None   # an unreadable picture: the DVD logo instead
         if image is None: kind="dvd"
-    state={"x":None,"y":40.0,"dx":SPEED,"dy":SPEED,"colour":COLOURS[0],"start":None,"pointer":None}
+    def fresh(): return {"x":None,"y":40.0,"dx":SPEED,"dy":SPEED,"colour":COLOURS[0],"pointer":None}
 
+    focused=_i3_focused_workspace()
     app=Gtk.Application(application_id=None)
     def activate(_app):
-        win=Gtk.ApplicationWindow(application=app,title="TVWCS · Screen saver"); win.set_decorated(False)
-        css=Gtk.CssProvider(); css.load_from_data(b"window.saver { background: #000000; }"); win.add_css_class("saver")
+        css=Gtk.CssProvider(); css.load_from_data(b"window.saver { background: #000000; }")
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        try: win.set_cursor_from_name("none")
-        except (AttributeError,TypeError): pass
-        area=Gtk.DrawingArea(); area.set_hexpand(True); area.set_vexpand(True); win.set_child(area)
-        def draw(_a, cr, width, height):
-            cr.set_source_rgb(0,0,0); cr.paint()
-            pix=_texture_surface(image) if image is not None else None
-            w,h=logo_size(width,height,logo_aspect(kind,pix))
-            if state["x"] is None:   # a random place and direction to start, at a speed that suits the screen's size
-                state["x"]=random.uniform(0,max(1,width-w)); state["y"]=random.uniform(0,max(1,height-h))
-                speed=SPEED*max(1.0,height/1080); state["dx"]=random.choice((speed,-speed)); state["dy"]=random.choice((speed,-speed))
-            x,y,dx,dy,bounced=step(state["x"],state["y"],state["dx"],state["dy"],w,h,width,height)
-            state.update(x=x,y=y,dx=dx,dy=dy)
-            if bounced: state["colour"]=next_colour(state["colour"])
-            cr.save(); cr.translate(x,y); paint_logo(cr,kind if image is None else "dvd",w,h,state["colour"],pix); cr.restore()
-        area.set_draw_func(draw)
-        def tick(): area.queue_draw(); return GLib.SOURCE_CONTINUE
+        quit_=lambda *_:(app.quit(),True)[1]
+        areas=[]; placed=[]
+        def saver_window(monitor):
+            """A black fullscreen window with its own bouncing logo, on one monitor."""
+            state=fresh()
+            win=Gtk.ApplicationWindow(application=app,title="TVWCS · Screen saver"); win.set_decorated(False); win.add_css_class("saver")
+            try: win.set_cursor_from_name("none")
+            except (AttributeError,TypeError): pass
+            area=Gtk.DrawingArea(); area.set_hexpand(True); area.set_vexpand(True); win.set_child(area); areas.append(area)
+            def draw(_a, cr, width, height):
+                cr.set_source_rgb(0,0,0); cr.paint()
+                pix=_texture_surface(image) if image is not None else None
+                w,h=logo_size(width,height,logo_aspect(kind,pix))
+                if state["x"] is None:   # a random place and direction to start, at a speed that suits the screen's size
+                    state["x"]=random.uniform(0,max(1,width-w)); state["y"]=random.uniform(0,max(1,height-h))
+                    speed=SPEED*max(1.0,height/1080); state["dx"]=random.choice((speed,-speed)); state["dy"]=random.choice((speed,-speed))
+                x,y,dx,dy,bounced=step(state["x"],state["y"],state["dx"],state["dy"],w,h,width,height)
+                state.update(x=x,y=y,dx=dx,dy=dy)
+                if bounced: state["colour"]=next_colour(state["colour"])
+                cr.save(); cr.translate(x,y); paint_logo(cr,kind if image is None else "dvd",w,h,state["colour"],pix); cr.restore()
+            area.set_draw_func(draw)
+            keys=Gtk.EventControllerKey(); keys.connect("key-pressed",quit_); win.add_controller(keys)
+            click=Gtk.GestureClick(); click.set_button(0); click.connect("pressed",quit_); win.add_controller(click)
+            motion=Gtk.EventControllerMotion()
+            def moved(_c,x,y):
+                last=state["pointer"]; state["pointer"]=(x,y)
+                if last is not None and abs(x-last[0])+abs(y-last[1])>8: app.quit()
+            motion.connect("motion",moved); win.add_controller(motion)
+            if monitor is None: win.fullscreen()
+            else: win.fullscreen_on_monitor(monitor)
+            win.present(); placed.append((win,monitor))
+        monitors=Gdk.Display.get_default().get_monitors()
+        if monitors.get_n_items()>1:
+            for i in range(monitors.get_n_items()): saver_window(monitors.get_item(i))
+        else: saver_window(None)   # one screen: a plain fullscreen (i3 left a fullscreen_on_monitor window floating)
+        if len(placed)>1: GLib.timeout_add(150,lambda:(_i3_spread(placed,focused),GLib.SOURCE_REMOVE)[1])
+        def tick():
+            for area in areas: area.queue_draw()
+            return GLib.SOURCE_CONTINUE
         GLib.timeout_add(FRAME_MS,tick)
         def watch_screen():   # never drawn on a screen that is off: it ends when the screen turns off
             if not preview and screen_off(): app.quit(); return GLib.SOURCE_REMOVE
             return GLib.SOURCE_CONTINUE
         GLib.timeout_add_seconds(2,watch_screen)
-        quit_=lambda *_:(app.quit(),True)[1]
-        keys=Gtk.EventControllerKey(); keys.connect("key-pressed",quit_); win.add_controller(keys)
-        click=Gtk.GestureClick(); click.set_button(0); click.connect("pressed",quit_); win.add_controller(click)
-        motion=Gtk.EventControllerMotion()
-        def moved(_c,x,y):
-            last=state["pointer"]; state["pointer"]=(x,y)
-            if last is not None and abs(x-last[0])+abs(y-last[1])>8: app.quit()
-        motion.connect("motion",moved); win.add_controller(motion)
-        win.fullscreen(); win.present()
     app.connect("activate",activate)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGTERM,lambda:(app.quit(),GLib.SOURCE_REMOVE)[1])
     try: return app.run([])
     finally:
+        if focused: _i3_command(f'workspace --no-auto-back-and-forth "{focused}"')   # back where the person was
         try:
             if pid_file.read_text().strip()==str(os.getpid()): pid_file.unlink()
         except OSError: pass
+
+def _i3_command(command):
+    """Run an i3 command (not on sway, whose outputs honour fullscreen_on_monitor). -> its output, or ""."""
+    import shutil, subprocess
+    i3=shutil.which("i3-msg")
+    if not i3 or os.environ.get("SWAYSOCK"): return ""
+    try: return subprocess.run([i3,*command] if isinstance(command,list) else [i3,command],capture_output=True,text=True,timeout=3).stdout
+    except (OSError,subprocess.SubprocessError): return ""
+
+def _i3_focused_workspace():
+    import json
+    try: return next((w["name"] for w in json.loads(_i3_command(["-t","get_workspaces"]) or "[]") if w.get("focused")),None)
+    except (ValueError,TypeError,AttributeError): return None
+
+def _i3_spread(placed, focused):
+    """i3 opens every window on the focused output and fullscreens it there, ignoring the monitor GTK asked for, so the
+    saver windows would all pile up on one screen: move each to its own monitor's output and fullscreen it there, then
+    give focus back to the workspace that had it."""
+    commands=[]
+    try:
+        import gi; gi.require_version("GdkX11","4.0")
+        from gi.repository import GdkX11  # noqa: F401  (gives an X11 window's surface its get_xid)
+        for win,monitor in placed:
+            name=monitor.get_connector() if monitor is not None else None
+            if name: commands.append(f'[id="{win.get_surface().get_xid()}"] fullscreen disable, move container to output "{name}", fullscreen enable')
+    except (AttributeError,ImportError,ValueError): return
+    if focused: commands.append(f'workspace --no-auto-back-and-forth "{focused}"')
+    if commands: _i3_command("; ".join(commands))
 
 _surfaces={}
 def _texture_surface(texture):

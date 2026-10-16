@@ -228,10 +228,42 @@ def keep_awake():
     return f"{who[0]} is keeping the computer awake" if who else ""
 
 # ---------------------------------------------------------------------- acting (X11)
-def x_take_over(screen_off_setting):
+X_SAVED_NAME="tvwcs-x-timers"   # X's own times from before TVWCS took over, in the runtime directory
+
+def parse_x_saved(text):
+    """`xset q` -> the times to give X back later: "saver standby suspend off dpms" (dpms 1 or 0), or "" when unknown."""
+    m=re.search(r"timeout:\s*(\d+)",text); d=[re.search(rf"{k}:\s*(\d+)",text) for k in ("Standby","Suspend","Off")]
+    if not m or not all(d): return ""
+    return " ".join([m.group(1),*(x.group(1) for x in d),"1" if "DPMS is Enabled" in text else "0"])
+
+def x_restore_argv(saved):
+    """The xset command that gives X back the times parse_x_saved kept, or None."""
+    parts=saved.split()
+    if len(parts)!=5 or not all(p.isdigit() for p in parts): return None
+    saver,standby,suspend,off,on=parts
+    return ["xset","s",saver,"+dpms" if on=="1" else "-dpms","dpms",standby,suspend,off]
+
+def x_take_over(screen_off_setting, env=None):
     """Unless the screen is left to the system (None), TVWCS turns it off itself: X's own blanking and DPMS timers are
-    switched off, and DPMS stays on so TVWCS can switch the monitor off."""
-    if screen_off_setting is not None and have("xset"): run(["xset","s","off","+dpms","dpms","0","0","0"],timeout=5)
+    switched off, and DPMS stays on so TVWCS can switch the monitor off. X's times are kept first, and given back when
+    the screen is left to the system again: otherwise a laptop whose plugged-in times have "Turn off the screen after"
+    set and whose battery times leave it to the system would never turn its screen off on the battery."""
+    if not have("xset"): return
+    from tvwcs.session import runtime_dir
+    saved=runtime_dir(env)/X_SAVED_NAME
+    if screen_off_setting is not None:
+        if not saved.exists():   # kept once a login: a TVWCS restart finds X already switched off by the last one
+            r=run(["xset","q"],timeout=5); text=parse_x_saved(r.out) if r.ok else ""
+            if text:
+                try: saved.parent.mkdir(parents=True,exist_ok=True); saved.write_text(text)
+                except OSError: pass
+        run(["xset","s","off","+dpms","dpms","0","0","0"],timeout=5)
+        return
+    try: argv=x_restore_argv(saved.read_text())
+    except OSError: return   # TVWCS never took over: X has its own times already
+    if argv and run(argv,timeout=5).ok:
+        try: saved.unlink()
+        except OSError: pass
 
 def screen_off(env=None):
     if sway(env): return run(["swaymsg","output * power off"],timeout=5)

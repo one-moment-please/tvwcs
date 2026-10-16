@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.2.1 — 2026-10-16
+
+- The screen saver covers every monitor, each with its own bouncing logo, instead of only the one in use. Any key, click or pointer movement ends it on all of them, and focus goes back to the workspace that had it.
+- On a laptop whose battery times leave "Turn off the screen after" to the system, the screen turns off on battery again. TVWCS now keeps the system's own screen times when it takes them over, and gives them back when the setting is left to the system.
+
 ## 3.2.0 — 2026-10-16
 
 **Quick Menu and Applications**
