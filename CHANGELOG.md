@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.2.3 — 2026-10-16
+
+- Power and sleep: the TVWCS logo's inner oval holds a QR code instead of a barcode, with its square-in-a-square finder pattern on the left.
+
 ## 3.2.2 — 2026-10-16
 
 - In the Quick Menu, a workspace with more than one application has a square ▾ button between ⋯ and its name that shows or hides its individual apps. It is always visible, even when the options buttons are hidden, and the option has left the workspace's ⋯ menu. On the name, ← moves onto it; ← again opens the row's menu.
