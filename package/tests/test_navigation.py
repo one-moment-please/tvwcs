@@ -19,7 +19,7 @@ def _install_stub():
     Gtk=_Stub("Gtk")
     class Editable: pass
     Gtk.Editable=Editable; Gtk.ApplicationWindow=type("ApplicationWindow",(),{}); Gtk.Application=type("Application",(),{}); Gtk.Window=type("Window",(),{})
-    repo.Gdk=Gdk; repo.Gtk=Gtk; repo.Gio=_Stub("Gio"); repo.GLib=_Stub("GLib")
+    repo.Gdk=Gdk; repo.Gtk=Gtk; repo.Gio=_Stub("Gio"); repo.GLib=_Stub("GLib"); repo.Graphene=_Stub("Graphene")
     sys.modules["gi"]=gi; sys.modules["gi.repository"]=repo; gi.repository=repo
 _install_stub()
 import importlib

@@ -25,5 +25,20 @@ class ScreensaverTests(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(S,"running",return_value=None), mock.patch.object(S,"cairo_missing",return_value=True):
             self.assertIn("python3-gi-cairo",S.start("/nonexistent/tvwcs"))
+    def test_screen_off(self):
+        self.assertTrue(S.parse_monitor_off("DPMS (Energy Star):\n  Monitor is Off\n"))
+        self.assertTrue(S.parse_monitor_off("  Monitor is in Standby\n"))
+        self.assertFalse(S.parse_monitor_off("  Monitor is On\n")); self.assertFalse(S.parse_monitor_off(""))
+        self.assertTrue(S.parse_sway_outputs_off('[{"active":true,"power":false},{"active":false,"power":true}]'))
+        self.assertFalse(S.parse_sway_outputs_off('[{"active":true,"power":false},{"active":true,"power":true}]'))
+        self.assertTrue(S.parse_sway_outputs_off('[{"active":true,"dpms":false}]'))   # sway before 1.8
+        self.assertFalse(S.parse_sway_outputs_off("not json")); self.assertFalse(S.parse_sway_outputs_off("[]"))
+    def test_saver_script_for_xsecurelock(self):
+        import tempfile, os
+        run=tempfile.mkdtemp(); path=S.saver_script("/opt/tvwcs/bin/tvwcs",{"XDG_RUNTIME_DIR":run})
+        self.assertTrue(os.access(path,os.X_OK))
+        with open(path) as f: self.assertIn("exec '/opt/tvwcs/bin/tvwcs' screensaver --xsecurelock",f.read())
+    def test_the_tvwcs_logo_has_no_word_in_its_disc(self):
+        self.assertIsNone(S.LOGO_WORDS["tvwcs"][1]); self.assertEqual(S.LOGO_WORDS["dvd"],("DVD","VIDEO"))
 
 if __name__=="__main__": unittest.main()

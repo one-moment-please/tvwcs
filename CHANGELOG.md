@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.2.0 — 2026-10-16
+
+**Quick Menu and Applications**
+- On a TV the search field starts three digits wide with a short hint beside it. Typing a letter or a fourth digit hides the hint and widens the field. At a desk the hint line is gone.
+- The search results scroll to keep the selected result in view when moving with the D-pad or arrow keys.
+- At a desk, TVWCS no longer fills the screen: Applications is only as wide as its rows and most descriptions need. A description that does not fit scrolls by while its app is selected, and the pointer shows it in full.
+- Opening Settings follows the rules for opening apps (full screen in its own workspace on a TV), instead of always opening as a tile.
+- The volume and Bluetooth icons are hidden when their features are turned off.
+
+**Settings**
+- A new Features page turns sound, Bluetooth, network, storage, the terminal, Flathub apps, the screen saver, the screen saver when locked and hiding the pointer on or off. Turning one on installs what it needs. Turning one off can uninstall its packages, but only when nothing else installed needs them. A feature that is off keeps its tab, which offers to turn it on.
+- Options: hide the mouse pointer after a time without moving, with − and + for the seconds. It is on by default on a TV (3 seconds) and now off at a desk. A hidden pointer no longer leaves anything highlighted: on i3 it is moved to the bottom-right corner of the focused window.
+- Power and sleep: a laptop gets separate times plugged in and on battery, and a choice of what to do when the battery is nearly empty (shut down at 5% unless changed).
+- Power and sleep: the screen saver can show while the computer is locked (i3, with xsecurelock). A key shows the password box; after a minute without one the screen saver comes back. The screen saver no longer runs while the screen is off.
+- Power and sleep: the TVWCS logo's oval now holds a smaller oval with a barcode, instead of "TV".
+- Date and time: setting the time by hand is one dialog with a box for each of year, month, day, hour and minute, each with ▲ and ▼, and AM/PM with the 12-hour clock. The three ways to set it are gone.
+- Storage: partitions are indented under their drive, and say Mounted or Not mounted. Partitions of the running system (such as / and /home) are marked as part of the system and named after what they hold.
+- When the Settings window is taller than it is wide, the tabs show only their icons and the "Settings" title is left out.
+
+**Installer**
+- A first install asks for everything or a minimal install (the Quick Menu, the applications list and basic Settings). `TVWCS_INSTALL=minimal` chooses it without asking.
+- The packages of features that are turned off are no longer asked for.
+- xsecurelock is offered for the screen saver when locked (i3).
+- With an i3 config but no sway config, running sway on its own reads the i3 config and fails (for example on `tiling_drag modifier titlebar`). The installer now explains this, offers to create a sway config, and shows how to start TVWCS's sway session from a text console (`tvwcs-session sway`), for login screens that do not list it.
+- The mouse pointer is no longer hidden by a line in `tvwcs.conf`; TVWCS hides it itself, as Options says.
+
 ## 3.1.0 — 2026-10-15
 
 **Quick Menu**

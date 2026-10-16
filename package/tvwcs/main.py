@@ -14,10 +14,10 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
-from tvwcs.model import CONFIG_HOME, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
+from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs import appearance, power, privilege, quick_status, screensaver, tv_mode
+from tvwcs import appearance, cursor, features, power, privilege, quick_status, screensaver, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfiles, ProfileEditor
@@ -49,10 +49,15 @@ class IdleWatcher:
     sleep. On X11 TVWCS watches the idle time itself; on sway it runs swayidle, which calls `tvwcs idle …` back.
     Nothing happens while sound plays or an application keeps the computer awake (see power.py)."""
     TICK=5   # seconds between looks at the idle time
+    BATTERY_TICK=20   # seconds between looks at the battery
     def __init__(self, app):
         self.app=app; self.source=0; self.xidle=None; self.done=set(); self.last=0; self.checking=False; self.swayidle=power.SwayIdle()
+        self.battery=power.read_battery(); self.battery_source=0; self.critical_done=False
+    def times(self): return power.active_idle(self.app.store.settings,self.battery)
     def apply(self):
-        times=self.app.store.settings["idle"]
+        if self.battery.present and not self.battery_source:
+            self.battery_source=GLib.timeout_add_seconds(self.BATTERY_TICK,self._battery_tick)
+        times=self.times()
         if power.sway():
             problem=self.swayidle.apply(times,LAUNCHER)
             if problem: print(problem,file=sys.stderr)
@@ -63,13 +68,24 @@ class IdleWatcher:
             if self.xidle is None: self.xidle=power.XIdle()
             self.done=set(); self.source=GLib.timeout_add_seconds(self.TICK,self._tick)
         elif not active and self.source: GLib.source_remove(self.source); self.source=0
+    def _battery_tick(self):
+        """Plugging in or unplugging switches between the two sets of times; a nearly empty battery does what
+        Settings > Power and sleep says (once, until the charger is plugged in)."""
+        before=self.battery.on_battery; self.battery=power.read_battery()
+        if self.battery.on_battery!=before: self.apply()
+        if not self.battery.on_battery: self.critical_done=False
+        action=power.critical(self.app.store.settings,self.battery)
+        if action and not self.critical_done:
+            self.critical_done=True; print(f"The battery is at {self.battery.percent}%: {action}.",file=sys.stderr)
+            self.app.run_system_action(action)
+        return GLib.SOURCE_CONTINUE
     def _tick(self):
         ms=self.xidle.ms() if self.xidle is not None else None
         if ms is None or self.checking: return GLib.SOURCE_CONTINUE
         idle=ms//1000
         if idle<self.last: self.done=set()   # someone touched something: a new idle period
         self.last=idle
-        actions=power.due(self.app.store.settings["idle"],idle,self.done)
+        actions=power.due(self.times(),idle,self.done)
         if actions:
             self.checking=True   # pactl and systemd-inhibit run on a worker thread, so the menu never stalls
             def check():
@@ -84,10 +100,40 @@ class IdleWatcher:
             self.done.add(a)
             if a=="screen_off": power.screen_off()
             elif a=="screensaver":
+                if not features.enabled(self.app.store.settings,"screensaver"): continue
                 problem=screensaver.start(LAUNCHER)
                 if problem: print(problem,file=sys.stderr)
             else: self.app.run_system_action(a)
     def stop(self): self.swayidle.stop()
+
+class CursorWatcher:
+    """Hides the mouse pointer after the time in Settings > Options (cursor.py), and on X11 moves the hidden pointer to
+    the bottom-right corner of the focused window, so whatever it rested on stops showing hover."""
+    TICK_MS=500
+    def __init__(self, app):
+        self.app=app; self.hider=cursor.CursorHider(); self.xpointer=None; self.parker=cursor.Parker(); self.source=0
+    def apply(self):
+        s=self.app.store.settings
+        problem=self.hider.apply(s)
+        if problem: print(problem,file=sys.stderr)
+        park=cursor.hide_enabled(s) and not cursor.sway() and bool(os.environ.get("DISPLAY"))
+        if park and not self.source:
+            if self.xpointer is None: self.xpointer=cursor.XPointer()
+            self.source=GLib.timeout_add(self.TICK_MS,self._tick)
+        elif not park and self.source: GLib.source_remove(self.source); self.source=0
+    def _tick(self):
+        position=self.xpointer.position()
+        if self.parker.tick(position,self.TICK_MS/1000,cursor.hide_seconds(self.app.store.settings)):
+            rect=self.app.wm.focused_rect()
+            if rect:
+                to=cursor.corner(rect)
+                if to!=position: self.xpointer.move(*to)
+                self.parker.moved_to(to)
+            else: self.parker.moved_to(position)   # nothing focused: left where it is
+        return GLib.SOURCE_CONTINUE
+    def stop(self):
+        if self.source: GLib.source_remove(self.source); self.source=0
+        self.hider.stop()
 
 class StatusWatcher:
     """Keeps the bottom of the Quick Menu current (the clock, and the network, volume, Bluetooth and updates icons) and
@@ -186,7 +232,7 @@ class TVWCSApp(Gtk.Application):
         self.layout=None; self._owns_pid=False
         self.pin_gate=PinGate(); self.owners=WindowOwners()
         self._fullscreen=set()   # windows that were fullscreen when TVWCS was shown; they are made fullscreen again when it hides
-        self.idle=IdleWatcher(self)
+        self.idle=IdleWatcher(self); self.cursor=CursorWatcher(self)
         self.status=quick_status.Status(); self.watch=StatusWatcher(self)
         # TV mode: the start-up action may be about to open an app (it runs 1.5 s after start)
         self.grace_until=time.monotonic()+(10 if self.store.settings["startup"]["mode"] in ("app","last") else 0)
@@ -225,10 +271,10 @@ class TVWCSApp(Gtk.Application):
         self.refresh_data(rebuild=False)
         if first:
             self.apply_look(); self._update_layout(False,False,focus_output=False); self.window=TVWCSWindow(self)
-            self.apply_hotkeys(); self.idle.apply(); self.watch.start(); GLib.timeout_add(1500,self._run_startup_action)
+            self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.start(); GLib.timeout_add(1500,self._run_startup_action)
         self.window.set_visible(False)
     def do_shutdown(self):
-        self.idle.stop(); self.watch.stop(); self._release_pid(); Gtk.Application.do_shutdown(self)
+        self.idle.stop(); self.cursor.stop(); self.watch.stop(); self._release_pid(); Gtk.Application.do_shutdown(self)
     def _claim_pid(self):
         try:
             PID_FILE.parent.mkdir(parents=True,exist_ok=True)
@@ -258,7 +304,11 @@ class TVWCSApp(Gtk.Application):
     def _update_layout(self,guide,options,focus_output=True):
         area=self.wm.usable_area(focus=focus_output) or self._fallback_area()
         s=self.store.settings; f=self.scale_factor
-        self.layout=compute_layout(area,round(s["margin"]*f),round(s["quick_width"]*f),guide,options)
+        width=None
+        if guide and s.get("use")=="desktop" and self.window is not None:
+            try: width=self.window.apps_width()
+            except Exception as exc: print(f"Cannot measure the Applications pane: {exc}",file=sys.stderr)
+        self.layout=compute_layout(area,round(s["margin"]*f),round(s["quick_width"]*f),guide,options,width)
     def apply_geometry(self):
         """Ask i3 to float the window at the computed rectangle. Repeated shortly after mapping because
         i3 can only match the window once it exists."""
@@ -625,15 +675,22 @@ class TVWCSApp(Gtk.Application):
         and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
         old=self.store.settings["scale"]; look=(self.store.settings["theme"],self.store.settings["wallpaper"])
         self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
-        self.apply_hotkeys(); self.idle.apply(); self.watch.apply_bar(); self.watch.updates_changed()
+        self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.apply_bar(); self.watch.updates_changed()
         if (self.store.settings["theme"],self.store.settings["wallpaper"])!=look: self.apply_look()
         if self.window is None: return
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
         if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
     def open_settings(self,page=None):
-        """The Quick Menu's ⚙ (or a status icon, opening its page): the Settings app, a separate application, so it opens
-        as a window of its own."""
+        """The Quick Menu's ⚙ (or a status icon, opening its page): the Settings app, a separate application. It opens
+        where any app would (Settings > Options > Where apps open): an open Settings window is brought up that way,
+        else a new one starts in a workspace of its own or tiled here."""
+        app=self.catalogue.by_id().get(SETTINGS_DESKTOP_ID)
+        profile=self.default_profile(app) if app else None
+        mode=self.launch_mode(profile)
+        existing=self.wm.find_matching(profile,app) if profile is not None else None
         self.hide_window(launched=True)
+        if existing is not None: self.wm.focus(existing["con_id"],mode)
+        else: self.wm.prepare_for_launch(mode)
         try: subprocess.Popen([str(LAUNCHER),"settings",*([page] if page else [])],start_new_session=True,stdin=subprocess.DEVNULL)
         except OSError as exc: self.notify_message(f"Could not open Settings: {exc}")
     def launch_by_hotkey(self,profile_id):
@@ -666,7 +723,7 @@ class TVWCSApp(Gtk.Application):
     def set_use(self,use):
         """First run: where TVWCS is used (TV or desk), as in Settings > Options > Used on."""
         old=self.store.settings["scale"]; apply_use(self.store.settings,use); self.store.save()
-        self.apply_hotkeys(); self.idle.apply(); self.watch.apply_bar()
+        self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.apply_bar()
         if self.store.settings["scale"]!=old and self.window is not None: set_scale(self.scale_factor); self.apply_scale()
     def notify_message(self,message):
         """A problem to tell the user about, shown in the TVWCS window (opened for it when hidden)."""
@@ -701,6 +758,10 @@ def main():
         return lock(ConfigStore().settings,nofork=len(args)==2)   # read the options again (install.sh, after changing them)
     if len(args)==2 and args[0]=="idle" and args[1] in (*power.ACTIONS,"resume"): return idle_action(args[1])
     if args in (["screensaver"],["screensaver","--preview"]): return screensaver.run(ConfigStore().settings,preview=len(args)==2)
+    if args==["screensaver","--xsecurelock"]:   # xsecurelock's saver, while locked (see lockscreen.py)
+        try: window=int(os.environ.get("XSCREENSAVER_WINDOW",""),0)
+        except ValueError: print("XSCREENSAVER_WINDOW is not set: xsecurelock runs this.",file=sys.stderr); return 2
+        return screensaver.run_in_window(ConfigStore().settings,window)
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app

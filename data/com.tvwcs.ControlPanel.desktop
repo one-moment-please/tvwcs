@@ -8,13 +8,17 @@ Icon=preferences-system
 Terminal=false
 Categories=Settings;System;
 NotShowIn=GNOME;KDE;
-Keywords=options;remote;keyboard;gamepad;power;sleep;screensaver;lock;settings;control panel;hotkeys;sound;volume;audio;display;monitor;resolution;refresh;bluetooth;apps;flatpak;flathub;store;install;updates;system;terminal;network;wifi;ethernet;
+Keywords=options;features;minimal;remote;keyboard;gamepad;power;sleep;screensaver;lock;settings;control panel;hotkeys;sound;volume;audio;display;monitor;resolution;refresh;bluetooth;apps;flatpak;flathub;store;install;updates;system;terminal;network;wifi;ethernet;
 StartupWMClass=com.tvwcs.ControlPanel
-Actions=options;hotkeys;sound;displays;power;bluetooth;apps;updates;system;terminal;network;
+Actions=options;features;hotkeys;sound;displays;power;bluetooth;apps;updates;system;terminal;network;
 
 [Desktop Action options]
 Name=Options
 Exec=tvwcs settings options
+
+[Desktop Action features]
+Name=Features
+Exec=tvwcs settings features
 
 [Desktop Action hotkeys]
 Name=Remote and hotkeys

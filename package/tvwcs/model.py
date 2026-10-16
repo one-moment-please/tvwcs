@@ -6,7 +6,8 @@ from pathlib import Path
 
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_LABELS, assigned, clean_hotkeys, valid_spec
 from tvwcs.pinlock import valid_hash
-from tvwcs.power import clean_idle
+from tvwcs.features import clean as clean_features
+from tvwcs.power import clean_critical, clean_idle
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
 DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"
@@ -53,6 +54,7 @@ def apply_use(settings, use):
     if not tv: settings["scale"]="desktop"
     set_apps_open(settings,"fullscreen" if tv else "side")
     if tv: settings["button_hints"]=True   # icon-only buttons explain themselves: no hovering mouse on a sofa
+    settings["cursor_hide"]=None   # the pointer hides as suits the use: on a TV, not at a desk
 
 # "Where apps open" in Settings > Options: one choice over the two keys TVWCS reads (main.launch_mode / window_mode).
 # always_new_workspace overrides everything. With both off, apps_open says whether apps always tile ("side") or follow
@@ -88,8 +90,6 @@ DEFAULT_WALLPAPER="#323232"   # dark grey
 PASSWORD_KEYBOARDS={"full":"Full keyboard","digits":"Number pad"}
 # Settings > Power and sleep > Screen saver: the bouncing logo.
 SCREENSAVER_LOGOS={"dvd":"The DVD Video logo","tvwcs":"The TVWCS logo","image":"A picture of your own"}
-# Settings > Date and time > Set the time: the ways of entering a time by hand.
-TIME_ENTRY={"fields":"Hour and minute, changed with ↑ ↓","digits":"Typed on the number pad","steps":"Forward and back in steps"}
 
 def key_hints(use) -> str:
     """The Settings app's footer: a remote's key is called Back, a keyboard's Esc."""
@@ -122,11 +122,16 @@ DEFAULT_SETTINGS={
     "password_keyboard":"full",     # PASSWORD_KEYBOARDS: what a password dialog opens with (it can switch to the other)
     "screensaver_logo":"dvd",       # SCREENSAVER_LOGOS
     "screensaver_image":"",         # the picture for "image"
-    "time_entry":"fields",          # TIME_ENTRY
     "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
+    "features":{},                  # the features turned off ({key: False}; see features.py), as a minimal install starts
+    "cursor_hide":None,             # hide the mouse pointer when it rests (None: on in TV mode, off at a desk; see cursor.py)
+    "cursor_hide_seconds":3,        # ... after this many seconds without moving
+    "screensaver_on_lock":False,    # locking shows the screen saver until a key is pressed (xsecurelock, X11 only; see lockscreen.py)
     "tvwcs_lock_screen":False,      # Lock uses TVWCS's own lock screen (i3lock / swaylock with its message), else the system's locker
     "idle":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
+    "idle_battery":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
+    "battery_critical":{"action":"shutdown","percent":5},   # what to do when the battery is nearly empty (power.CRITICAL_ACTIONS)
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},   # mode: STARTUP_MODES
 }
@@ -173,15 +178,19 @@ def _clean_settings(raw) -> dict:
     if raw.get("password_keyboard") in PASSWORD_KEYBOARDS: s["password_keyboard"]=raw["password_keyboard"]
     if raw.get("screensaver_logo") in SCREENSAVER_LOGOS: s["screensaver_logo"]=raw["screensaver_logo"]
     if isinstance(raw.get("screensaver_image"),str): s["screensaver_image"]=raw["screensaver_image"].strip()
-    if raw.get("time_entry") in TIME_ENTRY: s["time_entry"]=raw["time_entry"]
     shares=raw.get("network_shares")
     if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
                 "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
-                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","reduce_motion","channel_zero_done"):
+                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","screensaver_on_lock","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
+    s["features"]=clean_features(raw.get("features"))
+    if isinstance(raw.get("cursor_hide"),bool): s["cursor_hide"]=raw["cursor_hide"]
+    sec=raw.get("cursor_hide_seconds")
+    if isinstance(sec,int) and not isinstance(sec,bool) and 1<=sec<=60: s["cursor_hide_seconds"]=sec
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
-    s["idle"]=clean_idle(raw.get("idle"))
+    s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))
+    s["battery_critical"]=clean_critical(raw.get("battery_critical"))
     st=raw.get("startup")
     if isinstance(st,dict):
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]
@@ -365,17 +374,20 @@ class Layout:
     def guide_width(self) -> int:
         return 0 if not self.guide_open else max(0,self.width-self.quick_width-self.margin)
 
-def compute_layout(area, margin, quick_width, guide_open, options_open=False) -> Layout:
+def compute_layout(area, margin, quick_width, guide_open, options_open=False, guide_width=None) -> Layout:
     """Panels left to right: Quick Menu | Applications (tabbed), each pair separated by one `margin`.
     The Quick Menu sits at the left of `area` (the usable workspace rectangle) with `margin` px above,
     below and to its left. The tabbed Applications pane fills the rest; Settings is a tab inside it, so
     the window no longer grows when it opens. The window spans only what is open. `options_open` is
-    accepted for compatibility with older callers and ignored."""
+    accepted for compatibility with older callers and ignored. `guide_width` (desktop use) caps the Applications pane
+    at what its contents need, so the window does not fill the screen."""
     ax,ay,aw,ah=(int(area[k]) for k in ("x","y","width","height"))
     margin=max(0,min(int(margin),aw//4,ah//4))
     full=max(1,aw-2*margin); height=max(1,ah-2*margin)
     qw=max(1,min(int(quick_width),int(full*0.45)))
-    return Layout(ax+margin,ay+margin,full if guide_open else qw,height,qw,margin,bool(guide_open))
+    width=full
+    if guide_width: width=max(qw+margin+1,min(full,qw+margin+int(guide_width)))
+    return Layout(ax+margin,ay+margin,width if guide_open else qw,height,qw,margin,bool(guide_open))
 
 # ---------------------------------------------------------------- badges
 

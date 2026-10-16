@@ -110,7 +110,7 @@ def set_time_argv(when):
     """Set the clock to a datetime (local time). timedatectl refuses while network time is on."""
     return ["timedatectl","set-time",when.strftime("%Y-%m-%d %H:%M:00")]
 
-# Settings > Date and time > Set the time: three ways to get to a time with a remote (model.TIME_ENTRY)
+# Settings > Date and time > Set the time: a box for each of year, month, day, hour and minute, each with ▲ and ▼
 FIELDS=("year","month","day","hour","minute")
 def adjust(when, field, delta):
     """`when` with one field moved by `delta`, wrapping within its range (day 31 + 1 is day 1 of the same month; a
@@ -126,17 +126,32 @@ def adjust(when, field, delta):
     raise ValueError(field)
 def _days_in(year, month):
     nxt=datetime.date(year+(month==12),month%12+1,1); return (nxt-datetime.timedelta(days=1)).day
-def step(when, minutes):
-    """`when` moved forward (or back) by a number of minutes: the "steps" way."""
-    return when+datetime.timedelta(minutes=minutes)
-STEPS=((-1440,"−1 day"),(-60,"−1 h"),(-10,"−10 min"),(-1,"−1 min"),(1,"+1 min"),(10,"+10 min"),(60,"+1 h"),(1440,"+1 day"))
-def from_digits(when, text):
-    """The "digits" way: HHMM (or HMM) typed on the number pad, on the same day. Raises ValueError for a time that is not one."""
-    t=(text or "").strip()
-    if not t.isdigit() or len(t) not in (3,4): raise ValueError("Type the time as four digits, such as 1905 for 19:05 (7:05 PM).")
-    hour,minute=int(t[:-2]),int(t[-2:])
-    if hour>23 or minute>59: raise ValueError(f"{t[:-2]}:{t[-2:]} is not a time of day.")
-    return when.replace(hour=hour,minute=minute,second=0,microsecond=0)
+
+def hour_12(hour):
+    """A 24-hour hour as (1-12, pm)."""
+    return (hour%12 or 12),hour>=12
+def hour_24(hour, pm):
+    """1-12 and AM/PM as a 24-hour hour (12 AM is 0, 12 PM is 12)."""
+    return hour%12+(12 if pm else 0)
+
+def from_fields(year, month, day, hour, minute, pm=None):
+    """The time typed in the boxes (text or numbers). `pm` is None for 24-hour time, else whether PM is chosen.
+    Raises ValueError saying what is wrong."""
+    def number(text, name):
+        t=str(text).strip()
+        if not t.isdigit(): raise ValueError(f"The {name} must be a number.")
+        return int(t)
+    y,mo,d,h,mi=(number(v,n) for v,n in zip((year,month,day,hour,minute),FIELDS))
+    if not 2000<=y<=2099: raise ValueError("The year must be between 2000 and 2099.")
+    if not 1<=mo<=12: raise ValueError("The month must be between 1 and 12.")
+    if not 1<=d<=_days_in(y,mo): raise ValueError(f"The day must be between 1 and {_days_in(y,mo)} in that month.")
+    if pm is None:
+        if not 0<=h<=23: raise ValueError("The hour must be between 0 and 23.")
+    else:
+        if not 1<=h<=12: raise ValueError("The hour must be between 1 and 12.")
+        h=hour_24(h,pm)
+    if not 0<=mi<=59: raise ValueError("The minute must be between 0 and 59.")
+    return datetime.datetime(y,mo,d,h,mi)
 
 def valid_zone(zone, zones):
     return zone in zones and ".." not in zone and not zone.startswith("/")

@@ -24,6 +24,11 @@ class StorageTests(unittest.TestCase):
         data={"blockdevices":[{"name":"sdc","path":"/dev/sdc","type":"disk","size":"1000","fstype":"vfat","label":"CAM","mountpoints":["/media/tv/CAM"],"rm":True}]}
         d=st.parse_lsblk(json.dumps(data))[0]
         self.assertEqual(len(d.volumes),1); self.assertTrue(d.volumes[0].mounted)
+    def test_system_partition_titles(self):
+        self.assertEqual(st.Volume("/dev/a2","a2",mountpoints=["/"]).title,"System (a2)")
+        self.assertEqual(st.Volume("/dev/a3","a3",mountpoints=["/home"]).title,"Home (a3)")
+        self.assertEqual(st.Volume("/dev/a3","a3",label="data",mountpoints=["/home"]).title,"data")
+        self.assertEqual(st.Volume("/dev/b1","b1",mountpoints=["/media/x"]).title,"b1")
     def test_bad_lsblk_output(self):
         self.assertEqual(st.parse_lsblk("not json"),[])
     def test_size_text(self):

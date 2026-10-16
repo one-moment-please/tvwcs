@@ -4,7 +4,8 @@ import os
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk
+gi.require_version("Graphene", "1.0")
+from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
 METRO_COLORS=("#0078d7","#e81123","#00b294","#ff8c00","#881798","#107c10","#ea005e","#6b69d6","#00cc6a","#c239b3")
 _scale=[1.0]
@@ -81,6 +82,53 @@ def icon_only(w):
     get_child=getattr(w,"get_child",None); child=get_child() if get_child else None
     return bool(child is not None and child.has_css_class("glyph") and w.get_tooltip_text())
 
+def _content(scroll):
+    """What a ScrolledWindow scrolls: a plain box is wrapped in a Viewport, whose own coordinates move with the scrolling."""
+    child=scroll.get_child()
+    return child.get_child() if isinstance(child,Gtk.Viewport) and child.get_child() is not None else child
+
+def scroll_to_show(scroll, widget):
+    """Scroll as little as needed for the widget to be wholly in sight (the tabs: moving down them never jumps)."""
+    ok,point=widget.compute_point(_content(scroll),Graphene.Point())
+    if not ok: return
+    adj=scroll.get_vadjustment(); top=point.y; bottom=top+widget.get_height(); value=adj.get_value()
+    if top<value: adj.set_value(max(adj.get_lower(),top))
+    elif bottom>value+adj.get_page_size(): adj.set_value(min(adj.get_upper()-adj.get_page_size(),bottom-adj.get_page_size()))
+
+def scroll_into_view(scroll, widget):
+    """Scroll so the widget is in the middle of the ScrolledWindow: focusing a row before the list has its size
+    does not scroll to it by itself, so the current choice of a long list would start out of sight."""
+    ok,point=widget.compute_point(_content(scroll),Graphene.Point())
+    if not ok: return
+    adj=scroll.get_vadjustment(); middle=point.y+widget.get_height()/2-adj.get_page_size()/2
+    adj.set_value(max(adj.get_lower(),min(middle,adj.get_upper()-adj.get_page_size())))
+
+class Marquee(Gtk.ScrolledWindow):
+    """A one-line text that ends in … when it does not fit. While `run()` is on (its row is selected) the whole text
+    scrolls past slowly, then starts over; `truncated` says whether it is cut, for a tooltip with all of it."""
+    STEP_MS=30; PAUSE_MS=1400
+    def __init__(self, text, css=None):
+        super().__init__(); self.set_policy(Gtk.PolicyType.EXTERNAL,Gtk.PolicyType.NEVER); self.set_hexpand(True)
+        self.set_can_focus(False); self.set_can_target(False); self.set_valign(Gtk.Align.CENTER)
+        self.label=Gtk.Label(label=text); self.label.set_xalign(0); self.label.set_ellipsize(3)
+        if css: self.label.add_css_class(css)
+        self.set_child(self.label); self.source=0; self.text=text
+    @property
+    def truncated(self):
+        return self.source!=0 or self.label.get_layout().is_ellipsized()
+    def run(self, on):
+        if on and self.source==0 and self.label.get_layout().is_ellipsized():
+            self.label.set_ellipsize(0); self.source=GLib.timeout_add(self.PAUSE_MS,self._step)
+        elif not on and self.source:
+            GLib.source_remove(self.source); self.source=0; self.label.set_ellipsize(3); self.get_hadjustment().set_value(0)
+    def _step(self):
+        """One step to the left; at the end it holds, jumps back to the start and holds again. Each step schedules the next."""
+        adj=self.get_hadjustment(); end=adj.get_upper()-adj.get_page_size()
+        if adj.get_value()>=end: adj.set_value(0); wait=self.PAUSE_MS
+        else:
+            adj.set_value(min(end,adj.get_value()+S(2))); wait=self.PAUSE_MS if adj.get_value()>=end else self.STEP_MS
+        self.source=GLib.timeout_add(wait,self._step); return GLib.SOURCE_REMOVE
+
 def usable(w): return w.get_visible() and w.get_mapped() and w.get_sensitive()
 
 class NavGroup(list):
@@ -101,14 +149,15 @@ def screen_height():
 
 class PointerWatch:
     """Marks a window with the "pointer" CSS class while the mouse is really being used, so hover colours (theme.py)
-    show only then. The pointer is hidden after 3 seconds without moving (unclutter, or sway's hide_cursor), but GTK
-    still counts it as over whatever it rests on: without this, that row would look half-selected next to the remote's
-    real selection. A key press, or 3 seconds without moving, takes the class away; the first event after the window
-    appears under a resting pointer does not count as moving."""
+    show only then. The pointer may be hidden after a few seconds without moving (cursor.py), but GTK still counts it
+    as over whatever it rests on: without this, that row would look half-selected next to the remote's real
+    selection. A key press, or the hiding time without moving, takes the class away; the first event after the window
+    appears under a resting pointer does not count as moving. `idle_ms` gives the hiding time in ms (None when the
+    pointer is never hidden: then only a key press takes hover away)."""
     IDLE_MS=3000
     MIN_MOVE=3   # pixels
-    def __init__(self, window):
-        self.window=window; self.last=None; self.source=0
+    def __init__(self, window, idle_ms=None):
+        self.window=window; self.last=None; self.source=0; self.idle_ms=idle_ms or (lambda:self.IDLE_MS)
         motion=Gtk.EventControllerMotion(); motion.connect("enter",self._enter); motion.connect("motion",self._moved)
         motion.connect("leave",lambda *_:self.off()); window.add_controller(motion)
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
@@ -120,8 +169,9 @@ class PointerWatch:
         last=self.last; self.last=(x,y)
         if last is None or abs(x-last[0])+abs(y-last[1])<self.MIN_MOVE: return
         if not self.active: self.window.add_css_class("pointer")
-        if self.source: GLib.source_remove(self.source)
-        self.source=GLib.timeout_add(self.IDLE_MS,self._idle)
+        if self.source: GLib.source_remove(self.source); self.source=0
+        ms=self.idle_ms()
+        if ms: self.source=GLib.timeout_add(ms,self._idle)
     def _idle(self): self.source=0; self.off(); return GLib.SOURCE_REMOVE
     def off(self):
         if self.source: GLib.source_remove(self.source); self.source=0

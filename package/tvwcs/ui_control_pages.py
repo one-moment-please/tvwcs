@@ -2,7 +2,7 @@
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
-import os, signal, subprocess, time
+import os, shutil, signal, subprocess, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -11,10 +11,10 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
-from tvwcs import __version__, power, privilege, selfupdate
+from tvwcs import __version__, cursor, features, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, PASSWORD_KEYBOARDS, SCALE_LABELS, SCREENSAVER_LOGOS, STARTUP_LABELS, STARTUP_MODES,
-                         THEMES, TIME_ENTRY, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
+                         THEMES, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for, login_manager_installed
 from tvwcs.ui_control import StreamedRun, colour_swatch, in_background
@@ -66,7 +66,14 @@ class Page:
         if not self.busy and not self.win.modal_open and self.win.is_visible(): self.refresh(quiet=True)
         return GLib.SOURCE_CONTINUE
     def read(self): return None
+    def feature_off(self):
+        """The feature this page belongs to (features.py) is turned off: the page only offers to turn it on."""
+        key=features.PAGE_FEATURE.get(self.key)
+        return key is not None and not features.enabled(ConfigStore().settings,key)
     def refresh(self, quiet=False):
+        if self.feature_off():
+            if not quiet or self.state is not None: self.state=None; self.redraw()
+            return
         if self.busy: return
         self.busy=True
         if not quiet: self.set_status("Checking…")
@@ -105,7 +112,8 @@ class Page:
         if wanted is not None and old is not None: old=wanted
         scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
         clear_box(self.body); self.groups=[]; self._ids={}
-        self.draw(self.state)
+        if self.feature_off(): self.draw_feature_off()
+        else: self.draw(self.state)
         if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
             GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
@@ -121,6 +129,15 @@ class Page:
             if target is not None and usable(target): target.grab_focus()
             elif not self.win._focus_first(self.groups): self.win.tab_buttons[self.key].grab_focus()
     def draw(self, state): pass
+    def draw_feature_off(self):
+        f=features.BY_KEY[features.PAGE_FEATURE[self.key]]
+        self.section("TURNED OFF")
+        self.note(f"{f.label} is turned off. {f.what}")
+        missing=features.missing_packages(f) if not features.installed(f) else []
+        self.row("Turn it on","",lambda:turn_feature_on(self,f),icon="list-add-symbolic",fallback="+",ident="feature:on",
+                 detail=f"Installs {', '.join(missing)} first. It asks for your password." if missing else "Its software is already installed")
+        self.row("All features","",lambda:self.win.select_tab("features") or self.win.enter_page(),icon="view-list-symbolic",fallback="☰",
+                 ident="feature:all",detail="Turn features on or off, and install or uninstall their software")
 
     def add(self, widget): self.body.append(widget); return widget
     def section(self, text): return self.add(section_title(text))
@@ -136,10 +153,12 @@ class Page:
             if ident is not None: self._ids[f"{ident}#{k}"]=w
         return g
 
-    def row(self, label, value="", on_activate=None, detail="", icon=None, fallback="", ident=None, extras=(), value_css="setting-value", swatch=None):
+    def row(self, label, value="", on_activate=None, detail="", icon=None, fallback="", ident=None, extras=(), value_css="setting-value", swatch=None, indent=0):
         """One row: an optional icon, its name (and a detail line under it), its value on the right (after a square of
-        the colour `swatch`); square extra buttons follow it on the same row. ← / → move between them."""
+        the colour `swatch`); square extra buttons follow it on the same row. ← / → move between them. `indent` (px)
+        sets it in under the row before it, as a partition under its drive."""
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4))
+        if indent: line.set_margin_start(S(indent))
         b=Gtk.Button(); b.add_css_class("launch-row"); b.set_hexpand(True)
         if on_activate is None: b.add_css_class("info-row")
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14))
@@ -239,6 +258,19 @@ class OptionsPage(_ConfigPage):
         self.note("Space between the Quick Menu and the edges of the screen. Many TVs cut off the edges of the picture "
                   "(overscan): if the edges of TVWCS are missing, make this larger, or turn overscan off in the TV's own picture settings.")
         self.option("Reduce motion","reduce_motion","On: pages change at once, without fading. Suits a slow TV box.")
+        hide=cursor.hide_enabled(st); seconds=cursor.hide_seconds(st)
+        pointer=features.BY_KEY["cursor"]
+        if features.applies(pointer) and not (features.enabled(st,"cursor") and features.installed(pointer)):   # X11 without unclutter
+            self.row("Hide the mouse pointer","Off",lambda:turn_feature_on(self,pointer,after=lambda:self.change(lambda s:s.settings.update(cursor_hide=True))),
+                     ident="opt:cursor_hide",detail=f"Needs {', '.join(pointer.packages)}. Choose this to install it")
+        else: self.row("Hide the mouse pointer",_on_off(hide),self.toggle_cursor_hide,ident="opt:cursor_hide",value_css="state-on" if hide else "setting-value")
+        if hide:
+            lo,hi=cursor.SECONDS_RANGE
+            less=self.button("list-remove-symbolic","−","Sooner",lambda:self.change_cursor_seconds(-1)) if seconds>lo else None
+            more=self.button("list-add-symbolic","+","Later",lambda:self.change_cursor_seconds(1)) if seconds<hi else None
+            self.row("Hide it after",f"{seconds} second{'s' if seconds!=1 else ''}",None,ident="opt:cursor_seconds",indent=44,extras=[less,more])
+        self.note(("Hidden after that long without moving, and back as soon as it moves. " if hide else "")+
+                  "By default it is hidden on a TV and not at a desk.")
         if st["use"]=="tv":
             self.option("Hide the i3 bar","tv_hide_bar","On a TV the bottom of the Quick Menu shows the time, the network, the volume, "
                         "Bluetooth and waiting updates instead. Off: the bar shows as your i3 or sway config sets it.")
@@ -280,6 +312,12 @@ class OptionsPage(_ConfigPage):
             m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
             if is_4k(g.width*f,g.height*f): return True
         return False
+    def toggle_cursor_hide(self):
+        def edit(store): store.settings["cursor_hide"]=not cursor.hide_enabled(store.settings)
+        self.change(edit)
+    def change_cursor_seconds(self, by):
+        def edit(store): store.settings["cursor_hide_seconds"]=cursor.clamp_seconds(cursor.hide_seconds(store.settings)+by)
+        self.change(edit)
     def pick_scale(self, key): self.change(lambda s:s.settings.update(scale=key))   # settings_changed redraws Settings at it
     def choose_use(self):
         self.win.choose_option("Used on",[("tv","A TV, across the room"),("desktop","A desktop monitor, at arm's length")],self.state.settings["use"],
@@ -457,35 +495,51 @@ class PowerPage(Page):
         return power.read_state(st,command_for("lock",st) is not None,command_for("sleep",st) is not None)
     def summary(self): return "swayidle" if self.state and self.state.session=="sway" else ""
     def draw(self, s):
-        times=s.settings
-        self.section("WHEN NOTHING IS TOUCHED")
-        self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"]),
-                 icon="video-display-symbolic",fallback="▭",ident="idle:screensaver")
-        screen=times["screen_off"]
-        self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
-                 lambda:self.choose("screen_off",screen,system=True),icon="video-display-symbolic",fallback="🖵",ident="idle:screen_off")
-        self.row(power.LABELS["lock"],power.duration_text(times["lock"]),lambda:self.choose("lock",times["lock"]),
-                 detail="" if s.locker else "No screen locker is installed (such as i3lock, or swaylock on sway)",
-                 icon="system-lock-screen-symbolic",fallback="🔒",ident="idle:lock")
-        self.row(power.LABELS["sleep"],power.duration_text(times["sleep"]),lambda:self.choose("sleep",times["sleep"]),
-                 detail="" if s.can_sleep else "Nothing on this computer can make it sleep",
-                 icon="weather-clear-night-symbolic",fallback="☾",ident="idle:sleep")
+        if s.battery.present:
+            b=s.battery
+            self.section("BATTERY")
+            self.row("Battery",f"{b.percent}%",None,detail="Running on the battery" if b.on_battery else "Plugged in",
+                     icon="battery-symbolic",fallback="🔋",ident="bat:now")
+            c=s.critical
+            self.row("When the battery is nearly empty",power.CRITICAL_ACTIONS[c["action"]],self.choose_critical,
+                     icon="battery-caution-symbolic",fallback="🪫",ident="bat:action",
+                     detail="" if c["action"]=="nothing" else f"At {c['percent']}% or less, while not plugged in")
+            if c["action"]!="nothing": self.row("Nearly empty means",f"{c['percent']}%",self.choose_critical_percent,ident="bat:percent",indent=44)
+            self.idle_rows(s,s.settings,"idle","WHEN NOTHING IS TOUCHED, PLUGGED IN")
+            self.idle_rows(s,s.battery_settings,"idle_battery","WHEN NOTHING IS TOUCHED, ON BATTERY")
+        else: self.idle_rows(s,s.settings,"idle","WHEN NOTHING IS TOUCHED")
+        times=s.settings; screen=times["screen_off"]
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
         self.section("SCREEN SAVER")
         st=ConfigStore().settings
-        logo=st["screensaver_logo"]
-        self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
-        self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
-                 icon="media-playback-start-symbolic",fallback="▶")
-        self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
-                  "The TVWCS logo is drawn in the same style as the DVD one; a picture of your own can be any PNG, JPEG or SVG.")
+        saver=features.BY_KEY["screensaver"]
+        if not features.enabled(st,"screensaver"):
+            self.row("Screen saver","Off",lambda:turn_feature_on(self,saver),icon="video-display-symbolic",fallback="▭",ident="saver:feature",
+                     detail="Turned off in Features"+("" if features.installed(saver) else f". Turning it on installs {', '.join(saver.packages)}"))
+        else:
+            logo=st["screensaver_logo"]
+            self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
+            on_lock=bool(st["screensaver_on_lock"]) and features.enabled(st,"lock_saver")
+            lock_saver=features.BY_KEY["lock_saver"]; ready=features.enabled(st,"lock_saver") and features.installed(lock_saver)
+            if s.session=="sway": why="Not available on sway: swaylock cannot show a screen saver"
+            elif not ready: why=f"Needs {', '.join(lock_saver.packages)}, which locks the screen while the screen saver shows. Choose this to install it"
+            else: why="A key shows the password box; after a minute without one, the screen saver comes back"
+            action=None if s.session=="sway" else self.toggle_saver_on_lock if ready else lambda:turn_feature_on(self,lock_saver,after=self.saver_on_lock_on)
+            self.row("Show it when the computer locks",_on_off(on_lock),action,detail=why,
+                     icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
+            self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
+                     icon="media-playback-start-symbolic",fallback="▶")
+            self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
+                      "The TVWCS logo is drawn in the same style as the DVD one; a picture of your own can be any PNG, JPEG or SVG.")
         self.section("LOCKING")
         own=bool(ConfigStore().settings["tvwcs_lock_screen"])
         self.row("Lock screen",LOCK_SCREENS[own],self.choose_lock_screen,icon="system-lock-screen-symbolic",fallback="🔒",ident="lock:screen")
         self.note("TVWCS's lock screen says the TV is locked and asks for your password. It uses i3lock (or swaylock on sway), "
                   "and xss-lock uses it too when it locks the screen."
                   if own else "Lock (after the time above, or from the power menu) uses the screen locker the system has, such as i3lock or swaylock.")
+        if st["screensaver_on_lock"] and features.enabled(st,"lock_saver") and s.session!="sway":
+            self.note("While “Show it when the computer locks” is on, xsecurelock locks the screen instead, with its own password box.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
                       "TVWCS cannot tell how long the computer has been idle: install libxss1, or xprintidle.","error")
@@ -513,6 +567,30 @@ class PowerPage(Page):
                                detail="logind's HandleLidSwitch",ident="sys:lid")
         self.note(("Change “Turn off the screen after” to let TVWCS decide instead of X. " if s.session=="X11" else "")+
                   "logind's settings are changed in /etc/systemd/logind.conf, as root.")
+
+    def idle_rows(self, s, times, option, heading):
+        """The four times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
+        self.section(heading); tag="" if option=="idle" else "bat"
+        if features.enabled(ConfigStore().settings,"screensaver"):
+            self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
+                     icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
+        screen=times["screen_off"]
+        self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
+                 lambda:self.choose("screen_off",screen,system=True,option=option),icon="video-display-symbolic",fallback="🖵",ident=f"idle{tag}:screen_off")
+        self.row(power.LABELS["lock"],power.duration_text(times["lock"]),lambda:self.choose("lock",times["lock"],option=option),
+                 detail="" if s.locker else "No screen locker is installed (such as i3lock, or swaylock on sway)",
+                 icon="system-lock-screen-symbolic",fallback="🔒",ident=f"idle{tag}:lock")
+        self.row(power.LABELS["sleep"],power.duration_text(times["sleep"]),lambda:self.choose("sleep",times["sleep"],option=option),
+                 detail="" if s.can_sleep else "Nothing on this computer can make it sleep",
+                 icon="weather-clear-night-symbolic",fallback="☾",ident=f"idle{tag}:sleep")
+    def choose_critical(self):
+        def picked(key):
+            store=ConfigStore(); store.settings["battery_critical"]["action"]=key; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
+        self.win.choose_option("When the battery is nearly empty",list(power.CRITICAL_ACTIONS.items()),self.state.critical["action"],picked)
+    def choose_critical_percent(self):
+        def picked(key):
+            store=ConfigStore(); store.settings["battery_critical"]["percent"]=int(key); store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
+        self.win.choose_option("Nearly empty means",[(str(p),f"{p}%") for p in power.CRITICAL_PERCENTS],str(self.state.critical["percent"]),picked)
 
     def choose_logo(self):
         def picked(key):
@@ -543,15 +621,24 @@ class PowerPage(Page):
     def choose_lock_screen(self):
         def picked(key):
             store=ConfigStore(); store.settings["tvwcs_lock_screen"]=key=="tvwcs"; store.save(); tell_tvwcs("reload")
-            path=getattr(self.state,"xss_lock","")
-            if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
-            if path and path!="?":   # xss-lock (locking when the screen turns off) shows the same lock screen
-                from tvwcs.lockscreen import launcher
-                why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if key=="tvwcs" else "")
-                if why: self.win.notice("Lock screen",why)
-            self.redraw()
+            self.point_xss_lock(store.settings); self.redraw()
         self.win.choose_option("Lock screen",[("tvwcs",LOCK_SCREENS[True]),("system",LOCK_SCREENS[False])],
                                "tvwcs" if ConfigStore().settings["tvwcs_lock_screen"] else "system",picked)
+    def toggle_saver_on_lock(self, on=None):
+        store=ConfigStore(); on=not store.settings["screensaver_on_lock"] if on is None else on
+        store.settings["screensaver_on_lock"]=on; store.save(); tell_tvwcs("reload")
+        self.point_xss_lock(store.settings); self.redraw()
+    def saver_on_lock_on(self): self.toggle_saver_on_lock(True)
+    def point_xss_lock(self, settings):
+        """xss-lock (locking when the screen turns off) locks the same way as Lock: through `tvwcs lock` when TVWCS's
+        lock screen or the screen saver while locked is chosen, else with the locker it ran before."""
+        path=getattr(self.state,"xss_lock","")
+        if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
+        if path and path!="?":
+            from tvwcs.lockscreen import launcher
+            use=settings["tvwcs_lock_screen"] or settings["screensaver_on_lock"]
+            why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if use else "")
+            if why: self.win.notice("Lock screen",why)
 
     @staticmethod
     def system_screen_text(s):
@@ -559,11 +646,11 @@ class PowerPage(Page):
         x=s.xtimers; t=min([v for v in (x.saver,x.dpms_off) if v] or [0])
         return f"{power.duration_text(t)} (X)" if t else "Never (X)"
 
-    def choose(self, action, current, system=False):
+    def choose(self, action, current, system=False, option="idle"):
         options=([("system","Let the system decide")] if system else [])+[(str(v),power.duration_text(v)) for v in power.CHOICES]
         def picked(key):
             value=None if key=="system" else int(key)
-            store=ConfigStore(); store.settings["idle"][action]=value; store.save(); tell_tvwcs("reload")
+            store=ConfigStore(); store.settings[option][action]=value; store.save(); tell_tvwcs("reload")
             if action in ("lock","sleep") and value and not (self.state.locker if action=="lock" else self.state.can_sleep):
                 self.win.notice(power.LABELS[action].replace(" after",""),"Saved, but this computer has nothing to do that with yet.")
             self.refresh(quiet=True)
@@ -1475,7 +1562,8 @@ class StoragePage(Page):
         if not s.drives: self.note("No drives were found.")
         for d in s.drives: self.drive_rows(d,s)
         if not s.udisks: self.note("Install udisks2 to open and close drives here.","error")
-        self.note("Close a drive before unplugging it. A drive's files are in the folder shown under it once it is open.")
+        self.note("Each drive's partitions are listed under it. Mounting a partition makes its files readable, in the folder shown "
+                  "under it. Unmount it, or switch the drive off with ⏏, before unplugging it.")
         self.section("NETWORK SHARES")
         missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
         if missing: self.note("Connecting to network shares needs "+" and ".join(missing)+". Install it with sudo apt install "
@@ -1496,14 +1584,23 @@ class StoragePage(Page):
                  fallback="🖴",ident=f"drive:{d.name}",extras=extras)
         for v in d.volumes:
             if v.fstype=="swap": continue
-            used=f"{storage.size_text(v.used)} used, {storage.size_text(v.avail)} free" if v.mounted and (v.used or v.avail) else storage.size_text(v.size)
-            detail=" · ".join(x for x in (v.fstype,", ".join(v.mountpoints) if v.mounted else "Not open",used) if x)
+            space=f"{storage.size_text(v.used)} used, {storage.size_text(v.avail)} free" if v.mounted and (v.used or v.avail) else storage.size_text(v.size)
+            where=", ".join(v.mountpoints)
             go=None
+            if v.system:   # /, /home, /boot...: always in use, never unmounted from here
+                value,detail="Part of the system",f"Always in use · its files are in {where}" if where else "Always in use"
+            elif v.mounted:
+                value,detail="Mounted",f"Its files are in {where}"
+            else:
+                value,detail="Not mounted","Mount it to see its files"
             if not v.system and s.udisks and v.fstype not in ("crypto_LUKS","LVM2_member"):
-                go=(lambda v=v:self.act(lambda:storage.unmount(v.path),f"Closing {v.title}…","Storage")) if v.mounted else \
-                   (lambda v=v:self.act(lambda:storage.mount(v.path),f"Opening {v.title}…","Storage"))
-            self.row(f"   {v.title}","Open" if v.mounted else "Closed",go,detail=detail,ident=f"vol:{v.name}",
-                     value_css="state-on" if v.mounted else "setting-value")
+                go=(lambda v=v:self.act(lambda:storage.unmount(v.path),f"Unmounting {v.title}…","Storage")) if v.mounted else \
+                   (lambda v=v:self.act(lambda:storage.mount(v.path),f"Mounting {v.title}…","Storage"))
+                if not v.mounted: detail="Select to mount it and see its files"
+                else: detail+=" · select to unmount"
+            detail=" · ".join(x for x in (v.fstype,detail,space) if x)
+            self.row(v.title,value,go,detail=detail,ident=f"vol:{v.name}",indent=44,
+                     value_css="state-on" if v.mounted and not v.system else "setting-value")
 
     def eject(self, d):
         def work():
@@ -1573,12 +1670,8 @@ class DateTimePage(Page):
                      ident="dt:ntp",value_css="state-on" if s.ntp else "setting-value")
         else: self.row("Set the time from the network","Unknown",None,detail="Needs systemd's timedatectl",ident="dt:ntp")
         self.section("SET THE TIME BY HAND")
-        entry=ConfigStore().settings["time_entry"]
         self.row("Set the time",timedate.clock_text(now,hours24),self.set_by_hand if s.timedatectl else None,
                  detail=("Turns network time off first" if s.ntp else "The date and the time of day") if s.timedatectl else "Needs systemd's timedatectl",ident="dt:set")
-        self.row("Way to set it",TIME_ENTRY[entry],self.choose_entry,ident="dt:entry")
-        self.note("Hour and minute: a ▲ and ▼ for each part of the date and time. Number pad: type the time as four digits. "
-                  "Steps: move the clock forward or back by a day, an hour, ten minutes or a minute.")
         self.section("QUICK MENU CLOCK")
         self.row("Clock",'24-hour (14:05)' if hours24 else "12-hour (2:05 PM)",self.choose_clock,ident="dt:clock")
         self.note("How the time at the bottom of the Quick Menu is written.")
@@ -1616,10 +1709,6 @@ class DateTimePage(Page):
             self.as_root_if_needed(timedate.timezone_argv(zone,s.timedatectl),"Time zone",f"Setting the time zone to {timedate.zone_label(zone)}…")
         self.win.choose_option(f"City · {region}",cities,s.timezone if s.timezone in dict(cities) else None,picked)
     # ---------------------------------------------------------- setting the time by hand
-    def choose_entry(self):
-        def picked(key):
-            store=ConfigStore(); store.settings["time_entry"]=key; store.save(); self.refresh(quiet=True)
-        self.win.choose_option("Way to set the time",list(TIME_ENTRY.items()),ConfigStore().settings["time_entry"],picked)
     def set_by_hand(self):
         s=self.state[0]
         if s.ntp:
@@ -1630,58 +1719,158 @@ class DateTimePage(Page):
         self.set_by_hand_now()
     def set_by_hand_now(self):
         import datetime
-        now=datetime.datetime.now().replace(second=0,microsecond=0)
-        way=ConfigStore().settings["time_entry"]
-        if way=="digits": self.time_digits(now)
-        elif way=="steps": self.time_steps(now)
-        else: self.time_fields(now)
+        self.time_fields(datetime.datetime.now().replace(second=0,microsecond=0))
     def apply_time(self, when):
         self.win.close_modal()
         self.as_root_if_needed(timedate.set_time_argv(when),"Set the time",f"Setting the time to {when:%H:%M}…")
-    def _time_text(self, when):
-        return f"{timedate.date_text(when.timestamp())}, {when.year}   {timedate.clock_text(when.timestamp(),self.state[1])}"
     def time_fields(self, when):
-        """▲ and ▼ under each of year, month, day, hour and minute: ← → moves between them, ↑ ↓ between ▲ and ▼."""
-        win=self.win; win._begin_modal("Set the time"); state={"when":when}
-        shown=win._message(self._time_text(when))
-        row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); row.set_halign(Gtk.Align.CENTER); ups=[]; downs=[]; values={}
+        """A box for each of year, month, day, hour and minute (typed in, or changed with the ▲ and ▼ above and below
+        it), hour:minute, and AM/PM with the 12-hour clock. ← → move between the boxes, ↑ ↓ to the ▲ and ▼ rows."""
+        win=self.win; win._begin_modal("Set the time"); hours24=self.state[1]
+        state={"when":when,"pm":timedate.hour_12(when.hour)[1]}
+        error=win._message("","error"); error.set_visible(False)
+        row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); row.set_halign(Gtk.Align.CENTER)
+        ups=[]; downs=[]; entries={}; boxes=[]
         names={"year":"Year","month":"Month","day":"Day","hour":"Hour","minute":"Minute"}
         def show():
-            w=state["when"]; shown.set_text(self._time_text(w))
-            for f,l in values.items(): l.set_text(f"{getattr(w,f):04d}" if f=="year" else f"{getattr(w,f):02d}")
-        def move(field,delta): state["when"]=timedate.adjust(state["when"],field,delta); show()
-        for field in timedate.FIELDS:
+            w=state["when"]
+            for f,e in entries.items():
+                v=getattr(w,f)
+                if f=="hour" and not hours24: v=timedate.hour_12(v)[0]
+                e.set_text(f"{v:04d}" if f=="year" else f"{v:02d}")
+            if not hours24: style_ampm()
+        def typed():
+            """The boxes as a time, or raises ValueError."""
+            return timedate.from_fields(*(entries[f].get_text() for f in timedate.FIELDS),pm=None if hours24 else state["pm"])
+        def move(field,delta):
+            try: state["when"]=typed()
+            except ValueError: pass   # a box being typed in: move from the last good time
+            state["when"]=timedate.adjust(state["when"],field,delta)
+            if field=="hour": state["pm"]=state["when"].hour>=12
+            error.set_visible(False); show()
+        def column(field):
             col=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4))
-            up=Gtk.Button(label="▲"); up.connect("clicked",lambda _b,f=field:move(f,1)); col.append(up); ups.append(up)
-            v=Gtk.Label(); v.add_css_class("time-field"); col.append(v); values[field]=v
-            down=Gtk.Button(label="▼"); down.connect("clicked",lambda _b,f=field:move(f,-1)); col.append(down); downs.append(down)
-            n=Gtk.Label(label=names[field]); n.add_css_class("muted"); col.append(n); row.append(col)
-        win.modal_card.append(row); show()
-        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",lambda:self.apply_time(state["when"]),"active"))
-        g1=NavGroup(ups); g1.column=True; g2=NavGroup(downs); g2.column=True
-        win._finish_modal([g1,g2,NavGroup([cancel,ok])],win.close_modal,ups[3])
-    def time_steps(self, when):
-        """The time now, and buttons that move it by a day, an hour, ten minutes or a minute."""
-        win=self.win; win._begin_modal("Set the time"); state={"when":when}
-        shown=win._message(self._time_text(when),"time-now"); groups=[]
-        def move(minutes): state["when"]=timedate.step(state["when"],minutes); shown.set_text(self._time_text(state["when"]))
-        for half in (timedate.STEPS[:4],timedate.STEPS[4:]):
-            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); made=[]
-            for minutes,label in half:
-                b=Gtk.Button(label=label); b.connect("clicked",lambda _b,m=minutes:move(m)); line.append(b); made.append(b)
-            win.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
-        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",lambda:self.apply_time(state["when"]),"active"))
-        groups.append(NavGroup([cancel,ok])); win._finish_modal(groups,win.close_modal,groups[1][0])
-    def time_digits(self, when, error=""):
-        def got(text):
-            try: self.apply_time(timedate.from_digits(when,text))
-            except ValueError as exc: self.time_digits(when,str(exc))
-        self.win.ask_text("Set the time","Type the time as four digits in 24-hour time, such as 1905 for 19:05 (7:05 PM). The date stays "
-                          f"{timedate.date_text(when.timestamp())}.",got,"",ok_label="Set the time",error=error,digits=True)
+            up=Gtk.Button(label="▲"); up.connect("clicked",lambda _b:move(field,1)); col.append(up); ups.append(up)
+            e=Gtk.Entry(); e.add_css_class("time-field"); e.set_alignment(0.5); e.set_max_length(4 if field=="year" else 2)
+            e.set_width_chars(4 if field=="year" else 2); e.set_max_width_chars(4 if field=="year" else 2); e.set_input_purpose(Gtk.InputPurpose.DIGITS)
+            e.connect("activate",lambda *_:submit()); entries[field]=e; boxes.append(e); col.append(e)
+            down=Gtk.Button(label="▼"); down.connect("clicked",lambda _b:move(field,-1)); col.append(down); downs.append(down)
+            n=Gtk.Label(label=names[field]); n.add_css_class("muted"); col.append(n); return col
+        for field in ("year","month","day"): row.append(column(field))
+        gap=Gtk.Box(); gap.set_size_request(S(18),-1); row.append(gap)
+        row.append(column("hour"))
+        colon=Gtk.Label(label=":"); colon.add_css_class("time-colon"); colon.set_valign(Gtk.Align.CENTER); row.append(colon)
+        row.append(column("minute"))
+        ampm=None
+        if not hours24:   # one button: the current half of the day stands out, the other is dimmed
+            ampm=Gtk.Button(); ampm.add_css_class("ampm"); ampm.set_valign(Gtk.Align.CENTER)
+            pair=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); am=Gtk.Label(label="AM"); pm=Gtk.Label(label="PM")
+            pair.append(am); pair.append(pm); ampm.set_child(pair); ampm.set_tooltip_text("Switch between AM and PM")
+            def style_ampm():
+                for label,on in ((am,not state["pm"]),(pm,state["pm"])):
+                    label.remove_css_class("ampm-on" if not on else "ampm-off"); label.add_css_class("ampm-on" if on else "ampm-off")
+            def flip():
+                try: state["when"]=typed()
+                except ValueError: pass
+                state["pm"]=not state["pm"]; state["when"]=state["when"].replace(hour=timedate.hour_24(timedate.hour_12(state["when"].hour)[0],state["pm"]))
+                show()
+            ampm.connect("clicked",lambda _b:flip()); row.append(ampm); boxes.append(ampm)
+        win.modal_card.append(row)
+        def submit():
+            try: when=typed()
+            except ValueError as exc: error.set_text(str(exc)); error.set_visible(True); return
+            self.apply_time(when)
+        for i,e in enumerate(boxes):   # ← → move between the boxes (in a box they would only move its cursor)
+            keys=Gtk.EventControllerKey(); keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            def key(_c,keyval,_code,_state,i=i):
+                if keyval not in (Gdk.KEY_Left,Gdk.KEY_Right): return False
+                j=i+(1 if keyval==Gdk.KEY_Right else -1)
+                if 0<=j<len(boxes): boxes[j].grab_focus()
+                return True
+            keys.connect("key-pressed",key); e.add_controller(keys)
+            if isinstance(e,Gtk.Entry):
+                focus=Gtk.EventControllerFocus(); focus.connect("enter",lambda _c,e=e:GLib.idle_add(lambda:(e.select_region(0,-1),GLib.SOURCE_REMOVE)[1])); e.add_controller(focus)
+        show()
+        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",submit,"active"))
+        groups=[]
+        for widgets in (ups,boxes,downs):
+            g=NavGroup(widgets); g.column=True; groups.append(g)
+        win._finish_modal(groups+[NavGroup([cancel,ok])],win.close_modal,entries["hour"])
 
     def choose_clock(self):
         def picked(key):
             store=ConfigStore(); store.settings["clock_24h"]=key=="24"; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
         self.win.choose_option("Quick Menu clock",[("12","12-hour (2:05 PM)"),("24","24-hour (14:05)")],"24" if self.state[1] else "12",picked)
 
-PAGES=(OptionsPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)
+# ====================================================================== Features
+def turn_feature_on(page, f, after=None):
+    """Install the feature's missing packages (asking first), then turn it on; TVWCS and the page read it again."""
+    def switch_on():
+        store=ConfigStore(); store.settings["features"].pop(f.key,None); store.save(); tell_tvwcs("reload")
+        if after: after()
+        page.refresh(quiet=True)
+    if features.installed(f): switch_on(); return
+    missing=features.missing_packages(f)
+    if not shutil.which("apt-get"):
+        page.win.notice(f.label,f"{f.label} needs {', '.join(f.packages)} (the Debian names). Install them with your package manager, then turn it on here.")
+        return
+    lines=[]
+    def done(code, tail):
+        page.set_status("")
+        if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be installed.").strip()); return
+        switch_on()
+    def go():
+        page.set_status(f"Installing {', '.join(missing)}…")
+        page.win.run_as_root(features.install_argv(missing),f"Installing {f.label}",lines.append,done)
+    page.win.confirm(f"Turn on {f.label}?",f"{f.what} It needs {', '.join(missing)}, which will be installed now. It asks for your password.",
+                     "Install",go,danger=False)
+
+def turn_feature_off(page, f, uninstall):
+    def switch_off():
+        store=ConfigStore(); store.settings["features"][f.key]=False; store.save(); tell_tvwcs("reload"); page.refresh(quiet=True)
+    if not uninstall: switch_off(); return
+    page.set_status("Checking what else needs it…")
+    def check(): return features.removable(f,ConfigStore().settings)
+    def checked(result):
+        packages,why=result; page.set_status("")
+        if why: page.win.notice(f"Uninstall {f.label}",why+" It can still be turned off without uninstalling."); return
+        lines=[]
+        def done(code, tail):
+            page.set_status("")
+            if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be uninstalled.").strip())
+            switch_off()
+        def go():
+            page.set_status(f"Uninstalling {', '.join(packages)}…")
+            page.win.run_as_root(features.remove_argv(packages),f"Uninstalling {f.label}",lines.append,done)
+        page.win.confirm(f"Uninstall {f.label}?",f"This turns {f.label} off and uninstalls {', '.join(packages)}. Nothing else installed "
+                         "needs them, and their settings files are kept. Turning it on again installs them again.","Uninstall",go)
+    in_background(check,checked,lambda exc:(page.set_status(""),page.win.notice(f.label,str(exc))))
+
+class FeaturesPage(Page):
+    """The features that need extra software (features.py): on or off, with their software installed or uninstalled."""
+    key="features"; title="Features"; icon="view-list-symbolic"; fallback="☰"
+    def read(self):
+        st=ConfigStore().settings
+        return [(f,features.enabled(st,f.key),features.installed(f)) for f in features.FEATURES if features.applies(f)]
+    def summary(self):
+        if not self.state: return ""
+        on=sum(1 for _f,e,_i in self.state if e); return f"{on} of {len(self.state)} on"
+    def draw(self, rows):
+        self.section("FEATURES")
+        for f,on,have in rows:
+            if on and have: value,detail="On",f.what
+            elif on: value,detail="Needs installing",f"{f.what} Needs {', '.join(f.packages)}."
+            else: value,detail="Off",f.what+("" if have else f" Turning it on installs {', '.join(f.packages)}.")
+            self.row(f.label,value,lambda f=f,on=on,have=have:self.change(f,on and have),detail=detail,ident=f"feature:{f.key}",
+                     value_css="state-on" if on and have else "setting-value")
+        self.note("A minimal install starts with the features whose software is not installed turned off. A feature that is off "
+                  "keeps its Settings page, which only offers to turn it on. Uninstalling removes only its own packages, and only "
+                  "when nothing else installed needs them; it never removes other software.")
+    def change(self, f, on):
+        if not on: turn_feature_on(self,f); return
+        def picked(key):
+            if key=="off": turn_feature_off(self,f,False)
+            elif key=="uninstall": turn_feature_off(self,f,True)
+        self.win.choose_option(f.label,[("keep","Keep it on"),("off","Turn it off"),("uninstall","Turn it off and uninstall its software")],"keep",picked)
+
+PAGES=(OptionsPage,FeaturesPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)

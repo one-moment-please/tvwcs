@@ -10,18 +10,18 @@ colour chosen in its Options (a change to them is drawn at once), and it works w
   the on-screen keyboard with the D-pad.
 - In the terminal every key goes to the shell; Esc (or Back) goes up to the buttons above it."""
 from __future__ import annotations
-import os, signal, subprocess, sys, threading
+import os, signal, subprocess, sys, threading, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-gi.require_version("Graphene", "1.0")
-from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs import privilege
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints
 from tvwcs.theme import render_css
-from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, icon_button, screen_height, set_scale, usable
+from tvwcs import cursor
+from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, icon_button, screen_height, scroll_into_view, scroll_to_show, set_scale, usable
 
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
@@ -35,6 +35,7 @@ window.pointer button.tab-button:hover { background: @RAISED@; }
 button.tab-button.active { background: @RAISED@; box-shadow: inset 6px 0 0 @ACCENT@; }
 button.tab-button:focus, button.tab-button:focus-visible { background: @ACCENT@; box-shadow: none; }
 button.tab-button label { font-weight: 300; }
+button.tab-button.icon-tab { padding: 0 20px; }
 button.tab-button:focus label { font-weight: 700; }
 button.info-row:focus .setting-value { color: #ffffff; }
 .display-box { background: alpha(@ACCENT@, 0.6); border: 2px solid @PANE@; }
@@ -68,8 +69,11 @@ button:focus .app-name { font-weight: 700; }
 .app-summary { font-size: 17px; }
 .wallpaper-swatch { min-width: 64px; min-height: 48px; padding: 0; border: 2px solid @LINE@; }
 button.wallpaper-swatch:focus, button.wallpaper-swatch:focus-visible { outline: 4px solid @ACCENT@; outline-offset: 2px; }
-.time-field { font-size: 40px; font-weight: 300; min-width: 84px; }
-.time-now { font-size: 26px; font-weight: 300; }
+entry.time-field { font-size: 36px; font-weight: 300; min-height: 64px; padding: 0 6px; }
+.time-colon { font-size: 40px; font-weight: 300; margin-bottom: 26px; }
+button.ampm { padding: 6px 14px; margin-bottom: 26px; }
+.ampm-on { font-size: 22px; font-weight: 700; border-bottom: 3px solid currentColor; }
+.ampm-off { font-size: 18px; opacity: 0.45; }
 """
 
 def colour_swatch(colour):
@@ -77,22 +81,6 @@ def colour_swatch(colour):
     from tvwcs.model import WALLPAPERS
     c=(colour or "").lower(); box=Gtk.Box(); box.add_css_class("accent-swatch"); box.set_valign(Gtk.Align.CENTER)
     box.add_css_class(f"tile-{METRO_COLORS.index(c)}" if c in METRO_COLORS else f"wall-{WALLPAPERS.index(c)}" if c in WALLPAPERS else "accent-current"); return box
-
-def scroll_to_show(scroll, widget):
-    """Scroll as little as needed for the widget to be wholly in sight (the tabs: moving down them never jumps)."""
-    ok,point=widget.compute_point(scroll.get_child(),Graphene.Point())
-    if not ok: return
-    adj=scroll.get_vadjustment(); top=point.y; bottom=top+widget.get_height(); value=adj.get_value()
-    if top<value: adj.set_value(max(adj.get_lower(),top))
-    elif bottom>value+adj.get_page_size(): adj.set_value(min(adj.get_upper()-adj.get_page_size(),bottom-adj.get_page_size()))
-
-def scroll_into_view(scroll, widget):
-    """Scroll so the widget is in the middle of the ScrolledWindow: focusing a row before the list has its size
-    does not scroll to it by itself, so the current choice of a long list would start out of sight."""
-    ok,point=widget.compute_point(scroll.get_child(),Graphene.Point())
-    if not ok: return
-    adj=scroll.get_vadjustment(); middle=point.y+widget.get_height()/2-adj.get_page_size()/2
-    adj.set_value(max(adj.get_lower(),min(middle,adj.get_upper()-adj.get_page_size())))
 
 def in_background(work, done, failed=None):
     """work() on a worker thread, so a slow tool never freezes the remote; then done(result) (or failed(error))
@@ -144,7 +132,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         self._capture=None; self._capture_cb=None; self._capture_cancel=None
         self.add_css_class("tvwcs-window"); self.set_icon_name("preferences-system")
         self.set_default_size(S(1180),S(760))
-        self.pointer=PointerWatch(self)   # hover colours only while the mouse is in use
+        self._hide_ms=(0.0,None); self.pointer=PointerWatch(self,self.pointer_hide_ms)   # hover colours only while the mouse is in use
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key.connect("key-pressed",self._key_pressed); key.connect("key-released",self._key_released); self.add_controller(key)
         self.connect("notify::focus-widget",self._focus_changed)
@@ -195,22 +183,23 @@ class ControlWindow(Gtk.ApplicationWindow):
         panes=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=0); overlay.set_child(panes)
         # ---- the tabs, down the left
         column=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); column.add_css_class("pane"); column.add_css_class("tab-column")
-        column.set_size_request(S(330),-1); column.set_hexpand(False); panes.append(column)
+        column.set_size_request(S(330),-1); column.set_hexpand(False); panes.append(column); self.tab_column=column
         header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_end(S(20)); header.set_margin_bottom(S(14))
         brand=Gtk.Label(label="Settings"); brand.add_css_class("brand"); brand.set_xalign(0); brand.set_hexpand(True); header.append(brand)
+        self.tab_header=header; self.brand=brand; self.tab_labels=[]; self._narrow=None
         self.close_button=icon_button("window-close-symbolic","✕","Close Settings"); self.close_button.add_css_class("close-button"); self.close_button.add_css_class("square")
         self.close_button.connect("clicked",lambda *_:self.close()); header.append(self.close_button); column.append(header)
         tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2))
         tab_scroll=Gtk.ScrolledWindow(); tab_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); tab_scroll.set_vexpand(True)
         tab_scroll.set_child(tabs); column.append(tab_scroll); self.tab_scroll=tab_scroll   # in TV Mode on a 1080p screen the tabs can be taller than it; they scroll
         # ---- the page, beside them
-        self.stack=Gtk.Stack(); self.stack.set_hexpand(True); self.stack.set_vexpand(True); self.stack.set_transition_duration(PAGE_FADE_MS)
+        self.stack=Gtk.Stack(); self.stack.set_hhomogeneous(False); self.stack.set_hexpand(True); self.stack.set_vexpand(True); self.stack.set_transition_duration(PAGE_FADE_MS)
         self.stack.add_css_class("pane"); self.stack.set_margin_start(S(12)); panes.append(self.stack)
         for cls in PAGES:
             page=cls(self); self.pages.append(page)
             b=Gtk.Button(); b.add_css_class("tab-button"); line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(16))
             icon=glyph(page.icon,page.fallback,24); icon.set_size_request(S(28),-1); line.append(icon)
-            label=Gtk.Label(label=page.title); label.set_xalign(0); label.set_hexpand(True); line.append(label); b.set_child(line)
+            label=Gtk.Label(label=page.title); label.set_xalign(0); label.set_hexpand(True); line.append(label); b.set_child(line); self.tab_labels.append(label)
             b.connect("clicked",lambda _b,p=page:self.enter_page(p)); tabs.append(b); self.tab_buttons[page.key]=b
             self.stack.add_named(page.widget(),page.key)
         footer=Gtk.Label(); footer.add_css_class("muted"); footer.set_xalign(0); footer.set_wrap(True); self.footer=footer
@@ -222,6 +211,32 @@ class ControlWindow(Gtk.ApplicationWindow):
         self.modal_card.set_size_request(S(520),-1)
         self.modal_layer.append(self.modal_card); overlay.add_overlay(self.modal_layer)
         self._apply_settings()
+        surface=self.get_surface()
+        if surface is not None: self._narrow=None; self._fit_tabs(surface.get_width(),surface.get_height())
+
+    # ---- a window taller than it is wide (a tile, a monitor turned on its side): the tabs shrink to their icons
+    # The window manager's size for the window is the surface's: a tile narrower than the wide layout's minimum width
+    # would otherwise only clip it.
+    def pointer_hide_ms(self):
+        """The pointer's hiding time (cursor.py), read from the options at most every few seconds: it is asked at every
+        mouse movement."""
+        when,ms=self._hide_ms
+        if time.monotonic()-when>5: ms=cursor.hide_ms(ConfigStore().settings); self._hide_ms=(time.monotonic(),ms)
+        return ms
+    def do_realize(self):
+        Gtk.ApplicationWindow.do_realize(self)
+        self.get_surface().connect("layout",lambda _s,w,h:GLib.idle_add(lambda:(self._fit_tabs(w,h),GLib.SOURCE_REMOVE)[1]))
+    def _fit_tabs(self, width, height):
+        narrow=width>0 and height>width
+        if narrow is self._narrow or not hasattr(self,"tab_column"): return
+        self._narrow=narrow
+        self.tab_column.set_size_request(S(76) if narrow else S(330),-1)
+        self.brand.set_visible(not narrow); self.footer.set_visible(not narrow)
+        for m in (self.tab_header.set_margin_start,self.tab_header.set_margin_end): m(S(16) if narrow else S(20))
+        self.close_button.set_hexpand(narrow); self.close_button.set_halign(Gtk.Align.CENTER if narrow else Gtk.Align.FILL)
+        for label,(key,b) in zip(self.tab_labels,self.tab_buttons.items()):
+            label.set_visible(not narrow); b.set_tooltip_text(label.get_text() if narrow else None)
+            (b.add_css_class if narrow else b.remove_css_class)("icon-tab")
 
     def page_by_key(self, key): return next((p for p in self.pages if p.key==key),None)
 
