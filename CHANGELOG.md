@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.2.2 — 2026-10-16
+
+- In the Quick Menu, a workspace with more than one application has a square ▾ button between ⋯ and its name that shows or hides its individual apps. It is always visible, even when the options buttons are hidden, and the option has left the workspace's ⋯ menu. On the name, ← moves onto it; ← again opens the row's menu.
+- The ⋯ options buttons on Quick Menu rows are half as wide as they are tall.
+
 ## 3.2.1 — 2026-10-16
 
 - The screen saver covers every monitor, each with its own bouncing logo, instead of only the one in use. Any key, click or pointer movement ends it on all of them, and focus goes back to the workspace that had it.

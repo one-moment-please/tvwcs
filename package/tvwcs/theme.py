@@ -26,7 +26,8 @@ button.square { min-width: 44px; min-height: 44px; padding: 0; }
 button.close-button { background: #c50f1f; color: #ffffff; }
 window.pointer button.close-button:hover { background: #e81123; }
 button.close-button:focus, button.close-button:focus-visible, button.close-button:active { background: #e81123; outline: 3px solid #ffffff; outline-offset: -3px; }
-.mode-button, button.options-toggle { min-width: 44px; padding: 0; }
+.mode-button { min-width: 44px; padding: 0; }
+button.options-toggle { min-width: 22px; padding: 0; }   /* ⋯ is half as wide as it is tall: ← or a right-click opens the same menu */
 button.category-header { background: @HEADER@; font-size: 18px; font-weight: 300; margin-top: 6px; }
 window.pointer button.category-header:hover { background: @HOVER@; }
 button.category-header:focus, button.category-header:focus-visible { background: @ACCENT@; outline: 3px solid #ffffff; outline-offset: -3px; }

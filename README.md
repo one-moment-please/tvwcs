@@ -18,7 +18,7 @@ It works with normal desktop apps. It is not a media center and needs no plugins
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications pane open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">Buttons at the top: ⚙ Settings, ⏻ power menu, ✕ close, ⊞ Applications. Below: search, <b>Open applications</b> (by workspace) and <b>Favorites</b>. At the bottom: key hints, the clock, and icons for network, volume, Bluetooth and updates.</td>
+    <td valign="top">Buttons at the top: ⚙ Settings, ⏻ power menu, ✕ close, ⊞ Applications. Below: search, <b>Open applications</b> (by workspace; ▴ here shows the two apps sharing one) and <b>Favorites</b>. At the bottom: key hints, the clock, and icons for network, volume, Bluetooth and updates.</td>
     <td valign="top"><b>Channels</b> lists apps you gave a number. <b>All applications</b> lists every app by category; OK/Enter folds a category. ☆ makes an app a favorite, ✎ edits its launch profiles.</td>
   </tr>
   <tr>
@@ -108,6 +108,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 
 - **First start:** TVWCS asks whether it is used on a TV or at a desk. This sets the interface size and how apps open.
 - **Row menu (⋯):** one menu of labelled choices: open the app in a new workspace or this one, start it with one of its own shortcuts, close it, or move a workspace to another monitor.
+- **Workspaces with several apps:** the square ▾ button between ⋯ and the workspace's name shows its individual apps, to open just one; ▴ hides them again. It stays visible even when the ⋯ buttons are hidden. On the name, ← moves onto it; ← again opens the row's menu.
 - **Channels:** 000 to 999. Channel 000 opens Settings unless you give it to another app. Setting a channel shows three digit boxes; typing replaces the number.
 - **Slow apps:** while an app takes a few seconds to open, TVWCS shows "Starting…" so the screen is never blank, and the Quick Menu still opens.
 - **Launch profiles (✎):** a profile is one way to start an app. It can have a channel number, a hotkey, a custom command, a description and a PIN. The editor opens inside the TVWCS window: each field is a row, with Save, Cancel and Delete at the bottom. A PIN-protected profile asks for its PIN first. The PIN is a lock for a shared TV, not real security.
