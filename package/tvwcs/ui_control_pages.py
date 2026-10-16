@@ -304,6 +304,8 @@ class OptionsPage(_ConfigPage):
         self.note({"none":"Nothing opens by itself when you log in.","menu":"The Quick Menu opens when you log in.",
                    "last":"Whichever application you used most recently opens when you log in.",
                    "app":"The application chosen above opens when you log in."}[mode]+" It happens once per login, a moment after TVWCS starts.")
+        self.note("Some applications, such as Steam, have their own option to start when you log in. If you use one of those, "
+                  "set Open at login to None, so the two do not both open something.")
         self.note("Hotkeys and the remote's keys are under Remote and hotkeys; TVWCS's own updates under Software updates.")
 
     # ---------------------------------------------------------- choices

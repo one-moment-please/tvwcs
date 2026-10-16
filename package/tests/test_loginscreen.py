@@ -38,6 +38,8 @@ class RootTests(unittest.TestCase):
         self.assertEqual(loginscreen.default_session(loginscreen.sessions(),"sway"),"sway")
         self.assertEqual(loginscreen.tvwcs_session(loginscreen.sessions(),"i3","alongside"),"tvwcs-i3")
         self.assertEqual(loginscreen.tvwcs_session(loginscreen.sessions(),"i3","dedicated"),"i3")
+        self.assertEqual(loginscreen.tvwcs_session(loginscreen.sessions(),"i3","dedicated","sessions"),"tvwcs-i3")   # the usual i3 has no TVWCS
+        self.assertEqual(loginscreen.tvwcs_session(loginscreen.sessions(),"i3","alongside","usual"),"i3")
 
     def test_turning_it_on_and_off_goes_back_to_the_login_screen_before(self):
         self.use("lightdm"); (self.etc/"tvwcs").mkdir()

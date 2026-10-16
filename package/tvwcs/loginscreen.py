@@ -362,6 +362,8 @@ class Changer:
         (new/"start-session").write_text(START_SESSION,encoding="utf-8"); (new/"greeter").write_text(GREETER%{"lib":GREETER_LIB},encoding="utf-8")
         os.chmod(new/"start-session",0o755); os.chmod(new/"greeter",0o755)
         (new/"VERSION").write_text((version or _version(source))+"\n",encoding="utf-8")
+        for icon in (source.parent/"tvwcs.svg",source.parent.parent/"data"/"tvwcs.svg"):   # TVWCS's icon, installed or in the repository
+            if icon.is_file(): shutil.copy2(icon,new/"tvwcs.svg"); break
         for p in new.rglob("*"): os.chmod(p,0o755 if p.is_dir() else (p.stat().st_mode|0o644)&0o755)
         os.chmod(new,0o755)
         old=lib.with_name(lib.name+".tvwcs-old"); shutil.rmtree(old,ignore_errors=True)
@@ -478,11 +480,13 @@ def root_command(args, packages=()) -> list:
     if not all(re.fullmatch(r"[a-z0-9][a-z0-9+.-]*",p) for p in packages): raise ValueError("Unexpected package name.")
     return ["sh","-c",INSTALL_THEN,"sh",str(len(packages)),*packages,*run]
 
-def tvwcs_session(available, wm, setup=""):
+def tvwcs_session(available, wm, setup="", where=""):
     """The session that starts TVWCS with `wm`: TVWCS's own one (set up next to other desktops), else plain i3 / sway
-    (whose config includes TVWCS, set up for TVWCS only)."""
+    (whose config includes TVWCS, set up for TVWCS only). where is install.sh's answer to where TVWCS starts: usual
+    (plain i3 / sway), sessions (TVWCS's own only) or both."""
     ids=[s["id"] for s in available]
-    order=[wm,f"tvwcs-{wm}"] if setup=="dedicated" else [f"tvwcs-{wm}",wm]
+    usual_first=where=="usual" or (where!="sessions" and setup=="dedicated")
+    order=[wm,f"tvwcs-{wm}"] if usual_first else [f"tvwcs-{wm}",wm]
     return next((i for i in order if i in ids),default_session(available,wm))
 
 def _version(source):

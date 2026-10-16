@@ -75,7 +75,7 @@ The rest is done from the other computer.
    | Question | Answer |
    |---|---|
    | **How should TVWCS be set up?** | Enter (**1**, only TVWCS). |
-   | **Install one now? 1) i3 with Xorg (recommended) 2) sway 3) neither** | Enter (**i3**). sudo asks for your password. |
+   | **Install one now? 1) i3 with Xorg (recommended) 2) sway 3) both 4) neither** | Enter (**i3**). sudo asks for your password. |
    | **Missing packages … Install them now?** | Enter (yes). |
    | **There is no i3 config yet. Create one from the standard template?** | Enter, then choose the `$mod` key and keyboard layout. |
    | **Add TVWCS to your i3 config?** | Enter (yes). |

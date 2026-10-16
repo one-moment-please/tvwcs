@@ -95,7 +95,9 @@ You can delete the downloaded folder afterwards.
 It first prints what it found (for example `Found: no login screen, no desktop sessions, i3 installed, sway not installed.`). Then it asks how TVWCS should be set up:
 
 1. **This computer is only for TVWCS.** It can log you in automatically at start-up and go straight into TVWCS, like a TV. It adds one `include` line to your i3/sway config (or creates a config). Automatic login is off unless you say yes: anyone who switches the computer on gets your session.
-2. **Next to my other desktops.** It adds **TVWCS (i3)** and/or **TVWCS (sway)** to your login screen. That session uses its own config in `~/.config/tvwcs/`, so your usual i3 or sway is not changed. It never sets up automatic login. Adding TVWCS to your usual i3/sway config as well is a separate question, and the default is no.
+2. **Next to my other desktops.** It adds **TVWCS (i3)** and/or **TVWCS (sway)** to your login screen. That session uses its own config in `~/.config/tvwcs/`, so your usual i3 or sway is not changed. It never sets up automatic login.
+
+Then it asks **where TVWCS should start**: in your usual i3/sway session (it adds the `include` line to that config), only in a **TVWCS** session of its own at the login screen (your usual i3/sway sessions are left alone), or both. Next to other desktops the TVWCS session is the default; on a computer only for TVWCS the usual session is, and the question is only asked when there is a login screen. The TVWCS sessions show TVWCS's icon: the letters TV, underlined with a thin oval.
 
 **TVWCS's login screen.** TVWCS has a login screen of its own in its look: it shows who can log in, takes the password from a keyboard or from the remote on an on-screen keyboard (the full one, or a number pad for a password of digits), and starts i3, sway or any other desktop installed. It runs on [greetd](https://sr.ht/~kennylevinsen/greetd/) and cage, which the installer installs. With no login screen on the computer, the installer installs it unless you say no (Enter is yes). Automatic login still works with it: the login screen then only shows after logging out. Next to another login screen it is only offered, and the default is no. **Settings › Features** turns it on or off later.
 
@@ -107,7 +109,7 @@ On a first install it also asks **what to install**: everything TVWCS can use, o
 
 After that it may ask to:
 
-- install i3 (with Xorg) or sway, if neither is installed;
+- install i3 (with Xorg), sway or both, if neither is installed;
 - install missing packages, each listed with what it is for (GTK, sound, the Settings app's tools, an icon theme, the Open Sans font);
 - create an i3/sway config, choosing the `$mod` key and keyboard layout;
 - install TVWCS's login screen (see above);
@@ -116,7 +118,7 @@ After that it may ask to:
 
 It asks before changing any of your files and saves a copy as `<file>.tvwcs-backup` first.
 
-**Settings for scripted installs:** `TVWCS_SETUP=dedicated` or `alongside` answers the first question. `TVWCS_INSTALL=full` or `minimal` answers what to install. `TVWCS_WMS=i3` (or `sway`) sets up only that window manager. `TVWCS_DEST=<folder>` installs somewhere else. `TVWCS_ASSUME_YES=1` answers yes to adding TVWCS to your configs and the login screen (it never installs packages). `TVWCS_NO_RESTART=1` skips restarting a running TVWCS.
+**Settings for scripted installs:** `TVWCS_SETUP=dedicated` or `alongside` answers the first question. `TVWCS_WHERE=usual`, `sessions` or `both` answers where TVWCS starts. `TVWCS_INSTALL=full` or `minimal` answers what to install. `TVWCS_WMS=i3` (or `sway`) sets up only that window manager. `TVWCS_DEST=<folder>` installs somewhere else. `TVWCS_ASSUME_YES=1` answers yes to adding TVWCS to your configs and the login screen (it never installs packages). `TVWCS_NO_RESTART=1` skips restarting a running TVWCS.
 
 ## Using it with a remote
 

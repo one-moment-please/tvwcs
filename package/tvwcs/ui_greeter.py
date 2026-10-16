@@ -5,6 +5,7 @@ shut down and sleep are at the bottom. greetd runs it full screen in cage; see l
 `python3 -m tvwcs.ui_greeter --demo` shows it in a window without greetd: any password but "wrong" logs in."""
 from __future__ import annotations
 import datetime, os, socket, subprocess, sys, threading
+from pathlib import Path
 import gi
 gi.require_version("Gtk","4.0")
 gi.require_version("Gdk","4.0")
@@ -42,6 +43,15 @@ class DemoGreetd:
     def start_session(self, cmd, env=()): print("Would start:",cmd,env); return {"type":"success"}
     def cancel(self): return {"type":"success"}
 
+def tv_mark(size):
+    """TVWCS's icon (TV, underlined with a thin oval), size pixels square, or None when its file is missing."""
+    here=Path(__file__).resolve().parent
+    for f in (Path(loginscreen.GREETER_LIB)/"tvwcs.svg",here.parent/"tvwcs.svg",here.parent.parent/"data"/"tvwcs.svg"):
+        if f.is_file():
+            pic=Gtk.Picture.new_for_filename(str(f)); pic.set_size_request(S(size),S(size)); pic.set_can_shrink(True)
+            pic.set_content_fit(Gtk.ContentFit.CONTAIN); pic.set_valign(Gtk.Align.CENTER); return pic
+    return None
+
 class GreeterWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app,title="Log in")
@@ -54,6 +64,8 @@ class GreeterWindow(Gtk.ApplicationWindow):
         root=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); root.add_css_class("tvwcs-root"); overlay.set_child(root)
         top=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL); top.set_margin_top(S(40)); top.set_margin_start(S(60)); top.set_margin_end(S(60))
         host=Gtk.Label(label=socket.gethostname().split(".")[0]); host.add_css_class("greeter-host"); host.set_xalign(0); host.set_hexpand(True); host.set_valign(Gtk.Align.START)
+        mark=tv_mark(44)
+        if mark: mark.set_margin_end(S(16)); top.append(mark); host.set_valign(Gtk.Align.CENTER)
         top.append(host)
         clock=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.time=Gtk.Label(); self.time.add_css_class("clock-time"); self.time.set_xalign(1)
         self.date=Gtk.Label(); self.date.add_css_class("clock-date"); self.date.set_xalign(1); clock.append(self.time); clock.append(self.date); top.append(clock)
@@ -138,7 +150,9 @@ class GreeterWindow(Gtk.ApplicationWindow):
             self.label_keys()
         name=next((s["name"] for s in self.sessions if s["id"]==self.session),"No session")
         sess=Gtk.Button(); sl=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); a=Gtk.Label(label="Session"); a.set_xalign(0); a.set_hexpand(True)
-        v=Gtk.Label(label=name); v.add_css_class("setting-value"); sl.append(a); sl.append(v); sess.set_child(sl); sess.connect("clicked",lambda *_:self.choose_session())
+        sl.append(a); mark=tv_mark(24) if self.session.startswith("tvwcs-") else None
+        if mark: sl.append(mark)
+        v=Gtk.Label(label=name); v.add_css_class("setting-value"); sl.append(v); sess.set_child(sl); sess.connect("clicked",lambda *_:self.choose_session())
         sess.set_margin_top(S(10))
         go=Gtk.Button(label="Log in"); go.add_css_class("active"); go.connect("clicked",lambda *_:self.submit()); go.set_margin_top(S(10))
         actions=[sess]+([key("Back",lambda:self.show_users(login),"wide")] if len(self.people)>1 else [])+[go]

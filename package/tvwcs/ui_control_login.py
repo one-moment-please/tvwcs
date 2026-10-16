@@ -8,15 +8,17 @@ from tvwcs.ui_control import in_background
 
 CONFIG_FILE=CONFIG_HOME/"tvwcs"/"config.json"
 SETUP_FILE=CONFIG_HOME/"tvwcs"/"setup"
+WHERE_FILE=CONFIG_HOME/"tvwcs"/"where"      # install.sh: where TVWCS starts (usual, sessions or both)
 
 def me() -> str: return account.read().login
 def wm() -> str: return "sway" if features.sway() else "i3"
-def setup() -> str:
-    try: return SETUP_FILE.read_text(encoding="utf-8").strip()
+def _answer(f) -> str:
+    try: return f.read_text(encoding="utf-8").strip()
     except OSError: return ""
+def setup() -> str: return _answer(SETUP_FILE)
 def my_session() -> str:
     """The session that starts TVWCS in the window manager running now."""
-    return loginscreen.tvwcs_session(loginscreen.sessions(),wm(),setup())
+    return loginscreen.tvwcs_session(loginscreen.sessions(),wm(),setup(),_answer(WHERE_FILE))
 
 def run_root(page, args, label, done, packages=()):
     """Run `python3 -m tvwcs.loginscreen args` as root (installing `packages` first), then done(problem or "")."""
