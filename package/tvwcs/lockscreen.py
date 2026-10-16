@@ -23,6 +23,23 @@ def available(env=None, which=shutil.which):
     name="swaylock" if _sway(env) else "i3lock"
     return name if which(name) else ""
 
+def saver_lock(settings, env=None, which=shutil.which):
+    """Locking shows the screen saver (Settings > Power and sleep > Show the screen saver when locked): xsecurelock
+    locks, runs TVWCS's screen saver, and shows its password box when a key is pressed. X11 only: True when chosen
+    and xsecurelock is installed."""
+    env=os.environ if env is None else env
+    return bool((settings or {}).get("screensaver_on_lock")) and not _sway(env) and bool(which("xsecurelock"))
+
+AUTH_TIMEOUT=60   # seconds the password box waits for a key before the screen saver comes back
+def xsecurelock_env(settings, saver, accent=None):
+    """xsecurelock's settings (it reads them from the environment): TVWCS's saver, a minute's wait at the password
+    box, and the screen left to TVWCS's own "Turn off the screen after" (and X's), never blanked by xsecurelock."""
+    return {"XSECURELOCK_SAVER":saver,"XSECURELOCK_AUTH_TIMEOUT":str(AUTH_TIMEOUT),"XSECURELOCK_SAVER_STOP_ON_BLANK":"1",
+            "XSECURELOCK_BLANK_TIMEOUT":"-1","XSECURELOCK_SHOW_USERNAME":"1","XSECURELOCK_SHOW_HOSTNAME":"1",
+            "XSECURELOCK_PASSWORD_PROMPT":"asterisks","XSECURELOCK_AUTH_BACKGROUND_COLOR":BACKGROUND,
+            "XSECURELOCK_AUTH_FOREGROUND_COLOR":"#ffffff","XSECURELOCK_FONT":"Open Sans:size=22",
+            "XSECURELOCK_AUTH_WARNING_COLOR":accent or (settings or {}).get("accent","#0078d7")}
+
 def launcher():
     """The tvwcs launcher script, next to the package (as main.LAUNCHER finds it)."""
     here=Path(__file__).resolve().parent
@@ -32,6 +49,7 @@ def launcher():
 
 def command(settings, env=None, which=shutil.which):
     """`tvwcs lock` when the TVWCS lock screen is chosen and its locker is installed, else None (the usual locker is used)."""
+    if saver_lock(settings,env,which): return [launcher(),"lock"]
     if not (settings or {}).get("tvwcs_lock_screen") or not available(env,which): return None
     return [launcher(),"lock"]
 
@@ -111,9 +129,15 @@ def render(out_dir, accent="#0078d7", user=None, sway=False):
 
 def lock(settings=None, env=None, nofork=False):
     """`tvwcs lock [--nofork]`: paint the picture and start the locker. Falls back to a plain dark lock if painting fails.
-    --nofork: i3lock stays in the foreground until unlocked (xss-lock runs it that way)."""
+    --nofork: i3lock stays in the foreground until unlocked (xss-lock runs it that way). With the screen saver shown
+    while locked, xsecurelock locks instead (see saver_lock)."""
     from tvwcs.session import runtime_dir
     env=os.environ if env is None else env; settings=settings or {}
+    if saver_lock(settings,env):   # the screen saver while locked; xsecurelock stays in the foreground until unlocked
+        from tvwcs import screensaver
+        saver=screensaver.saver_script(launcher(),env)
+        if saver:
+            os.execvpe("xsecurelock",["xsecurelock"],{**env,**xsecurelock_env(settings,saver)})
     locker=available(env)
     if not locker:
         print("TVWCS's lock screen needs i3lock (or swaylock on sway).",file=__import__("sys").stderr); return 1

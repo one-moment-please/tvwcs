@@ -2,7 +2,7 @@
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
-import os, signal, subprocess, time
+import os, shutil, signal, subprocess, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -479,6 +479,12 @@ class PowerPage(Page):
         st=ConfigStore().settings
         logo=st["screensaver_logo"]
         self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
+        on_lock=bool(st["screensaver_on_lock"])
+        if s.session=="sway": why="Not available on sway: swaylock cannot show a screen saver"
+        elif not shutil.which("xsecurelock"): why="Needs xsecurelock. Install it with sudo apt install xsecurelock"
+        else: why="A key shows the password box; after a minute without one, the screen saver comes back"
+        self.row("Show it when the computer locks",_on_off(on_lock),self.toggle_saver_on_lock if s.session!="sway" else None,detail=why,
+                 icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
         self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
                  icon="media-playback-start-symbolic",fallback="▶")
         self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
@@ -489,6 +495,8 @@ class PowerPage(Page):
         self.note("TVWCS's lock screen says the TV is locked and asks for your password. It uses i3lock (or swaylock on sway), "
                   "and xss-lock uses it too when it locks the screen."
                   if own else "Lock (after the time above, or from the power menu) uses the screen locker the system has, such as i3lock or swaylock.")
+        if st["screensaver_on_lock"] and s.session!="sway":
+            self.note("While “Show it when the computer locks” is on, xsecurelock locks the screen instead, with its own password box.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
                       "TVWCS cannot tell how long the computer has been idle: install libxss1, or xprintidle.","error")
@@ -569,15 +577,26 @@ class PowerPage(Page):
     def choose_lock_screen(self):
         def picked(key):
             store=ConfigStore(); store.settings["tvwcs_lock_screen"]=key=="tvwcs"; store.save(); tell_tvwcs("reload")
-            path=getattr(self.state,"xss_lock","")
-            if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
-            if path and path!="?":   # xss-lock (locking when the screen turns off) shows the same lock screen
-                from tvwcs.lockscreen import launcher
-                why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if key=="tvwcs" else "")
-                if why: self.win.notice("Lock screen",why)
-            self.redraw()
+            self.point_xss_lock(store.settings); self.redraw()
         self.win.choose_option("Lock screen",[("tvwcs",LOCK_SCREENS[True]),("system",LOCK_SCREENS[False])],
                                "tvwcs" if ConfigStore().settings["tvwcs_lock_screen"] else "system",picked)
+    def toggle_saver_on_lock(self):
+        store=ConfigStore(); on=not store.settings["screensaver_on_lock"]
+        if on and not shutil.which("xsecurelock"):
+            self.win.notice("Show the screen saver when locked","This needs xsecurelock, which locks the screen while the screen saver shows. "
+                            "Install it with sudo apt install xsecurelock, then turn this on."); return
+        store.settings["screensaver_on_lock"]=on; store.save(); tell_tvwcs("reload")
+        self.point_xss_lock(store.settings); self.redraw()
+    def point_xss_lock(self, settings):
+        """xss-lock (locking when the screen turns off) locks the same way as Lock: through `tvwcs lock` when TVWCS's
+        lock screen or the screen saver while locked is chosen, else with the locker it ran before."""
+        path=getattr(self.state,"xss_lock","")
+        if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
+        if path and path!="?":
+            from tvwcs.lockscreen import launcher
+            use=settings["tvwcs_lock_screen"] or settings["screensaver_on_lock"]
+            why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if use else "")
+            if why: self.win.notice("Lock screen",why)
 
     @staticmethod
     def system_screen_text(s):

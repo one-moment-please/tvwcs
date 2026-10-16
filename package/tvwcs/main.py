@@ -728,6 +728,10 @@ def main():
         return lock(ConfigStore().settings,nofork=len(args)==2)   # read the options again (install.sh, after changing them)
     if len(args)==2 and args[0]=="idle" and args[1] in (*power.ACTIONS,"resume"): return idle_action(args[1])
     if args in (["screensaver"],["screensaver","--preview"]): return screensaver.run(ConfigStore().settings,preview=len(args)==2)
+    if args==["screensaver","--xsecurelock"]:   # xsecurelock's saver, while locked (see lockscreen.py)
+        try: window=int(os.environ.get("XSCREENSAVER_WINDOW",""),0)
+        except ValueError: print("XSCREENSAVER_WINDOW is not set: xsecurelock runs this.",file=sys.stderr); return 2
+        return screensaver.run_in_window(ConfigStore().settings,window)
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app

@@ -125,6 +125,7 @@ DEFAULT_SETTINGS={
     "time_entry":"fields",          # TIME_ENTRY
     "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
+    "screensaver_on_lock":False,    # locking shows the screen saver until a key is pressed (xsecurelock, X11 only; see lockscreen.py)
     "tvwcs_lock_screen":False,      # Lock uses TVWCS's own lock screen (i3lock / swaylock with its message), else the system's locker
     "idle":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "idle_battery":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
@@ -180,7 +181,7 @@ def _clean_settings(raw) -> dict:
     if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
                 "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
-                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","reduce_motion","channel_zero_done"):
+                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","screensaver_on_lock","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))
