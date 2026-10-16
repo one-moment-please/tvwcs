@@ -127,7 +127,7 @@ class InstallTests(unittest.TestCase):
         pid,fd=pty.fork()
         if pid==0:
             os.chdir(self.tmp.name); os.execvpe("sh",["sh",str(SCRIPT)],{**self.env,**env})
-        out=b""; pending=list(answers); deadline=time.time()+60
+        out=b""; pending=list(answers); deadline=time.time()+60; mark=0   # mark: where output after the last answer starts
         while time.time()<deadline:
             r,_,_=select.select([fd],[],[],0.2)
             if r:
@@ -135,11 +135,13 @@ class InstallTests(unittest.TestCase):
                 except OSError: break
                 if not chunk: break
                 out+=chunk
-                if out.rstrip().endswith((b"]",b"]:",b"):")):   # a prompt: the next answer (or "n" when none is left)
+                # a prompt: the next answer (or "n" when none is left). Only text after the last answer counts, so the
+                # terminal's echo of an answer, arriving on its own, is not taken for the same prompt again.
+                if out[mark:].strip() and out.rstrip().endswith((b"]",b"]:",b"):")):
                     last=out.rstrip().rsplit(b"\n",1)[-1].decode(errors="replace")
                     fixed=next((a for k,a in (prompts or {}).items() if k in last),None)
                     answer=fixed if fixed is not None else (pending.pop(0) if pending else "n")
-                    os.write(fd,(answer+"\n").encode()); out+=b"\n"
+                    os.write(fd,(answer+"\n").encode()); out+=b"\n"; mark=len(out)
         if time.time()>=deadline: os.kill(pid,9)   # still asking (an answer it keeps refusing): fail rather than hang
         _pid,status=os.waitpid(pid,0); self.status=os.waitstatus_to_exitcode(status); return out.decode(errors="replace")
     def test_asks_once_whether_it_is_used_on_a_tv_or_a_desktop(self):
