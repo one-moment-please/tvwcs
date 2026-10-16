@@ -28,7 +28,9 @@ def saver_lock(settings, env=None, which=shutil.which):
     locks, runs TVWCS's screen saver, and shows its password box when a key is pressed. X11 only: True when chosen
     and xsecurelock is installed."""
     env=os.environ if env is None else env
-    return bool((settings or {}).get("screensaver_on_lock")) and not _sway(env) and bool(which("xsecurelock"))
+    from tvwcs.features import enabled
+    return (bool((settings or {}).get("screensaver_on_lock")) and enabled(settings or {},"lock_saver") and not _sway(env)
+            and bool(which("xsecurelock")))
 
 AUTH_TIMEOUT=60   # seconds the password box waits for a key before the screen saver comes back
 def xsecurelock_env(settings, saver, accent=None):

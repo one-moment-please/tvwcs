@@ -20,6 +20,8 @@
 # to set up (default: those installed; with neither installed, it offers to install one). TVWCS_ETC overrides /etc
 # (where the standard config templates are), TVWCS_RUN overrides /run (where systemd is detected), and TVWCS_SHARE
 # and TVWCS_BINDIR override /usr/share and /usr/local/bin (where the login screen's session entries go).
+# TVWCS_INSTALL=full|minimal answers "what to install" (asked on a first install only; default full): a minimal install
+# leaves out the software of the optional features (Settings > Features turns them on later).
 # Options: --missing only lists the packages this version needs that are not installed, one per line as
 # "need<TAB>packages<TAB>what for", and changes nothing (the in-app updater asks about them before updating).
 # --help shows this text.
@@ -287,6 +289,25 @@ mkdir -p "$(dirname "$SETUP_FILE")"; echo "$SETUP" > "$SETUP_FILE"
 if [ "$SETUP" = alongside ]; then echo "Setting TVWCS up next to your other desktops."; else echo "Setting this computer up for TVWCS only."; fi
 fi
 
+# ------------------------------------------------------------------ everything, or a minimal install
+# A minimal install has the Quick Menu, the applications list and the Settings pages that need nothing more. The
+# optional features' packages (sound, Bluetooth, network, storage, the terminal, Flathub apps, the screen saver,
+# hiding the pointer) are not installed, and the features whose software is missing start turned off; Settings >
+# Features turns them on, installing what they need. Asked on a first install only: later runs keep to the features.
+MINIMAL=""
+case "${TVWCS_INSTALL:-}" in
+    minimal) MINIMAL=1 ;; full|"") ;;
+    *) echo "install.sh: TVWCS_INSTALL must be full or minimal, not \"$TVWCS_INSTALL\"." >&2; exit 1 ;;
+esac
+if [ -z "$CHECK_ONLY" ] && [ -z "${TVWCS_INSTALL:-}" ] && [ -t 0 ] && [ ! -f "$CONFIG_HOME/tvwcs/config.json" ]; then
+    printf "\nWhat should be installed?\n  1) Everything TVWCS can use (sound, Bluetooth, network, storage, a terminal, Flathub apps, the screen saver)\n  2) A minimal install: the Quick Menu, the applications list and basic Settings (turn the rest on later in Settings > Features)\nChoose 1 or 2 [1]: "
+    read -r ANSWER || ANSWER=""
+    case "$ANSWER" in 2*|[Mm]*) MINIMAL=1 ;; esac
+fi
+[ -z "$MINIMAL" ] || echo "A minimal install: optional features are left out."
+# The features turned off in Settings > Features (or by a minimal install): their packages are not asked for.
+FEATURES_OFF=" $(PYTHONPATH=$(dirname "$PKG") python3 -m tvwcs.features off 2>/dev/null | tr '\n' ' ')"
+
 # ------------------------------------------------------------------ a window manager, when there is none (optional)
 # TVWCS runs in i3 or sway. With neither installed, offer to install one with the package manager: i3 (recommended:
 # TVWCS places its window best there) together with Xorg (unless an X server, such as XLibre, is already installed),
@@ -346,7 +367,12 @@ offer_wm_install() {
 # Listed with what each is for, and offered for installing (on a terminal, on a supported distribution); else the
 # command to install them is printed. A sound server that is already there is never replaced.
 NEEDS=""   # one line per need: "packages<TAB>what for"
-need() { NEEDS="$NEEDS$1	$2
+need() {   # need <packages> <what for> [feature]: a feature's packages are left out of a minimal install, and while it is off
+    if [ -n "${3:-}" ]; then
+        [ -z "$MINIMAL" ] || return 0
+        case "$FEATURES_OFF" in *" $3 "*) return 0 ;; esac
+    fi
+    NEEDS="$NEEDS$1	$2
 "; }
 icon_theme_installed() {   # Adwaita or Papirus, system-wide or the user's own (the themes TVWCS's icons are drawn from)
     for D in "$SHARE/icons" "${XDG_DATA_HOME:-$HOME/.local/share}/icons" "$HOME/.icons"; do
@@ -364,24 +390,25 @@ metro_font_installed() {   # a font the Metro theme names before the fallbacks: 
 python3 -c 'import gi; gi.require_version("Gtk","4.0")' 2>/dev/null || need "$(pkg gtk)" "GTK 4 for Python: TVWCS's windows (required)"
 command -v i3 >/dev/null 2>&1 || command -v sway >/dev/null 2>&1 || need "$(pkg i3)" "i3: the window manager TVWCS runs in (required)"
 command -v sway >/dev/null 2>&1 || command -v xdotool >/dev/null 2>&1 || need "$(pkg xdotool)" "places TVWCS's window on the right monitor in i3"
-command -v pipewire >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1 || need "$(pkg pipewire)" "PipeWire: sound, with its PulseAudio layer (no sound server is installed)"
-command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Settings: sound"
+command -v pipewire >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1 || need "$(pkg pipewire)" "PipeWire: sound, with its PulseAudio layer (no sound server is installed)" sound
+command -v pactl >/dev/null 2>&1 || need "$(pkg pactl)" "Settings: sound" sound
 if command -v i3 >/dev/null 2>&1 && ! command -v xprintidle >/dev/null 2>&1 && ! python3 -c 'import ctypes.util, sys; sys.exit(not ctypes.util.find_library("Xss"))' 2>/dev/null; then   # ldconfig is in /sbin, off a user's PATH
     need "$(pkg xss)" "Settings: Power and sleep (how long the computer has been idle, in i3)"; fi
 if command -v sway >/dev/null 2>&1 && ! command -v swayidle >/dev/null 2>&1; then need swayidle "Settings: Power and sleep (in sway)"; fi
-if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then need "$(pkg unclutter)" "hides the mouse pointer after 3 seconds without moving (i3)"; fi
+if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then need "$(pkg unclutter)" "hides the mouse pointer after 3 seconds without moving (i3)" cursor; fi
+if command -v i3 >/dev/null 2>&1 && ! command -v xsecurelock >/dev/null 2>&1; then need xsecurelock "the screen saver while the computer is locked (i3)" lock_saver; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Settings: displays (sway has its own)"; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v xsetroot >/dev/null 2>&1; then need "$(pkg xrandr)" "the background colour (xsetroot, in i3)"; fi
-command -v udisksctl >/dev/null 2>&1 || need udisks2 "Settings: storage (opening and closing drives)"
+command -v udisksctl >/dev/null 2>&1 || need udisks2 "Settings: storage (opening and closing drives)" storage
 # Helper programs that are not on PATH (TVWCS_LIBEXEC lets the tests point elsewhere).
 libexec_has() { for d in ${TVWCS_LIBEXEC:-/usr/libexec /usr/lib/gvfs /usr/lib}; do [ -e "$d/$1" ] && return 0; done; return 1; }
 command -v gio >/dev/null 2>&1 && command -v gsettings >/dev/null 2>&1 || need libglib2.0-bin "Settings: network shares (gio), and light or dark mode for GTK apps (gsettings)"
-libexec_has gvfsd-smb || need gvfs-backends "Settings: storage (network shares)"
+libexec_has gvfsd-smb || need gvfs-backends "Settings: storage (network shares)" storage
 libexec_has xdg-desktop-portal-gtk || need "xdg-desktop-portal xdg-desktop-portal-gtk" "light or dark mode for Flatpak apps and browsers"
-command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth"
-command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)"
-python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page"
-python3 -c 'import gi; gi.require_foreign("cairo")' 2>/dev/null || need "$(pkg cairo)" "the screen saver (drawing with cairo)"
+command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth" bluetooth
+command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)" network
+python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page" terminal
+python3 -c 'import gi; gi.require_foreign("cairo")' 2>/dev/null || need "$(pkg cairo)" "the screen saver (drawing with cairo)" screensaver
 icon_theme_installed || need "$(pkg icons)" "icons for apps and buttons (Papirus, papirus-icon-theme, has more app icons)"
 metro_font_installed || need "$(pkg font)" "Open Sans: the font of TVWCS's Metro look"
 start_pipewire() {   # PipeWire just installed: start it in a session that runs now (systemd starts it by itself from the next log-in)
@@ -407,6 +434,10 @@ if [ -n "$NEEDS" ]; then
     else
         echo "To install them:  $(install_hint "$ALL")"
     fi
+fi
+# A minimal install: the features whose software is missing start turned off (Settings > Features turns them on).
+if [ -n "$MINIMAL" ] && [ -z "$CHECK_ONLY" ]; then
+    PYTHONPATH="$DEST" python3 -m tvwcs.features minimal || echo "Could not turn the optional features off; do it in Settings > Features." >&2
 fi
 
 # ------------------------------------------------------------------ window manager configs

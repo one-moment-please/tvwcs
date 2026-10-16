@@ -29,7 +29,7 @@ class InstallTests(unittest.TestCase):
         (self.share/"fonts"/"truetype"/"open-sans").mkdir(parents=True); (self.share/"fonts"/"truetype"/"open-sans"/"OpenSans-Regular.ttf").write_text("")
         self.bindir=Path(self.tmp.name)/"usr-local-bin"
         self.env={"PATH":os.environ["PATH"],"HOME":str(self.home),"TVWCS_ETC":str(etc),"TVWCS_NO_RESTART":"1",
-                  "TVWCS_WMS":"i3","XDG_RUNTIME_DIR":str(Path(self.tmp.name)/"run"),"TVWCS_SETUP":"dedicated",
+                  "TVWCS_WMS":"i3","XDG_RUNTIME_DIR":str(Path(self.tmp.name)/"run"),"TVWCS_SETUP":"dedicated","TVWCS_INSTALL":"full",
                   "TVWCS_SHARE":str(self.share),"TVWCS_BINDIR":str(self.bindir)}
         self.dest=self.home/".local"/"share"/"tvwcs"; self.i3=self.home/".config"/"i3"/"config"
     def tearDown(self): self.tmp.cleanup()
@@ -47,6 +47,34 @@ class InstallTests(unittest.TestCase):
         self.assertIn("need\tpython3-gi gir1.2-gtk-4.0\tGTK 4 for Python: TVWCS's windows (required)\n",p.stdout)
         self.assertTrue(all(line.startswith("need\t") for line in p.stdout.splitlines()),p.stdout)
         self.assertFalse(self.dest.exists()); self.assertFalse((self.home/".config").exists())
+    def test_a_minimal_install_leaves_the_features_packages_out(self):
+        bin_=Path(self.tmp.name)/"fakebin"; bin_.mkdir()
+        (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE
+        (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        def missing(kind):
+            p=subprocess.run(["sh",str(SCRIPT),"--missing"],env={**self.env,"TVWCS_INSTALL":kind,"PATH":f"{bin_}:{self.env['PATH']}"},
+                             stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+            self.assertEqual(p.returncode,0,p.stderr); return p.stdout
+        self.assertIn("Settings: the terminal page",missing("full"))
+        out=missing("minimal")
+        self.assertIn("GTK 4 for Python",out); self.assertNotIn("terminal page",out); self.assertNotIn("Settings: sound",out)
+        self.assertNotIn("screen saver",out)
+    def test_features_turned_off_are_not_asked_for(self):
+        if shutil.which("bluetoothctl"): self.skipTest("bluetoothctl is installed here")
+        (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        run=lambda:subprocess.run(["sh",str(SCRIPT),"--missing"],env=self.env,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60).stdout
+        self.assertIn("Settings: Bluetooth",run())
+        config=self.home/".config"/"tvwcs"/"config.json"; config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({"profiles":[],"settings":{"features":{"bluetooth":False}}}))
+        self.assertNotIn("Settings: Bluetooth",run())
+    def test_asks_full_or_minimal_on_a_first_install(self):
+        out=self.converse([],{"Choose 1 or 2":"2"},TVWCS_INSTALL="")
+        self.assertIn("What should be installed?",out); self.assertIn("A minimal install: optional features are left out.",out)
+        config=self.home/".config"/"tvwcs"/"config.json"
+        if shutil.which("bluetoothctl") is None:
+            self.assertIn("Turned off: Bluetooth",out); self.assertFalse(json.loads(config.read_text())["settings"]["features"]["bluetooth"])
+        out=self.converse([],TVWCS_INSTALL="")   # installed before: not asked again
+        self.assertNotIn("What should be installed?",out)
     def test_help_and_unknown_options_install_nothing(self):
         p=subprocess.run(["sh",str(SCRIPT),"--help"],env=self.env,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
         self.assertEqual(p.returncode,0); self.assertIn("--missing",p.stdout); self.assertNotIn("set -eu",p.stdout)
@@ -305,7 +333,7 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn("icons for apps",self.run_install(**env))
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","unclutter","xprintidle"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","unclutter","xprintidle","xsecurelock"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
         for helper in ("gvfsd-smb","xdg-desktop-portal-gtk"): (bin_/helper).write_text("")
         env["TVWCS_LIBEXEC"]=str(bin_)
         (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE

@@ -12,7 +12,7 @@ from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
-from tvwcs import cursor
+from tvwcs import cursor, features
 from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, icon_only, Marquee, muted_label, scroll_to_show, section_title, usable)
 
 FOCUS_TIP_DELAY=3000                     # ms a selected icon-only button waits before showing its tooltip (Settings > Options > Button hints)
@@ -178,7 +178,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._status_shown=status
         looks={"network":quick_status.network_icon(status),"volume":quick_status.volume_icon(status),
                "bluetooth":quick_status.bluetooth_icon(status),"updates":quick_status.updates_icon(status)}
-        shown={"network":True,"volume":status.volume is not None,"bluetooth":bool(status.bluetooth),"updates":status.updates>0}
+        st=self.app.store.settings   # a feature turned off (Settings > Features) shows no icon
+        shown={"network":True,"volume":status.volume is not None and features.enabled(st,"sound"),
+               "bluetooth":bool(status.bluetooth) and features.enabled(st,"bluetooth"),"updates":status.updates>0}
         for key,b in buttons.items():
             icon,fallback,tip=looks[key]
             if key=="updates":

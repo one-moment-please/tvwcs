@@ -14,8 +14,10 @@ import ctypes, ctypes.util, os, shutil, subprocess
 DEFAULT_SECONDS=3
 SECONDS_RANGE=(1,60)
 
-def hide_enabled(settings):
-    """cursor_hide None follows the use: on for a TV, off at a desk."""
+def hide_enabled(settings, env=None):
+    """cursor_hide None follows the use: on for a TV, off at a desk. On X11 it needs the "cursor" feature (unclutter)."""
+    from tvwcs.features import enabled
+    if not sway(env) and not enabled(settings,"cursor"): return False
     v=settings.get("cursor_hide")
     return settings.get("use")=="tv" if v is None else bool(v)
 
@@ -86,7 +88,7 @@ class CursorHider:
     def __init__(self, run=subprocess.run, popen=subprocess.Popen, which=shutil.which):
         self.run,self.popen,self.which=run,popen,which; self.proc=None; self.applied=None
     def apply(self, settings, env=None):
-        on,seconds=hide_enabled(settings),hide_seconds(settings)
+        on,seconds=hide_enabled(settings,env),hide_seconds(settings)
         if (on,seconds)==self.applied and (not on or sway(env) or (self.proc is not None and self.proc.poll() is None)): return ""
         self.applied=(on,seconds)
         if sway(env):

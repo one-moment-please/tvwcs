@@ -11,7 +11,7 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
-from tvwcs import __version__, cursor, power, privilege, selfupdate
+from tvwcs import __version__, cursor, features, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, PASSWORD_KEYBOARDS, SCALE_LABELS, SCREENSAVER_LOGOS, STARTUP_LABELS, STARTUP_MODES,
                          THEMES, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
@@ -66,7 +66,14 @@ class Page:
         if not self.busy and not self.win.modal_open and self.win.is_visible(): self.refresh(quiet=True)
         return GLib.SOURCE_CONTINUE
     def read(self): return None
+    def feature_off(self):
+        """The feature this page belongs to (features.py) is turned off: the page only offers to turn it on."""
+        key=features.PAGE_FEATURE.get(self.key)
+        return key is not None and not features.enabled(ConfigStore().settings,key)
     def refresh(self, quiet=False):
+        if self.feature_off():
+            if not quiet or self.state is not None: self.state=None; self.redraw()
+            return
         if self.busy: return
         self.busy=True
         if not quiet: self.set_status("Checking…")
@@ -105,7 +112,8 @@ class Page:
         if wanted is not None and old is not None: old=wanted
         scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
         clear_box(self.body); self.groups=[]; self._ids={}
-        self.draw(self.state)
+        if self.feature_off(): self.draw_feature_off()
+        else: self.draw(self.state)
         if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
             GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
@@ -121,6 +129,15 @@ class Page:
             if target is not None and usable(target): target.grab_focus()
             elif not self.win._focus_first(self.groups): self.win.tab_buttons[self.key].grab_focus()
     def draw(self, state): pass
+    def draw_feature_off(self):
+        f=features.BY_KEY[features.PAGE_FEATURE[self.key]]
+        self.section("TURNED OFF")
+        self.note(f"{f.label} is turned off. {f.what}")
+        missing=features.missing_packages(f) if not features.installed(f) else []
+        self.row("Turn it on","",lambda:turn_feature_on(self,f),icon="list-add-symbolic",fallback="+",ident="feature:on",
+                 detail=f"Installs {', '.join(missing)} first. It asks for your password." if missing else "Its software is already installed")
+        self.row("All features","",lambda:self.win.select_tab("features") or self.win.enter_page(),icon="view-list-symbolic",fallback="☰",
+                 ident="feature:all",detail="Turn features on or off, and install or uninstall their software")
 
     def add(self, widget): self.body.append(widget); return widget
     def section(self, text): return self.add(section_title(text))
@@ -242,7 +259,11 @@ class OptionsPage(_ConfigPage):
                   "(overscan): if the edges of TVWCS are missing, make this larger, or turn overscan off in the TV's own picture settings.")
         self.option("Reduce motion","reduce_motion","On: pages change at once, without fading. Suits a slow TV box.")
         hide=cursor.hide_enabled(st); seconds=cursor.hide_seconds(st)
-        self.row("Hide the mouse pointer",_on_off(hide),self.toggle_cursor_hide,ident="opt:cursor_hide",value_css="state-on" if hide else "setting-value")
+        pointer=features.BY_KEY["cursor"]
+        if features.applies(pointer) and not (features.enabled(st,"cursor") and features.installed(pointer)):   # X11 without unclutter
+            self.row("Hide the mouse pointer","Off",lambda:turn_feature_on(self,pointer,after=lambda:self.change(lambda s:s.settings.update(cursor_hide=True))),
+                     ident="opt:cursor_hide",detail=f"Needs {', '.join(pointer.packages)}. Choose this to install it")
+        else: self.row("Hide the mouse pointer",_on_off(hide),self.toggle_cursor_hide,ident="opt:cursor_hide",value_css="state-on" if hide else "setting-value")
         if hide:
             lo,hi=cursor.SECONDS_RANGE
             less=self.button("list-remove-symbolic","−","Sooner",lambda:self.change_cursor_seconds(-1)) if seconds>lo else None
@@ -492,25 +513,32 @@ class PowerPage(Page):
                   "or while an application keeps the computer awake.")
         self.section("SCREEN SAVER")
         st=ConfigStore().settings
-        logo=st["screensaver_logo"]
-        self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
-        on_lock=bool(st["screensaver_on_lock"])
-        if s.session=="sway": why="Not available on sway: swaylock cannot show a screen saver"
-        elif not shutil.which("xsecurelock"): why="Needs xsecurelock. Install it with sudo apt install xsecurelock"
-        else: why="A key shows the password box; after a minute without one, the screen saver comes back"
-        self.row("Show it when the computer locks",_on_off(on_lock),self.toggle_saver_on_lock if s.session!="sway" else None,detail=why,
-                 icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
-        self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
-                 icon="media-playback-start-symbolic",fallback="▶")
-        self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
-                  "The TVWCS logo is drawn in the same style as the DVD one; a picture of your own can be any PNG, JPEG or SVG.")
+        saver=features.BY_KEY["screensaver"]
+        if not features.enabled(st,"screensaver"):
+            self.row("Screen saver","Off",lambda:turn_feature_on(self,saver),icon="video-display-symbolic",fallback="▭",ident="saver:feature",
+                     detail="Turned off in Features"+("" if features.installed(saver) else f". Turning it on installs {', '.join(saver.packages)}"))
+        else:
+            logo=st["screensaver_logo"]
+            self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
+            on_lock=bool(st["screensaver_on_lock"]) and features.enabled(st,"lock_saver")
+            lock_saver=features.BY_KEY["lock_saver"]; ready=features.enabled(st,"lock_saver") and features.installed(lock_saver)
+            if s.session=="sway": why="Not available on sway: swaylock cannot show a screen saver"
+            elif not ready: why=f"Needs {', '.join(lock_saver.packages)}, which locks the screen while the screen saver shows. Choose this to install it"
+            else: why="A key shows the password box; after a minute without one, the screen saver comes back"
+            action=None if s.session=="sway" else self.toggle_saver_on_lock if ready else lambda:turn_feature_on(self,lock_saver,after=self.saver_on_lock_on)
+            self.row("Show it when the computer locks",_on_off(on_lock),action,detail=why,
+                     icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
+            self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
+                     icon="media-playback-start-symbolic",fallback="▶")
+            self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
+                      "The TVWCS logo is drawn in the same style as the DVD one; a picture of your own can be any PNG, JPEG or SVG.")
         self.section("LOCKING")
         own=bool(ConfigStore().settings["tvwcs_lock_screen"])
         self.row("Lock screen",LOCK_SCREENS[own],self.choose_lock_screen,icon="system-lock-screen-symbolic",fallback="🔒",ident="lock:screen")
         self.note("TVWCS's lock screen says the TV is locked and asks for your password. It uses i3lock (or swaylock on sway), "
                   "and xss-lock uses it too when it locks the screen."
                   if own else "Lock (after the time above, or from the power menu) uses the screen locker the system has, such as i3lock or swaylock.")
-        if st["screensaver_on_lock"] and s.session!="sway":
+        if st["screensaver_on_lock"] and features.enabled(st,"lock_saver") and s.session!="sway":
             self.note("While “Show it when the computer locks” is on, xsecurelock locks the screen instead, with its own password box.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
@@ -543,8 +571,9 @@ class PowerPage(Page):
     def idle_rows(self, s, times, option, heading):
         """The four times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
         self.section(heading); tag="" if option=="idle" else "bat"
-        self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
-                 icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
+        if features.enabled(ConfigStore().settings,"screensaver"):
+            self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
+                     icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
         screen=times["screen_off"]
         self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
                  lambda:self.choose("screen_off",screen,system=True,option=option),icon="video-display-symbolic",fallback="🖵",ident=f"idle{tag}:screen_off")
@@ -595,13 +624,11 @@ class PowerPage(Page):
             self.point_xss_lock(store.settings); self.redraw()
         self.win.choose_option("Lock screen",[("tvwcs",LOCK_SCREENS[True]),("system",LOCK_SCREENS[False])],
                                "tvwcs" if ConfigStore().settings["tvwcs_lock_screen"] else "system",picked)
-    def toggle_saver_on_lock(self):
-        store=ConfigStore(); on=not store.settings["screensaver_on_lock"]
-        if on and not shutil.which("xsecurelock"):
-            self.win.notice("Show the screen saver when locked","This needs xsecurelock, which locks the screen while the screen saver shows. "
-                            "Install it with sudo apt install xsecurelock, then turn this on."); return
+    def toggle_saver_on_lock(self, on=None):
+        store=ConfigStore(); on=not store.settings["screensaver_on_lock"] if on is None else on
         store.settings["screensaver_on_lock"]=on; store.save(); tell_tvwcs("reload")
         self.point_xss_lock(store.settings); self.redraw()
+    def saver_on_lock_on(self): self.toggle_saver_on_lock(True)
     def point_xss_lock(self, settings):
         """xss-lock (locking when the screen turns off) locks the same way as Lock: through `tvwcs lock` when TVWCS's
         lock screen or the screen saver while locked is chosen, else with the locker it ran before."""
@@ -1775,4 +1802,75 @@ class DateTimePage(Page):
             store=ConfigStore(); store.settings["clock_24h"]=key=="24"; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
         self.win.choose_option("Quick Menu clock",[("12","12-hour (2:05 PM)"),("24","24-hour (14:05)")],"24" if self.state[1] else "12",picked)
 
-PAGES=(OptionsPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)
+# ====================================================================== Features
+def turn_feature_on(page, f, after=None):
+    """Install the feature's missing packages (asking first), then turn it on; TVWCS and the page read it again."""
+    def switch_on():
+        store=ConfigStore(); store.settings["features"].pop(f.key,None); store.save(); tell_tvwcs("reload")
+        if after: after()
+        page.refresh(quiet=True)
+    if features.installed(f): switch_on(); return
+    missing=features.missing_packages(f)
+    if not shutil.which("apt-get"):
+        page.win.notice(f.label,f"{f.label} needs {', '.join(f.packages)} (the Debian names). Install them with your package manager, then turn it on here.")
+        return
+    lines=[]
+    def done(code, tail):
+        page.set_status("")
+        if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be installed.").strip()); return
+        switch_on()
+    def go():
+        page.set_status(f"Installing {', '.join(missing)}…")
+        page.win.run_as_root(features.install_argv(missing),f"Installing {f.label}",lines.append,done)
+    page.win.confirm(f"Turn on {f.label}?",f"{f.what} It needs {', '.join(missing)}, which will be installed now. It asks for your password.",
+                     "Install",go,danger=False)
+
+def turn_feature_off(page, f, uninstall):
+    def switch_off():
+        store=ConfigStore(); store.settings["features"][f.key]=False; store.save(); tell_tvwcs("reload"); page.refresh(quiet=True)
+    if not uninstall: switch_off(); return
+    page.set_status("Checking what else needs it…")
+    def check(): return features.removable(f,ConfigStore().settings)
+    def checked(result):
+        packages,why=result; page.set_status("")
+        if why: page.win.notice(f"Uninstall {f.label}",why+" It can still be turned off without uninstalling."); return
+        lines=[]
+        def done(code, tail):
+            page.set_status("")
+            if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be uninstalled.").strip())
+            switch_off()
+        def go():
+            page.set_status(f"Uninstalling {', '.join(packages)}…")
+            page.win.run_as_root(features.remove_argv(packages),f"Uninstalling {f.label}",lines.append,done)
+        page.win.confirm(f"Uninstall {f.label}?",f"This turns {f.label} off and uninstalls {', '.join(packages)}. Nothing else installed "
+                         "needs them, and their settings files are kept. Turning it on again installs them again.","Uninstall",go)
+    in_background(check,checked,lambda exc:(page.set_status(""),page.win.notice(f.label,str(exc))))
+
+class FeaturesPage(Page):
+    """The features that need extra software (features.py): on or off, with their software installed or uninstalled."""
+    key="features"; title="Features"; icon="view-list-symbolic"; fallback="☰"
+    def read(self):
+        st=ConfigStore().settings
+        return [(f,features.enabled(st,f.key),features.installed(f)) for f in features.FEATURES if features.applies(f)]
+    def summary(self):
+        if not self.state: return ""
+        on=sum(1 for _f,e,_i in self.state if e); return f"{on} of {len(self.state)} on"
+    def draw(self, rows):
+        self.section("FEATURES")
+        for f,on,have in rows:
+            if on and have: value,detail="On",f.what
+            elif on: value,detail="Needs installing",f"{f.what} Needs {', '.join(f.packages)}."
+            else: value,detail="Off",f.what+("" if have else f" Turning it on installs {', '.join(f.packages)}.")
+            self.row(f.label,value,lambda f=f,on=on,have=have:self.change(f,on and have),detail=detail,ident=f"feature:{f.key}",
+                     value_css="state-on" if on and have else "setting-value")
+        self.note("A minimal install starts with the features whose software is not installed turned off. A feature that is off "
+                  "keeps its Settings page, which only offers to turn it on. Uninstalling removes only its own packages, and only "
+                  "when nothing else installed needs them; it never removes other software.")
+    def change(self, f, on):
+        if not on: turn_feature_on(self,f); return
+        def picked(key):
+            if key=="off": turn_feature_off(self,f,False)
+            elif key=="uninstall": turn_feature_off(self,f,True)
+        self.win.choose_option(f.label,[("keep","Keep it on"),("off","Turn it off"),("uninstall","Turn it off and uninstall its software")],"keep",picked)
+
+PAGES=(OptionsPage,FeaturesPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)

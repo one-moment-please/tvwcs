@@ -17,7 +17,7 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
 from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs import appearance, cursor, power, privilege, quick_status, screensaver, tv_mode
+from tvwcs import appearance, cursor, features, power, privilege, quick_status, screensaver, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ApplicationProfiles, ProfileEditor
@@ -100,6 +100,7 @@ class IdleWatcher:
             self.done.add(a)
             if a=="screen_off": power.screen_off()
             elif a=="screensaver":
+                if not features.enabled(self.app.store.settings,"screensaver"): continue
                 problem=screensaver.start(LAUNCHER)
                 if problem: print(problem,file=sys.stderr)
             else: self.app.run_system_action(a)

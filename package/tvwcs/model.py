@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_LABELS, assigned, clean_hotkeys, valid_spec
 from tvwcs.pinlock import valid_hash
+from tvwcs.features import clean as clean_features
 from tvwcs.power import clean_critical, clean_idle
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
@@ -123,6 +124,7 @@ DEFAULT_SETTINGS={
     "screensaver_image":"",         # the picture for "image"
     "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
+    "features":{},                  # the features turned off ({key: False}; see features.py), as a minimal install starts
     "cursor_hide":None,             # hide the mouse pointer when it rests (None: on in TV mode, off at a desk; see cursor.py)
     "cursor_hide_seconds":3,        # ... after this many seconds without moving
     "screensaver_on_lock":False,    # locking shows the screen saver until a key is pressed (xsecurelock, X11 only; see lockscreen.py)
@@ -182,6 +184,7 @@ def _clean_settings(raw) -> dict:
                 "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
                 "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","screensaver_on_lock","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
+    s["features"]=clean_features(raw.get("features"))
     if isinstance(raw.get("cursor_hide"),bool): s["cursor_hide"]=raw["cursor_hide"]
     sec=raw.get("cursor_hide_seconds")
     if isinstance(sec,int) and not isinstance(sec,bool) and 1<=sec<=60: s["cursor_hide_seconds"]=sec
