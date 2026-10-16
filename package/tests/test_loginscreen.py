@@ -30,6 +30,7 @@ class RootTests(unittest.TestCase):
         link.symlink_to(f"/lib/systemd/system/{unit}.service")
 
     def test_sessions_put_tvwcs_first_and_leave_out_hidden_and_missing_ones(self):
+        (self.root/"usr"/"share"/"xsessions"/"i3-with-shmlog.desktop").write_text("[Desktop Entry]\nName=i3 (with debug log)\nExec=i3-with-shmlog\nTryExec=i3\n")
         ids=[s["id"] for s in loginscreen.sessions()]
         self.assertEqual(ids,["tvwcs-i3","i3","sway","cinnamon"])
         s={x["id"]:x for x in loginscreen.sessions()}
@@ -55,7 +56,9 @@ class RootTests(unittest.TestCase):
         self.assertTrue(st["ours"]); self.assertEqual(st["fallback"],"lightdm"); self.assertFalse(st["outdated"]); self.assertFalse(st["look_changed"])
         self.assertTrue(loginscreen.status("10.0.0",{})["outdated"])
         self.c.disable(loginscreen.fallback())
-        self.assertEqual(loginscreen.current(),"lightdm"); self.assertFalse(lib.exists()); self.assertFalse((self.etc/"greetd"/"config.toml").exists())
+        self.assertEqual(loginscreen.current(),"lightdm"); self.assertFalse(lib.exists())
+        self.assertEqual((self.etc/"greetd"/"config.toml").read_text(),loginscreen.GREETD_DEFAULT)   # greetd's own config again, not TVWCS's
+        self.assertFalse(loginscreen.greetd_is_ours())
         self.assertIn(["systemctl","enable","--force","lightdm.service"],self.c.calls)
 
     def test_another_greeters_config_is_kept_and_put_back(self):

@@ -29,7 +29,8 @@ button.key { min-height: 52px; min-width: 44px; padding: 0 6px; font-size: 20px;
 button.key.pad { min-height: 64px; font-size: 26px; }
 button.key.wide { font-size: 16px; }
 entry.password-field { font-size: 26px; min-height: 56px; }
-.signing-in { color: @MUTED@; font-size: 18px; }
+.signing-in { color: @MUTED@; }
+.greeter-status { font-size: 18px; }
 """
 KEYS={"lower":("1234567890","qwertyuiop","asdfghjkl'","zxcvbnm,.-"),
       "upper":("1234567890","QWERTYUIOP","ASDFGHJKL\"","ZXCVBNM;:_"),
@@ -82,6 +83,8 @@ class GreeterWindow(Gtk.ApplicationWindow):
         self.scrim=Gtk.Box(); self.scrim.add_css_class("modal-scrim"); self.scrim.set_visible(False); overlay.add_overlay(self.scrim)
         self.card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); self.card.add_css_class("modal-card"); self.card.set_halign(Gtk.Align.CENTER)
         self.card.set_valign(Gtk.Align.CENTER); self.card.set_size_request(S(560),-1); self.scrim.append(self.card); self.card.set_hexpand(True)
+        # cage puts the pointer in the middle of the screen: hidden until the mouse is really moved
+        self.set_cursor_from_name("none"); self._pointer=None; motion=Gtk.EventControllerMotion(); motion.connect("motion",self.pointer_moved); self.add_controller(motion)
         keys=Gtk.EventControllerKey(); keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE); keys.connect("key-pressed",self.key_pressed); self.add_controller(keys)
         self.tick(); GLib.timeout_add_seconds(5,self.tick)
         if not self.people: self.show_message("Nobody can log in","There are no user accounts on this computer that can log in."); return
@@ -89,6 +92,9 @@ class GreeterWindow(Gtk.ApplicationWindow):
         if len(self.people)==1: self.show_password(last)
         else: self.show_users(last)
 
+    def pointer_moved(self, _controller, x, y):
+        if self._pointer is None: self._pointer=(x,y); return
+        if abs(x-self._pointer[0])+abs(y-self._pointer[1])>8: self.set_cursor(None)
     def tick(self):
         now=datetime.datetime.now()
         self.time.set_text(now.strftime("%H:%M") if self.app.clock_24h else now.strftime("%I:%M %p").lstrip("0"))
@@ -127,8 +133,9 @@ class GreeterWindow(Gtk.ApplicationWindow):
         h=Gtk.Label(label="Password"); h.add_css_class("section-title"); h.set_xalign(0); right.append(h)
         self.entry=Gtk.PasswordEntry(); self.entry.add_css_class("password-field"); self.entry.set_show_peek_icon(True); self.entry.set_text(typed)
         self.entry.connect("activate",lambda *_:self.submit()); self.entry.set_margin_bottom(S(4)); right.append(self.entry)
-        self.status=Gtk.Label(label=error or " "); self.status.add_css_class("error" if error else "signing-in"); self.status.set_xalign(0); self.status.set_wrap(True)
-        self.status.set_margin_bottom(S(6)); right.append(self.status)
+        self.status=Gtk.Label(label=error or " "); self.status.add_css_class("greeter-status"); self.status.add_css_class("error" if error else "signing-in"); self.status.set_xalign(0); self.status.set_wrap(True)
+        self.status.set_margin_bottom(S(6)); self.status.set_size_request(-1,S(30)); right.append(self.status)   # the same height with a message or without
+        self.entry.connect("changed",lambda *_:self.clear_error())
         def line(widgets, homogeneous=True):
             box=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); box.set_homogeneous(homogeneous)
             for w in widgets: box.append(w)
@@ -163,6 +170,10 @@ class GreeterWindow(Gtk.ApplicationWindow):
         right.append(box); self.rows.append(actions); self.go=go; self.rows.append(self.power)
         self.focus(self.rows[0][0])
 
+    def clear_error(self):
+        """Typing the next password takes the last error away."""
+        if self.entry.get_text() and self.status.has_css_class("error"):
+            self.status.remove_css_class("error"); self.status.add_css_class("signing-in"); self.status.set_text(" ")
     def label_keys(self):
         for r,row in enumerate(self.keys):
             for c,b in enumerate(row): b.set_label(KEYS[self.layer][r][c])

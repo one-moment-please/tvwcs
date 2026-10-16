@@ -35,6 +35,7 @@ PACKAGES=("greetd","cage")                         # what the login screen needs
 GETTY_OVERRIDE="/etc/systemd/system/getty@tty1.service.d/autologin.conf"   # install.sh's console login
 LIGHTDM_AUTOLOGIN="/etc/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf"
 SDDM_AUTOLOGIN="/etc/sddm.conf.d/50-tvwcs-autologin.conf"
+HIDDEN_SESSIONS={"i3-with-shmlog"}   # i3 with a debug log: for i3's developers, not for the login screen
 SESSION_DIRS=(("/usr/share/xsessions","x11"),("/usr/local/share/xsessions","x11"),
               ("/usr/share/wayland-sessions","wayland"),("/usr/local/share/wayland-sessions","wayland"))
 UNIT_DIRS=("/etc/systemd/system","/usr/lib/systemd/system","/lib/systemd/system")
@@ -171,7 +172,7 @@ def sessions(which=shutil.which) -> list:
         except OSError: continue
         for f in files:
             sid=f.stem
-            if sid in found: continue
+            if sid in found or sid in HIDDEN_SESSIONS: continue
             try: e=_desktop_entry(f.read_text(encoding="utf-8",errors="replace"))
             except OSError: continue
             if e.get("Hidden","").lower()=="true" or e.get("NoDisplay","").lower()=="true" or not e.get("Exec"): continue
@@ -222,6 +223,16 @@ exec python3 -m tvwcs.ui_greeter "$@"
 def greeter_command() -> str:
     """greetd's command for the greeter: cage, full screen, with VT switching allowed and no window decorations."""
     return f"cage -s -d -- {GREETER_LIB}/greeter"
+
+# greetd's own config as Debian ships it, put back when TVWCS's login screen is turned off and there is no backup
+GREETD_DEFAULT="""[terminal]
+# The VT to run the greeter on. Can be "next", "current" or a number designating the VT.
+vt = 7
+
+[default_session]
+command = "agreety --cmd /bin/sh"
+user = "_greetd"
+"""
 
 def write_greetd_config(user, autologin=None, vt=GREETD_VT) -> str:
     """greetd's config for TVWCS's login screen. autologin: (user, session) for the initial session, which logs that
@@ -417,13 +428,16 @@ class Changer:
         """Turn TVWCS's login screen off. to: a login screen's unit (the previous one, or one just installed), or "" for
         none, which logs autologin_to's user in on the first console instead (their start lines are written by them)."""
         if path(GREETD_BACKUP).exists(): os.replace(path(GREETD_BACKUP),path(GREETD_CONF))
-        elif greetd_is_ours(): self.remove(GREETD_CONF)
+        elif greetd_is_ours(): self.write(GREETD_CONF,GREETD_DEFAULT)   # greetd's own config, so turning greetd on later works
         self.switch_to(to)
         if not to and autologin_to: self.set_getty(autologin_to[0])
         for p in (LOOK,PREVIOUS): self.remove(p)
         shutil.rmtree(path(GREETER_LIB),ignore_errors=True)
         if to and autologin_to: self.set_autologin(autologin_to[0],autologin_to[1],to)
         self.out(f"From the next start, the computer uses {name(to)}." if to else "From the next start, the computer has no login screen.")
+        if not to and autologin_to:
+            self.out(f"{autologin_to[0]} is logged in on the first console; to start i3 or sway there, their shell's login file needs TVWCS's start "
+                     "lines (Settings > Features writes them when it turns the login screen off).")
 
     def _getty_is_tvwcs(self):
         return "TVWCS" in _read(GETTY_OVERRIDE)
@@ -503,7 +517,9 @@ USAGE="""Usage (as root): python3 -m tvwcs.loginscreen <command>
   enable [--config FILE] [--autologin USER SESSION] [--previous UNIT]
                                                      turn TVWCS's login screen on (from the next start)
   update [--config FILE]                             update its copy of TVWCS and its look (from FILE: a config.json)
-  disable [--to UNIT] [--autologin USER SESSION]     turn it off: back to UNIT (default: the one before), or none ("")
+  disable [--to UNIT] [--autologin USER SESSION]     turn it off: back to UNIT (default: the one before), or none ("");
+                                                     with none, USER logs in on the first console (their start lines
+                                                     for i3 / sway are written as them, not here)
   autologin USER SESSION | autologin --off           log USER in at start-up into SESSION (an id: i3, tvwcs-sway...)
   switch UNIT                                        use another installed login screen (sddm...) from the next start
 Without root: status, sessions"""

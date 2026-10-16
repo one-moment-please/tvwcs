@@ -1128,7 +1128,7 @@ offer_login_screen() {
         ask_no "Use TVWCS's login screen instead of $LSN? It starts i3 and sway and works with the remote; $LSN stays installed, and Settings > Features switches back." || return 0
         install_login_screen "$LSN" || return 0
     fi
-    echo "TVWCS's login screen shows from the next start (Settings > Features turns it off again)."
+    echo "Settings > Features turns TVWCS's login screen off again."
     # TVWCS's own sessions, set up above for a computer without a login screen: the new one lists them
     [ -z "$SESSION_WMS" ] || [ -n "$LOGIN_ENTRY" ] || setup_login_entries
 }
