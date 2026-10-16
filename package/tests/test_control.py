@@ -175,6 +175,16 @@ class NetworkTests(unittest.TestCase):
         found=net.parse_ip_json(addr,route,physical=lambda name:name=="enp3s0")
         self.assertEqual([(i.device,i.state,i.addresses,i.gateway,i.mac) for i in found],[("enp3s0","connected",["10.0.0.5/24"],"10.0.0.1","aa:bb:cc:dd:ee:ff")])
         self.assertEqual(net.parse_ip_json("not json",""),[])
+    def test_unmanaged_wired_connection_shows_in_the_panel(self):
+        # Debian's ifupdown port: NetworkManager calls it unmanaged, but it is up and carries the default route
+        listed=[net.Interface("wlp2s0","wifi","connected","WIFI-EF04"),net.Interface("enp1s0","ethernet","unmanaged"),
+                net.Interface("enp9s0","ethernet","unmanaged")]
+        addr='[{"ifname":"enp1s0","link_type":"ether","flags":["UP","LOWER_UP"],"addr_info":[{"family":"inet","local":"192.168.0.174","prefixlen":24}]},'\
+             '{"ifname":"enp9s0","link_type":"ether","flags":["UP"],"addr_info":[]}]'
+        route='[{"dst":"default","gateway":"192.168.0.1","dev":"wlp2s0","metric":2000},{"dst":"default","gateway":"192.168.0.1","dev":"enp1s0","metric":1002}]'
+        found=net.with_unmanaged(listed,addr,route,physical=lambda name:True)
+        self.assertEqual([(i.device,i.connected) for i in found],[("enp1s0",True),("wlp2s0",True),("enp9s0",False)])
+        self.assertEqual((found[0].addresses,found[0].gateway),(["192.168.0.174/24"],"192.168.0.1"))
     def test_wifi_stays_behind_a_wired_connection(self):
         wireless=lambda name:name.startswith("wl")
         ifupdown='[{"dst":"default","gateway":"192.168.0.1","dev":"enp1s0","metric":1002},{"dst":"default","gateway":"192.168.0.1","dev":"wlp2s0","metric":600}]'

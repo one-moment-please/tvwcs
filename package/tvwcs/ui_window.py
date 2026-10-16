@@ -48,7 +48,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._search_results=[]; self._selected_result=0; self._result_groups=[]; self._result_mains=[]; self._stars={}
         self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None; self._chan=None
         self._open_row=None; self._text=None
-        self._panel_key=None; self._panel_groups=[]; self._panel_prefer=None; self._panel_busy=False; self._keep_panel=False
+        self._panel_key=None; self._panel_groups=[]; self._panel_prefer=None; self._panel_busy=False; self._keep_panel=False; self._panel_placeholder=False
         self._descriptions=[]
 
     # ================================================================== construction
@@ -240,15 +240,15 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.status_panel.set_visible(True)
         getattr(self,f"_panel_{key}")()
     def _collapse_status_panel(self):
-        key=self._panel_key; self._panel_key=None; self._panel_token+=1; self._panel_groups=[]
+        key=self._panel_key; self._panel_key=None; self._panel_token+=1; self._panel_groups=[]; self._panel_placeholder=False
         b=self._status_buttons.get(key) if key else None
         if b is not None: b.remove_css_class("active")
         self.status_panel.set_visible(False); clear_box(self.status_panel); self.app.fit_quick_menu()
     def _fill_panel(self,build):
         """(Re)draw the open panel: build() adds its lines (_panel_line). A line that was selected stays selected; with
         the selection still on the panel's icon, it moves to the line build() prefers (_panel_prefer), else the last."""
-        focused=self.get_focus(); at=None
-        for g in self._panel_groups:
+        focused=self.get_focus(); at=None; placeholder=self._panel_placeholder; self._panel_placeholder=False
+        for g in self._panel_groups if not placeholder else ():   # "Loading…" moved the selection in; the real lines choose again
             for k,w in enumerate(g):
                 if w is focused: at=(g.ident,k)
         self._keep_panel=True
@@ -260,7 +260,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             g=next((g for g in groups if g.ident==at[0]),None)
             if g is not None: target=g[min(at[1],len(g)-1)]
         opener=self._status_buttons.get(self._panel_key)
-        if target is None and groups and (at is not None or focused is None or focused is opener):
+        if target is None and groups and (placeholder or at is not None or focused is None or focused is opener):
             g=next((g for g in groups if g.ident==self._panel_prefer),groups[-1]); target=self._landing(g) or g[0]
         if target is not None: target.grab_focus()
         self.app.fit_quick_menu()
@@ -304,7 +304,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _panel_loading(self,page,label):
         def build():
             self._panel_text("Loading…"); self._panel_settings(page,label)
-        self._fill_panel(build)
+        self._fill_panel(build); self._panel_placeholder=True
 
     def _panel_power(self):
         """Lock, Sleep, Reboot, Shut down and (with a login screen) Log out, the first nearest ⏻."""
@@ -339,7 +339,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                                        "Turn Wi-Fi off" if on else "Turn Wi-Fi on",lambda:self._panel_do(lambda:control_network.set_wifi(not on),self._panel_network))
                     self._panel_prefer="wifi"
             self._panel_settings("network","Network settings")
-        self._panel_read(lambda:control_network.read_state(scan=False),build)
+        self._panel_read(control_network.read_details,build)
 
     def _panel_bluetooth(self):
         """The devices that are connected, each with Disconnect; Bluetooth on or off; Bluetooth settings."""
@@ -895,9 +895,12 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if last is not None and usable(last) and last.grab_focus(): return True
         if pane=="quick": return self.search_entry.grab_focus()
         return self._focus_first(self._groups[pane])
-    def focus_pane_soon(self,pane):
-        """Focus once a freshly shown panel has been mapped."""
-        GLib.timeout_add(70,lambda:(self.focus_pane(pane),GLib.SOURCE_REMOVE)[1])
+    def focus_pane_soon(self,pane,prefer=None):
+        """Focus once a freshly shown panel has been mapped: `prefer` if it is still there, else focus_pane(pane)."""
+        def go():
+            if prefer is None or not usable(prefer) or not prefer.grab_focus(): self.focus_pane(pane)
+            return GLib.SOURCE_REMOVE
+        GLib.timeout_add(70,go)
     def _move_group(self,step):
         focused=self.get_focus(); pane=self._pane_of(focused)
         groups=[g for g in self._ordered_groups(pane) if any(usable(w) for w in g)]
