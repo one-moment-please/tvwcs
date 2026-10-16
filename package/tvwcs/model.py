@@ -89,8 +89,6 @@ DEFAULT_WALLPAPER="#323232"   # dark grey
 PASSWORD_KEYBOARDS={"full":"Full keyboard","digits":"Number pad"}
 # Settings > Power and sleep > Screen saver: the bouncing logo.
 SCREENSAVER_LOGOS={"dvd":"The DVD Video logo","tvwcs":"The TVWCS logo","image":"A picture of your own"}
-# Settings > Date and time > Set the time: the ways of entering a time by hand.
-TIME_ENTRY={"fields":"Hour and minute, changed with ↑ ↓","digits":"Typed on the number pad","steps":"Forward and back in steps"}
 
 def key_hints(use) -> str:
     """The Settings app's footer: a remote's key is called Back, a keyboard's Esc."""
@@ -123,7 +121,6 @@ DEFAULT_SETTINGS={
     "password_keyboard":"full",     # PASSWORD_KEYBOARDS: what a password dialog opens with (it can switch to the other)
     "screensaver_logo":"dvd",       # SCREENSAVER_LOGOS
     "screensaver_image":"",         # the picture for "image"
-    "time_entry":"fields",          # TIME_ENTRY
     "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
     "cursor_hide":None,             # hide the mouse pointer when it rests (None: on in TV mode, off at a desk; see cursor.py)
@@ -179,7 +176,6 @@ def _clean_settings(raw) -> dict:
     if raw.get("password_keyboard") in PASSWORD_KEYBOARDS: s["password_keyboard"]=raw["password_keyboard"]
     if raw.get("screensaver_logo") in SCREENSAVER_LOGOS: s["screensaver_logo"]=raw["screensaver_logo"]
     if isinstance(raw.get("screensaver_image"),str): s["screensaver_image"]=raw["screensaver_image"].strip()
-    if raw.get("time_entry") in TIME_ENTRY: s["time_entry"]=raw["time_entry"]
     shares=raw.get("network_shares")
     if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",

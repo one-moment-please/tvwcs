@@ -69,8 +69,11 @@ button:focus .app-name { font-weight: 700; }
 .app-summary { font-size: 17px; }
 .wallpaper-swatch { min-width: 64px; min-height: 48px; padding: 0; border: 2px solid @LINE@; }
 button.wallpaper-swatch:focus, button.wallpaper-swatch:focus-visible { outline: 4px solid @ACCENT@; outline-offset: 2px; }
-.time-field { font-size: 40px; font-weight: 300; min-width: 84px; }
-.time-now { font-size: 26px; font-weight: 300; }
+entry.time-field { font-size: 36px; font-weight: 300; min-height: 64px; padding: 0 6px; }
+.time-colon { font-size: 40px; font-weight: 300; margin-bottom: 26px; }
+button.ampm { padding: 6px 14px; margin-bottom: 26px; }
+.ampm-on { font-size: 22px; font-weight: 700; border-bottom: 3px solid currentColor; }
+.ampm-off { font-size: 18px; opacity: 0.45; }
 """
 
 def colour_swatch(colour):

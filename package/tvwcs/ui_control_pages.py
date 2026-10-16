@@ -14,7 +14,7 @@ from pathlib import Path
 from tvwcs import __version__, cursor, power, privilege, selfupdate
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, PASSWORD_KEYBOARDS, SCALE_LABELS, SCREENSAVER_LOGOS, STARTUP_LABELS, STARTUP_MODES,
-                         THEMES, TIME_ENTRY, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
+                         THEMES, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for, login_manager_installed
 from tvwcs.ui_control import StreamedRun, colour_swatch, in_background
@@ -1643,12 +1643,8 @@ class DateTimePage(Page):
                      ident="dt:ntp",value_css="state-on" if s.ntp else "setting-value")
         else: self.row("Set the time from the network","Unknown",None,detail="Needs systemd's timedatectl",ident="dt:ntp")
         self.section("SET THE TIME BY HAND")
-        entry=ConfigStore().settings["time_entry"]
         self.row("Set the time",timedate.clock_text(now,hours24),self.set_by_hand if s.timedatectl else None,
                  detail=("Turns network time off first" if s.ntp else "The date and the time of day") if s.timedatectl else "Needs systemd's timedatectl",ident="dt:set")
-        self.row("Way to set it",TIME_ENTRY[entry],self.choose_entry,ident="dt:entry")
-        self.note("Hour and minute: a ▲ and ▼ for each part of the date and time. Number pad: type the time as four digits. "
-                  "Steps: move the clock forward or back by a day, an hour, ten minutes or a minute.")
         self.section("QUICK MENU CLOCK")
         self.row("Clock",'24-hour (14:05)' if hours24 else "12-hour (2:05 PM)",self.choose_clock,ident="dt:clock")
         self.note("How the time at the bottom of the Quick Menu is written.")
@@ -1686,10 +1682,6 @@ class DateTimePage(Page):
             self.as_root_if_needed(timedate.timezone_argv(zone,s.timedatectl),"Time zone",f"Setting the time zone to {timedate.zone_label(zone)}…")
         self.win.choose_option(f"City · {region}",cities,s.timezone if s.timezone in dict(cities) else None,picked)
     # ---------------------------------------------------------- setting the time by hand
-    def choose_entry(self):
-        def picked(key):
-            store=ConfigStore(); store.settings["time_entry"]=key; store.save(); self.refresh(quiet=True)
-        self.win.choose_option("Way to set the time",list(TIME_ENTRY.items()),ConfigStore().settings["time_entry"],picked)
     def set_by_hand(self):
         s=self.state[0]
         if s.ntp:
@@ -1700,54 +1692,83 @@ class DateTimePage(Page):
         self.set_by_hand_now()
     def set_by_hand_now(self):
         import datetime
-        now=datetime.datetime.now().replace(second=0,microsecond=0)
-        way=ConfigStore().settings["time_entry"]
-        if way=="digits": self.time_digits(now)
-        elif way=="steps": self.time_steps(now)
-        else: self.time_fields(now)
+        self.time_fields(datetime.datetime.now().replace(second=0,microsecond=0))
     def apply_time(self, when):
         self.win.close_modal()
         self.as_root_if_needed(timedate.set_time_argv(when),"Set the time",f"Setting the time to {when:%H:%M}…")
-    def _time_text(self, when):
-        return f"{timedate.date_text(when.timestamp())}, {when.year}   {timedate.clock_text(when.timestamp(),self.state[1])}"
     def time_fields(self, when):
-        """▲ and ▼ under each of year, month, day, hour and minute: ← → moves between them, ↑ ↓ between ▲ and ▼."""
-        win=self.win; win._begin_modal("Set the time"); state={"when":when}
-        shown=win._message(self._time_text(when))
-        row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); row.set_halign(Gtk.Align.CENTER); ups=[]; downs=[]; values={}
+        """A box for each of year, month, day, hour and minute (typed in, or changed with the ▲ and ▼ above and below
+        it), hour:minute, and AM/PM with the 12-hour clock. ← → move between the boxes, ↑ ↓ to the ▲ and ▼ rows."""
+        win=self.win; win._begin_modal("Set the time"); hours24=self.state[1]
+        state={"when":when,"pm":timedate.hour_12(when.hour)[1]}
+        error=win._message("","error"); error.set_visible(False)
+        row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); row.set_halign(Gtk.Align.CENTER)
+        ups=[]; downs=[]; entries={}; boxes=[]
         names={"year":"Year","month":"Month","day":"Day","hour":"Hour","minute":"Minute"}
         def show():
-            w=state["when"]; shown.set_text(self._time_text(w))
-            for f,l in values.items(): l.set_text(f"{getattr(w,f):04d}" if f=="year" else f"{getattr(w,f):02d}")
-        def move(field,delta): state["when"]=timedate.adjust(state["when"],field,delta); show()
-        for field in timedate.FIELDS:
+            w=state["when"]
+            for f,e in entries.items():
+                v=getattr(w,f)
+                if f=="hour" and not hours24: v=timedate.hour_12(v)[0]
+                e.set_text(f"{v:04d}" if f=="year" else f"{v:02d}")
+            if not hours24: style_ampm()
+        def typed():
+            """The boxes as a time, or raises ValueError."""
+            return timedate.from_fields(*(entries[f].get_text() for f in timedate.FIELDS),pm=None if hours24 else state["pm"])
+        def move(field,delta):
+            try: state["when"]=typed()
+            except ValueError: pass   # a box being typed in: move from the last good time
+            state["when"]=timedate.adjust(state["when"],field,delta)
+            if field=="hour": state["pm"]=state["when"].hour>=12
+            error.set_visible(False); show()
+        def column(field):
             col=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4))
-            up=Gtk.Button(label="▲"); up.connect("clicked",lambda _b,f=field:move(f,1)); col.append(up); ups.append(up)
-            v=Gtk.Label(); v.add_css_class("time-field"); col.append(v); values[field]=v
-            down=Gtk.Button(label="▼"); down.connect("clicked",lambda _b,f=field:move(f,-1)); col.append(down); downs.append(down)
-            n=Gtk.Label(label=names[field]); n.add_css_class("muted"); col.append(n); row.append(col)
-        win.modal_card.append(row); show()
-        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",lambda:self.apply_time(state["when"]),"active"))
-        g1=NavGroup(ups); g1.column=True; g2=NavGroup(downs); g2.column=True
-        win._finish_modal([g1,g2,NavGroup([cancel,ok])],win.close_modal,ups[3])
-    def time_steps(self, when):
-        """The time now, and buttons that move it by a day, an hour, ten minutes or a minute."""
-        win=self.win; win._begin_modal("Set the time"); state={"when":when}
-        shown=win._message(self._time_text(when),"time-now"); groups=[]
-        def move(minutes): state["when"]=timedate.step(state["when"],minutes); shown.set_text(self._time_text(state["when"]))
-        for half in (timedate.STEPS[:4],timedate.STEPS[4:]):
-            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); made=[]
-            for minutes,label in half:
-                b=Gtk.Button(label=label); b.connect("clicked",lambda _b,m=minutes:move(m)); line.append(b); made.append(b)
-            win.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
-        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",lambda:self.apply_time(state["when"]),"active"))
-        groups.append(NavGroup([cancel,ok])); win._finish_modal(groups,win.close_modal,groups[1][0])
-    def time_digits(self, when, error=""):
-        def got(text):
-            try: self.apply_time(timedate.from_digits(when,text))
-            except ValueError as exc: self.time_digits(when,str(exc))
-        self.win.ask_text("Set the time","Type the time as four digits in 24-hour time, such as 1905 for 19:05 (7:05 PM). The date stays "
-                          f"{timedate.date_text(when.timestamp())}.",got,"",ok_label="Set the time",error=error,digits=True)
+            up=Gtk.Button(label="▲"); up.connect("clicked",lambda _b:move(field,1)); col.append(up); ups.append(up)
+            e=Gtk.Entry(); e.add_css_class("time-field"); e.set_alignment(0.5); e.set_max_length(4 if field=="year" else 2)
+            e.set_width_chars(4 if field=="year" else 2); e.set_max_width_chars(4 if field=="year" else 2); e.set_input_purpose(Gtk.InputPurpose.DIGITS)
+            e.connect("activate",lambda *_:submit()); entries[field]=e; boxes.append(e); col.append(e)
+            down=Gtk.Button(label="▼"); down.connect("clicked",lambda _b:move(field,-1)); col.append(down); downs.append(down)
+            n=Gtk.Label(label=names[field]); n.add_css_class("muted"); col.append(n); return col
+        for field in ("year","month","day"): row.append(column(field))
+        gap=Gtk.Box(); gap.set_size_request(S(18),-1); row.append(gap)
+        row.append(column("hour"))
+        colon=Gtk.Label(label=":"); colon.add_css_class("time-colon"); colon.set_valign(Gtk.Align.CENTER); row.append(colon)
+        row.append(column("minute"))
+        ampm=None
+        if not hours24:   # one button: the current half of the day stands out, the other is dimmed
+            ampm=Gtk.Button(); ampm.add_css_class("ampm"); ampm.set_valign(Gtk.Align.CENTER)
+            pair=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); am=Gtk.Label(label="AM"); pm=Gtk.Label(label="PM")
+            pair.append(am); pair.append(pm); ampm.set_child(pair); ampm.set_tooltip_text("Switch between AM and PM")
+            def style_ampm():
+                for label,on in ((am,not state["pm"]),(pm,state["pm"])):
+                    label.remove_css_class("ampm-on" if not on else "ampm-off"); label.add_css_class("ampm-on" if on else "ampm-off")
+            def flip():
+                try: state["when"]=typed()
+                except ValueError: pass
+                state["pm"]=not state["pm"]; state["when"]=state["when"].replace(hour=timedate.hour_24(timedate.hour_12(state["when"].hour)[0],state["pm"]))
+                show()
+            ampm.connect("clicked",lambda _b:flip()); row.append(ampm); boxes.append(ampm)
+        win.modal_card.append(row)
+        def submit():
+            try: when=typed()
+            except ValueError as exc: error.set_text(str(exc)); error.set_visible(True); return
+            self.apply_time(when)
+        for i,e in enumerate(boxes):   # ← → move between the boxes (in a box they would only move its cursor)
+            keys=Gtk.EventControllerKey(); keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            def key(_c,keyval,_code,_state,i=i):
+                if keyval not in (Gdk.KEY_Left,Gdk.KEY_Right): return False
+                j=i+(1 if keyval==Gdk.KEY_Right else -1)
+                if 0<=j<len(boxes): boxes[j].grab_focus()
+                return True
+            keys.connect("key-pressed",key); e.add_controller(keys)
+            if isinstance(e,Gtk.Entry):
+                focus=Gtk.EventControllerFocus(); focus.connect("enter",lambda _c,e=e:GLib.idle_add(lambda:(e.select_region(0,-1),GLib.SOURCE_REMOVE)[1])); e.add_controller(focus)
+        show()
+        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",submit,"active"))
+        groups=[]
+        for widgets in (ups,boxes,downs):
+            g=NavGroup(widgets); g.column=True; groups.append(g)
+        win._finish_modal(groups+[NavGroup([cancel,ok])],win.close_modal,entries["hour"])
 
     def choose_clock(self):
         def picked(key):
