@@ -2,7 +2,7 @@
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
-import os, shutil, signal, subprocess, time
+import math, os, shutil, signal, subprocess, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -754,8 +754,9 @@ class SoundPage(Page):
 
 # ====================================================================== Displays
 class DisplaysPage(Page):
-    """Resolution and refresh rate of each display; with several, which are on, where each one is and (X11) the
-    primary one. A change that can leave a screen blank goes back by itself unless it is kept."""
+    """Resolution, refresh rate and scale of each display; with several, which are on, where each one is and (X11) the
+    primary one. On X11 the scale is one for the session, with fractional scales behind a switch. A change that can
+    leave a screen blank or unreadable goes back by itself unless it is kept."""
     key="displays"; title="Displays"; icon="video-display-symbolic"; fallback="🖵"; poll=5
     KEEP_SECONDS=15
     def read(self):
@@ -780,6 +781,14 @@ class DisplaysPage(Page):
         if not s.available: self.note(s.message); return
         outs=s.outputs; on=[o for o in outs if o.enabled]; where=display.placements(outs); ref=display.reference(outs)
         if len(outs)>1 and on: self.add(self.preview(outs))
+        x11=s.backend=="xrandr"
+        if x11 and on:
+            self.section("SCALE")
+            self.row("Scale",display.scale_text(display.session_scale(outs)),self.choose_session_scale,
+                     detail="Makes text and controls bigger on every display",ident="scale:all")
+            self.row("Fractional scaling",_on_off(s.fractional),self.toggle_fractional,
+                     detail="Also offers 125 %, 150 %, 175 % and more. Those are a little less sharp, and use more of the graphics card",
+                     ident="scale:fractional",value_css="state-on" if s.fractional else "setting-value")
         for i,o in enumerate(outs,1):
             self.section(f"{i} · {o.title}".upper()+(f"  ({o.name})" if o.label else ""))
             if len(outs)>1:
@@ -791,6 +800,8 @@ class DisplaysPage(Page):
             rates=mode.rates if mode else []
             if o.rate or rates:
                 self.row("Refresh rate",display.rate_text(o.rate) if o.rate else "—",(lambda o=o:self.choose_rate(o)) if len(rates)>1 else None,ident=f"{o.name}:rate")
+            if not x11:
+                self.row("Scale",display.scale_text(o.scale),lambda o=o:self.choose_scale(o),detail="Makes text and controls bigger",ident=f"{o.name}:scale")
             if len(on)>1:
                 if o is ref:
                     other=next((x for x in on if where.get(x.name,("",""))[1]==o.name),None)
@@ -801,8 +812,9 @@ class DisplaysPage(Page):
                 if s.can_set_primary:
                     self.row("Primary display","Yes" if o.primary else "No",(lambda o=o:self.change(o,False,primary=True)) if not o.primary else None,
                              detail="" if o.primary else "Make this the primary display",ident=f"{o.name}:primary")
-        notes=[f"A new resolution, refresh rate or display switched on or off goes back after {self.KEEP_SECONDS} seconds unless you keep it, "
+        notes=[f"A new resolution, refresh rate, scale or display switched on or off goes back after {self.KEEP_SECONDS} seconds unless you keep it, "
                "in case a display cannot show it."]
+        if x11: notes.append("Some open apps use a new scale only once they are started again, and window titles at the next log-in.")
         if len(on)>1 and s.can_set_primary: notes.append("The primary display holds the status bar's tray and is where the session starts.")
         notes.append("What you keep is used again at the next log-in, as long as the same displays are connected.")
         self.note(" ".join(notes))
@@ -831,6 +843,22 @@ class DisplaysPage(Page):
         mode=o.mode()
         self.win.choose_option(f"Resolution · {o.title}",[(m.key,display.mode_text(m)+(" (recommended)" if m.preferred else "")) for m in o.modes],
                                mode.key if mode else None,lambda key:self.change(o,True,mode=key))
+    def choose_scale(self, o):
+        """sway: any scale, display by display."""
+        self.win.choose_option(f"Scale · {o.title}",[(v,display.scale_text(v)) for v in display.scale_choices([o],True,o.scale)],
+                               o.scale,lambda v:self.change(o,True,scale=v))
+    def choose_session_scale(self):
+        outs=self.state.outputs; now=display.session_scale(outs)
+        self.win.choose_option("Scale",[(v,display.scale_text(v)) for v in display.scale_choices(outs,self.state.fractional,now)],now,
+                               lambda v:self.change_all(display.scaled(outs,v),True))
+    def toggle_fractional(self):
+        on=not self.state.fractional
+        try: display.set_fractional(on)
+        except OSError as exc: self.win.notice("Displays",f"Could not save the choice: {exc}"); return
+        now=display.session_scale(self.state.outputs)
+        if not on and not display.is_whole(now):   # back to a whole step: the nearest one
+            self.change_all(display.scaled(self.state.outputs,float(max(1,math.floor(now+0.5)))),True)
+        else: self.refresh(quiet=True)
     def choose_rate(self, o):
         mode=o.mode()
         self.win.choose_option(f"Refresh rate · {o.title}",[(r,display.rate_text(r)) for r in mode.rates],o.rate,lambda r:self.change(o,True,rate=r))
@@ -846,7 +874,9 @@ class DisplaysPage(Page):
     # ---------------------------------------------------------- changing
     def change(self, o, risky, **changes):
         """Apply a change to one display now. A risky one waits to be kept, else goes back; the rest are kept at once."""
-        s=self.state; old=s.outputs; new=display.edited(old,o.name,**changes)
+        self.change_all(display.edited(self.state.outputs,o.name,**changes),risky)
+    def change_all(self, new, risky):
+        s=self.state; old=s.outputs
         self.set_status("Changing the displays…"); self.busy=True
         def done(problem):
             self.busy=False; self.set_status("")
