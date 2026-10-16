@@ -18,7 +18,7 @@ It works with normal desktop apps. It is not a media center and needs no plugins
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications pane open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">Buttons at the top: ⚙ Settings, ⏻ power menu, ✕ close, ⊞ Applications. Below: search, <b>Open applications</b> (by workspace) and <b>Favorites</b>. At the bottom: key hints, the clock, and icons for network, volume, Bluetooth and updates.</td>
+    <td valign="top">Buttons at the top: ⚙ Settings, ⏻ power menu, ✕ close, ⊞ Applications. Below: search, <b>Open applications</b> (by workspace; ▴ here shows the two apps sharing one) and <b>Favorites</b>. At the bottom: key hints, the clock, and icons for network, volume, Bluetooth and updates.</td>
     <td valign="top"><b>Channels</b> lists apps you gave a number. <b>All applications</b> lists every app by category; OK/Enter folds a category. ☆ makes an app a favorite, ✎ edits its launch profiles.</td>
   </tr>
   <tr>
