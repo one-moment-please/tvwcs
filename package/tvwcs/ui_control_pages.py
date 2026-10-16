@@ -459,19 +459,20 @@ class PowerPage(Page):
         return power.read_state(st,command_for("lock",st) is not None,command_for("sleep",st) is not None)
     def summary(self): return "swayidle" if self.state and self.state.session=="sway" else ""
     def draw(self, s):
-        times=s.settings
-        self.section("WHEN NOTHING IS TOUCHED")
-        self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"]),
-                 icon="video-display-symbolic",fallback="▭",ident="idle:screensaver")
-        screen=times["screen_off"]
-        self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
-                 lambda:self.choose("screen_off",screen,system=True),icon="video-display-symbolic",fallback="🖵",ident="idle:screen_off")
-        self.row(power.LABELS["lock"],power.duration_text(times["lock"]),lambda:self.choose("lock",times["lock"]),
-                 detail="" if s.locker else "No screen locker is installed (such as i3lock, or swaylock on sway)",
-                 icon="system-lock-screen-symbolic",fallback="🔒",ident="idle:lock")
-        self.row(power.LABELS["sleep"],power.duration_text(times["sleep"]),lambda:self.choose("sleep",times["sleep"]),
-                 detail="" if s.can_sleep else "Nothing on this computer can make it sleep",
-                 icon="weather-clear-night-symbolic",fallback="☾",ident="idle:sleep")
+        if s.battery.present:
+            b=s.battery
+            self.section("BATTERY")
+            self.row("Battery",f"{b.percent}%",None,detail="Running on the battery" if b.on_battery else "Plugged in",
+                     icon="battery-symbolic",fallback="🔋",ident="bat:now")
+            c=s.critical
+            self.row("When the battery is nearly empty",power.CRITICAL_ACTIONS[c["action"]],self.choose_critical,
+                     icon="battery-caution-symbolic",fallback="🪫",ident="bat:action",
+                     detail="" if c["action"]=="nothing" else f"At {c['percent']}% or less, while not plugged in")
+            if c["action"]!="nothing": self.row("Nearly empty means",f"{c['percent']}%",self.choose_critical_percent,ident="bat:percent",indent=44)
+            self.idle_rows(s,s.settings,"idle","WHEN NOTHING IS TOUCHED, PLUGGED IN")
+            self.idle_rows(s,s.battery_settings,"idle_battery","WHEN NOTHING IS TOUCHED, ON BATTERY")
+        else: self.idle_rows(s,s.settings,"idle","WHEN NOTHING IS TOUCHED")
+        times=s.settings; screen=times["screen_off"]
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
         self.section("SCREEN SAVER")
@@ -515,6 +516,29 @@ class PowerPage(Page):
                                detail="logind's HandleLidSwitch",ident="sys:lid")
         self.note(("Change “Turn off the screen after” to let TVWCS decide instead of X. " if s.session=="X11" else "")+
                   "logind's settings are changed in /etc/systemd/logind.conf, as root.")
+
+    def idle_rows(self, s, times, option, heading):
+        """The four times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
+        self.section(heading); tag="" if option=="idle" else "bat"
+        self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
+                 icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
+        screen=times["screen_off"]
+        self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
+                 lambda:self.choose("screen_off",screen,system=True,option=option),icon="video-display-symbolic",fallback="🖵",ident=f"idle{tag}:screen_off")
+        self.row(power.LABELS["lock"],power.duration_text(times["lock"]),lambda:self.choose("lock",times["lock"],option=option),
+                 detail="" if s.locker else "No screen locker is installed (such as i3lock, or swaylock on sway)",
+                 icon="system-lock-screen-symbolic",fallback="🔒",ident=f"idle{tag}:lock")
+        self.row(power.LABELS["sleep"],power.duration_text(times["sleep"]),lambda:self.choose("sleep",times["sleep"],option=option),
+                 detail="" if s.can_sleep else "Nothing on this computer can make it sleep",
+                 icon="weather-clear-night-symbolic",fallback="☾",ident=f"idle{tag}:sleep")
+    def choose_critical(self):
+        def picked(key):
+            store=ConfigStore(); store.settings["battery_critical"]["action"]=key; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
+        self.win.choose_option("When the battery is nearly empty",list(power.CRITICAL_ACTIONS.items()),self.state.critical["action"],picked)
+    def choose_critical_percent(self):
+        def picked(key):
+            store=ConfigStore(); store.settings["battery_critical"]["percent"]=int(key); store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
+        self.win.choose_option("Nearly empty means",[(str(p),f"{p}%") for p in power.CRITICAL_PERCENTS],str(self.state.critical["percent"]),picked)
 
     def choose_logo(self):
         def picked(key):
@@ -561,11 +585,11 @@ class PowerPage(Page):
         x=s.xtimers; t=min([v for v in (x.saver,x.dpms_off) if v] or [0])
         return f"{power.duration_text(t)} (X)" if t else "Never (X)"
 
-    def choose(self, action, current, system=False):
+    def choose(self, action, current, system=False, option="idle"):
         options=([("system","Let the system decide")] if system else [])+[(str(v),power.duration_text(v)) for v in power.CHOICES]
         def picked(key):
             value=None if key=="system" else int(key)
-            store=ConfigStore(); store.settings["idle"][action]=value; store.save(); tell_tvwcs("reload")
+            store=ConfigStore(); store.settings[option][action]=value; store.save(); tell_tvwcs("reload")
             if action in ("lock","sleep") and value and not (self.state.locker if action=="lock" else self.state.can_sleep):
                 self.win.notice(power.LABELS[action].replace(" after",""),"Saved, but this computer has nothing to do that with yet.")
             self.refresh(quiet=True)

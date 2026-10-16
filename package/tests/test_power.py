@@ -105,3 +105,31 @@ class PowerTests(unittest.TestCase):
         self.assertIsNone(power.swayidle_argv({"screensaver":0,"screen_off":None,"lock":0,"sleep":0},"tvwcs"))
 
 if __name__=="__main__": unittest.main()
+
+class BatteryTests(unittest.TestCase):
+    def supply(self, files):
+        root=tempfile.mkdtemp()
+        for name,values in files.items():
+            os.makedirs(os.path.join(root,name))
+            for k,v in values.items():
+                with open(os.path.join(root,name,k),"w") as f: f.write(v+"\n")
+        return root
+    def test_no_battery(self):
+        self.assertFalse(power.read_battery(self.supply({"AC":{"type":"Mains","online":"1"}})).present)
+        self.assertFalse(power.read_battery("/nonexistent").present)
+    def test_laptop_on_battery_and_plugged_in(self):
+        b=power.read_battery(self.supply({"AC":{"type":"Mains","online":"0"},"BAT0":{"type":"Battery","status":"Discharging","energy_now":"30","energy_full":"60"}}))
+        self.assertEqual((b.present,b.percent,b.on_battery),(True,50,True))
+        b=power.read_battery(self.supply({"AC":{"type":"Mains","online":"1"},"BAT0":{"type":"Battery","status":"Charging","capacity":"77"}}))
+        self.assertEqual((b.present,b.percent,b.on_battery),(True,77,False))
+    def test_a_mouse_battery_is_not_the_computers(self):
+        self.assertFalse(power.read_battery(self.supply({"hidpp_battery_0":{"type":"Battery","scope":"Device","capacity":"20","status":"Discharging"}})).present)
+    def test_times_and_critical_action(self):
+        settings={"idle":{"sleep":0},"idle_battery":{"sleep":600},"battery_critical":power.clean_critical(None)}
+        low=power.Battery(True,4,True); plugged=power.Battery(True,4,False)
+        self.assertEqual(power.active_idle(settings,low)["sleep"],600); self.assertEqual(power.active_idle(settings,plugged)["sleep"],0)
+        self.assertEqual(power.critical(settings,low),"shutdown"); self.assertEqual(power.critical(settings,plugged),"")
+        self.assertEqual(power.critical(settings,power.Battery(True,6,True)),"")
+        settings["battery_critical"]=power.clean_critical({"action":"nothing","percent":90})
+        self.assertEqual(power.critical(settings,low),"")
+        self.assertEqual(power.clean_critical({"action":"explode","percent":0}),{"action":"shutdown","percent":5})

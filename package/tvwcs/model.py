@@ -6,7 +6,7 @@ from pathlib import Path
 
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_LABELS, assigned, clean_hotkeys, valid_spec
 from tvwcs.pinlock import valid_hash
-from tvwcs.power import clean_idle
+from tvwcs.power import clean_critical, clean_idle
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
 DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"
@@ -127,6 +127,8 @@ DEFAULT_SETTINGS={
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
     "tvwcs_lock_screen":False,      # Lock uses TVWCS's own lock screen (i3lock / swaylock with its message), else the system's locker
     "idle":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
+    "idle_battery":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
+    "battery_critical":{"action":"shutdown","percent":5},   # what to do when the battery is nearly empty (power.CRITICAL_ACTIONS)
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},   # mode: STARTUP_MODES
 }
@@ -181,7 +183,8 @@ def _clean_settings(raw) -> dict:
                 "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
-    s["idle"]=clean_idle(raw.get("idle"))
+    s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))
+    s["battery_critical"]=clean_critical(raw.get("battery_critical"))
     st=raw.get("startup")
     if isinstance(st,dict):
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]

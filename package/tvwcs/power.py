@@ -43,6 +43,66 @@ def due(settings, idle_seconds, done):
     order=sorted((a for a in ACTIONS if settings.get(a)),key=lambda a:(settings[a],ACTIONS.index(a)))
     return [a for a in order if idle_seconds>=settings[a] and a not in done]
 
+# ---------------------------------------------------------------------- battery
+# A computer with a battery has a second set of times for when it runs on the battery ("idle_battery"), and an action
+# for when the battery is nearly empty ("battery_critical"). A desktop has neither, and the page does not show them.
+CRITICAL_ACTIONS={"nothing":"Nothing","sleep":"Sleep","shutdown":"Shut down"}
+CRITICAL_PERCENTS=(2,3,5,7,10,15)
+POWER_SUPPLY="/sys/class/power_supply"
+
+def clean_critical(raw):
+    """The "battery_critical" option: {"action": a CRITICAL_ACTIONS key, "percent": 1-50}. Shut down at 5% unless set."""
+    out={"action":"shutdown","percent":5}
+    if isinstance(raw,dict):
+        if raw.get("action") in CRITICAL_ACTIONS: out["action"]=raw["action"]
+        p=raw.get("percent")
+        if isinstance(p,int) and not isinstance(p,bool) and 1<=p<=50: out["percent"]=p
+    return out
+
+@dataclass
+class Battery:
+    present: bool = False      # the computer runs on a battery of its own (not a mouse's or a phone's)
+    percent: int = 100
+    on_battery: bool = False   # not plugged in
+
+def read_battery(root=None):
+    """The computer's batteries in /sys/class/power_supply (a mouse's or headset's, scope "Device", are left out) and
+    whether the charger is plugged in. Several batteries count as one."""
+    def value(path, name):
+        try:
+            with open(os.path.join(path,name),encoding="utf-8") as f: return f.read().strip()
+        except OSError: return ""
+    try: entries=sorted(os.scandir(root or POWER_SUPPLY),key=lambda e:e.name)
+    except OSError: return Battery()
+    now=full=0; percents=[]; discharging=False; mains=None
+    for e in entries:
+        kind=value(e.path,"type")
+        if kind=="Mains" or (kind.startswith("USB") and value(e.path,"online")):
+            if value(e.path,"online")=="1": mains=True
+            elif mains is None: mains=False
+            continue
+        if kind!="Battery" or value(e.path,"scope")=="Device" or value(e.path,"present")=="0": continue
+        if value(e.path,"status")=="Discharging": discharging=True
+        for a,b in (("energy_now","energy_full"),("charge_now","charge_full")):
+            n,f=value(e.path,a),value(e.path,b)
+            if n.isdigit() and f.isdigit() and int(f)>0: now+=int(n); full+=int(f); break
+        else:
+            c=value(e.path,"capacity")
+            if c.isdigit(): percents.append(int(c))
+    if not full and not percents: return Battery()
+    percent=round(100*now/full) if full else round(sum(percents)/len(percents))
+    return Battery(True,max(0,min(100,percent)),discharging or mains is False)
+
+def active_idle(settings, battery):
+    """The times in use now: the battery's while the computer runs on it, else the plugged-in ones."""
+    return settings["idle_battery"] if battery.present and battery.on_battery else settings["idle"]
+
+def critical(settings, battery):
+    """The action to take now because the battery is nearly empty ("" for none)."""
+    c=settings["battery_critical"]
+    if not (battery.present and battery.on_battery) or c["action"]=="nothing": return ""
+    return c["action"] if battery.percent<=c["percent"] else ""
+
 # ---------------------------------------------------------------------- what the system does by itself
 @dataclass
 class XTimers:
@@ -323,6 +383,9 @@ class PowerState:
     locker: bool = True            # a screen locker is installed
     can_sleep: bool = True
     xss_lock: str = ""             # X11: xss-lock is running; the i3 config line that starts it ("?" when not found there)
+    battery: Battery = field(default_factory=Battery)
+    battery_settings: dict = field(default_factory=dict)
+    critical: dict = field(default_factory=dict)
 
 def read_state(settings, lock_ok, sleep_ok):
     on_sway=sway()
@@ -334,4 +397,5 @@ def read_state(settings, lock_ok, sleep_ok):
             try: xss=path if xss_lock_lines(open(path,encoding="utf-8").read()) else "?"
             except OSError: pass
     return PowerState(clean_idle(settings.get("idle")),"sway" if on_sway else "X11",XTimers() if on_sway else read_xset(),
-                      read_logind(),works,lock_ok,sleep_ok,xss)
+                      read_logind(),works,lock_ok,sleep_ok,xss,read_battery(),clean_idle(settings.get("idle_battery")),
+                      clean_critical(settings.get("battery_critical")))

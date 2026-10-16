@@ -49,10 +49,15 @@ class IdleWatcher:
     sleep. On X11 TVWCS watches the idle time itself; on sway it runs swayidle, which calls `tvwcs idle …` back.
     Nothing happens while sound plays or an application keeps the computer awake (see power.py)."""
     TICK=5   # seconds between looks at the idle time
+    BATTERY_TICK=20   # seconds between looks at the battery
     def __init__(self, app):
         self.app=app; self.source=0; self.xidle=None; self.done=set(); self.last=0; self.checking=False; self.swayidle=power.SwayIdle()
+        self.battery=power.read_battery(); self.battery_source=0; self.critical_done=False
+    def times(self): return power.active_idle(self.app.store.settings,self.battery)
     def apply(self):
-        times=self.app.store.settings["idle"]
+        if self.battery.present and not self.battery_source:
+            self.battery_source=GLib.timeout_add_seconds(self.BATTERY_TICK,self._battery_tick)
+        times=self.times()
         if power.sway():
             problem=self.swayidle.apply(times,LAUNCHER)
             if problem: print(problem,file=sys.stderr)
@@ -63,13 +68,24 @@ class IdleWatcher:
             if self.xidle is None: self.xidle=power.XIdle()
             self.done=set(); self.source=GLib.timeout_add_seconds(self.TICK,self._tick)
         elif not active and self.source: GLib.source_remove(self.source); self.source=0
+    def _battery_tick(self):
+        """Plugging in or unplugging switches between the two sets of times; a nearly empty battery does what
+        Settings > Power and sleep says (once, until the charger is plugged in)."""
+        before=self.battery.on_battery; self.battery=power.read_battery()
+        if self.battery.on_battery!=before: self.apply()
+        if not self.battery.on_battery: self.critical_done=False
+        action=power.critical(self.app.store.settings,self.battery)
+        if action and not self.critical_done:
+            self.critical_done=True; print(f"The battery is at {self.battery.percent}%: {action}.",file=sys.stderr)
+            self.app.run_system_action(action)
+        return GLib.SOURCE_CONTINUE
     def _tick(self):
         ms=self.xidle.ms() if self.xidle is not None else None
         if ms is None or self.checking: return GLib.SOURCE_CONTINUE
         idle=ms//1000
         if idle<self.last: self.done=set()   # someone touched something: a new idle period
         self.last=idle
-        actions=power.due(self.app.store.settings["idle"],idle,self.done)
+        actions=power.due(self.times(),idle,self.done)
         if actions:
             self.checking=True   # pactl and systemd-inhibit run on a worker thread, so the menu never stalls
             def check():
