@@ -64,6 +64,7 @@ class Battery:
     present: bool = False      # the computer runs on a battery of its own (not a mouse's or a phone's)
     percent: int = 100
     on_battery: bool = False   # not plugged in
+    charging: bool = False     # plugged in and charging (plugged in and not charging: full, or held below full)
 
 def read_battery(root=None):
     """The computer's batteries in /sys/class/power_supply (a mouse's or headset's, scope "Device", are left out) and
@@ -74,7 +75,7 @@ def read_battery(root=None):
         except OSError: return ""
     try: entries=sorted(os.scandir(root or POWER_SUPPLY),key=lambda e:e.name)
     except OSError: return Battery()
-    now=full=0; percents=[]; discharging=False; mains=None
+    now=full=0; percents=[]; discharging=charging=False; mains=None
     for e in entries:
         kind=value(e.path,"type")
         if kind=="Mains" or (kind.startswith("USB") and value(e.path,"online")):
@@ -82,7 +83,9 @@ def read_battery(root=None):
             elif mains is None: mains=False
             continue
         if kind!="Battery" or value(e.path,"scope")=="Device" or value(e.path,"present")=="0": continue
-        if value(e.path,"status")=="Discharging": discharging=True
+        status=value(e.path,"status")
+        if status=="Discharging": discharging=True
+        elif status=="Charging": charging=True
         for a,b in (("energy_now","energy_full"),("charge_now","charge_full")):
             n,f=value(e.path,a),value(e.path,b)
             if n.isdigit() and f.isdigit() and int(f)>0: now+=int(n); full+=int(f); break
@@ -91,7 +94,8 @@ def read_battery(root=None):
             if c.isdigit(): percents.append(int(c))
     if not full and not percents: return Battery()
     percent=round(100*now/full) if full else round(sum(percents)/len(percents))
-    return Battery(True,max(0,min(100,percent)),discharging or mains is False)
+    on_battery=discharging or mains is False
+    return Battery(True,max(0,min(100,percent)),on_battery,charging and not on_battery)
 
 def active_idle(settings, battery):
     """The times in use now: the battery's while the computer runs on it, else the plugged-in ones."""

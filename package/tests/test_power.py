@@ -121,7 +121,9 @@ class BatteryTests(unittest.TestCase):
         b=power.read_battery(self.supply({"AC":{"type":"Mains","online":"0"},"BAT0":{"type":"Battery","status":"Discharging","energy_now":"30","energy_full":"60"}}))
         self.assertEqual((b.present,b.percent,b.on_battery),(True,50,True))
         b=power.read_battery(self.supply({"AC":{"type":"Mains","online":"1"},"BAT0":{"type":"Battery","status":"Charging","capacity":"77"}}))
-        self.assertEqual((b.present,b.percent,b.on_battery),(True,77,False))
+        self.assertEqual((b.present,b.percent,b.on_battery,b.charging),(True,77,False,True))
+        b=power.read_battery(self.supply({"AC":{"type":"Mains","online":"1"},"BAT0":{"type":"Battery","status":"Full","capacity":"100"}}))
+        self.assertEqual((b.on_battery,b.charging),(False,False))
     def test_a_mouse_battery_is_not_the_computers(self):
         self.assertFalse(power.read_battery(self.supply({"hidpp_battery_0":{"type":"Battery","scope":"Device","capacity":"20","status":"Discharging"}})).present)
     def test_times_and_critical_action(self):

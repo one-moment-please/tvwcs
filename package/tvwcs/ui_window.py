@@ -107,7 +107,19 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         header.append(controls)
         guide_btn=Gtk.Button(); guide_btn.add_css_class("square"); guide_btn.set_child(glyph("view-grid-symbolic","⊞")); guide_btn.set_tooltip_text("Open Applications (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
         pane.append(header); self._header_group=buttons+[guide_btn]
-        body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_vexpand(True); pane.append(body)
+        footer=Gtk.Label(); footer.add_css_class("muted"); footer.add_css_class("key-hints"); footer.set_xalign(0); footer.set_wrap(True); self.footer=footer; self._show_hints()
+        footer.set_margin_start(S(20)); footer.set_margin_end(S(20)); footer.set_margin_bottom(S(4)); pane.append(footer)
+        # Everything below the header sits at the bottom, nearest the search field: favorites, open applications, the
+        # search results, the search field, then the status row. The space left over (on a TV, or with Applications
+        # open) is above them. At a desk the window is only as tall as all this (main.fit_quick_menu).
+        body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_margin_bottom(S(10)); body.set_vexpand(True); pane.append(body)
+        scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); scroll.set_propagate_natural_height(True); body.append(scroll)
+        content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); content.set_valign(Gtk.Align.END); scroll.set_child(content); self.quick_content=content; self.quick_scroll=scroll
+        scroll.get_vadjustment().connect("changed",self._keep_at_bottom)   # what overflows is above: start at the bottom
+        self._build_quick_content(content)
+        self.results_scroll=Gtk.ScrolledWindow(); self.results_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); self.results_scroll.set_max_content_height(S(280)); self.results_scroll.set_propagate_natural_height(True); self.results_scroll.set_visible(False)
+        self.results_box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); self.results_box.set_valign(Gtk.Align.END); self.results_scroll.set_child(self.results_box); body.append(self.results_scroll)
+        self.results_scroll.get_vadjustment().connect("changed",self._keep_at_bottom)
         self.search_entry=Gtk.SearchEntry(); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search)
         self.search_entry.connect("changed",self._search_typed)
         # On a TV the field is three digits wide, with what to type beside it; it stretches once letters (or a fourth
@@ -116,15 +128,12 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.channel_hint=Gtk.Label(label="Type a channel number, or letters to search"); self.channel_hint.add_css_class("channel-hint")
         self.channel_hint.set_xalign(0); self.channel_hint.set_hexpand(True); self.channel_hint.set_wrap(True); line.append(self.channel_hint)
         body.append(line); self._search_narrow=None; self._shape_search()
-        self.results_scroll=Gtk.ScrolledWindow(); self.results_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); self.results_scroll.set_max_content_height(S(280)); self.results_scroll.set_propagate_natural_height(True); self.results_scroll.set_visible(False)
-        self.results_box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); self.results_scroll.set_child(self.results_box); body.append(self.results_scroll)
-        scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); body.append(scroll)
-        content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); scroll.set_child(content); self.quick_content=content
-        self._build_quick_content(content)
-        footer=Gtk.Label(); footer.add_css_class("muted"); footer.add_css_class("key-hints"); footer.set_xalign(0); footer.set_wrap(True); self.footer=footer; self._show_hints()
-        footer.set_margin_start(S(20)); footer.set_margin_end(S(20)); footer.set_margin_top(S(8)); footer.set_margin_bottom(S(8)); pane.append(footer)
         pane.append(self._build_status_bar())
         return pane
+
+    def quick_height(self,width):
+        """How tall the Quick Menu needs to be, at `width`, to show everything in it without scrolling."""
+        return self.quick_pane.measure(Gtk.Orientation.VERTICAL,width)[1]
 
     def _shape_search(self):
         """TV: a narrow channel field with its hint while the text could still be a channel number (empty, or up to
@@ -150,9 +159,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if footer.get_text()!=text: footer.set_text(text)
 
     # ---------------------------------------------------------- the bottom: clock and status icons
-    STATUS_PAGES=(("updates","updates"),("network","network"),("volume","sound"),("bluetooth","bluetooth"))
+    STATUS_PAGES=(("updates","updates"),("network","network"),("volume","sound"),("bluetooth","bluetooth"),("battery","power"))
     def _build_status_bar(self):
-        """The time and date, then icons for waiting updates, the network, the volume and Bluetooth. Each opens its
+        """The time and date, then icons for waiting updates, the network, the volume, Bluetooth and the battery (with
+        its charge, and whether it is charging; only on a computer with a battery). Each opens its
         page of the Settings app. The icons are refreshed by main.StatusWatcher."""
         bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); bar.add_css_class("quick-status")
         clock=Gtk.Button(); clock.add_css_class("clock-button"); clock.set_hexpand(True); clock.set_tooltip_text("Date and time")
@@ -177,32 +187,40 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not buttons or status==self._status_shown: return
         self._status_shown=status
         looks={"network":quick_status.network_icon(status),"volume":quick_status.volume_icon(status),
-               "bluetooth":quick_status.bluetooth_icon(status),"updates":quick_status.updates_icon(status)}
+               "bluetooth":quick_status.bluetooth_icon(status),"updates":quick_status.updates_icon(status),
+               "battery":quick_status.battery_icon(status)}
         st=self.app.store.settings   # a feature turned off (Settings > Features) shows no icon
         shown={"network":True,"volume":status.volume is not None and features.enabled(st,"sound"),
-               "bluetooth":bool(status.bluetooth) and features.enabled(st,"bluetooth"),"updates":status.updates>0}
+               "bluetooth":bool(status.bluetooth) and features.enabled(st,"bluetooth"),"updates":status.updates>0,
+               "battery":status.battery is not None}
         for key,b in buttons.items():
             icon,fallback,tip=looks[key]
-            if key=="updates":
+            if key in ("updates","battery"):   # an icon and a number: how many updates, the battery's percent
                 child=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); child.set_halign(Gtk.Align.CENTER)
-                child.append(glyph(icon,fallback,22)); n=Gtk.Label(label=str(status.updates)); n.add_css_class("status-count"); child.append(n)
+                child.append(glyph(icon,fallback,22))
+                n=Gtk.Label(label=str(status.updates) if key=="updates" else f"{status.battery or 0}%"); n.add_css_class("status-count"); child.append(n)
                 b.add_css_class("status-wide")
             else: child=glyph(icon,fallback,22)
             if key=="bluetooth": (b.add_css_class if status.bluetooth=="off" else b.remove_css_class)("status-off")
             b.set_child(child); b.set_tooltip_text(tip); b.set_visible(shown[key])
 
     def _build_quick_content(self,content):
-        content.append(section_title("OPEN APPLICATIONS"))
+        """Favorites, then the open applications below them (nearest the search field). A section with nothing in it
+        is left out; with neither, a note says where the installed applications are."""
+        favorites=self.app.store.favorites()
+        if favorites: content.append(section_title("FAVORITES"))
+        for profile in favorites: content.append(self._favorite_row(profile))
         entries=self.app.workspace_entries(); outputs=self.app.wm.outputs()
-        if not entries:
-            content.append(muted_label("Nothing is open. Pick a favorite below, or open Applications to start something." if self.app.wm.available
-                                       else "TVWCS can't see open apps here: it needs the i3 or sway window manager."))
+        if entries: content.append(section_title("OPEN APPLICATIONS"))
         for entry in entries:
             content.append(self._window_row(entry.windows[0]) if len(entry.windows)==1 else self._workspace_row(entry,outputs))
-        content.append(section_title("FAVORITES"))
-        favorites=self.app.store.favorites()
-        if not favorites: content.append(muted_label("No favorites yet. Open Applications (⊞) and press ☆ beside an app to add it here."))
-        for profile in favorites: content.append(self._favorite_row(profile))
+        if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the i3 or sway window manager."))
+        if not favorites and not entries:
+            content.append(muted_label("Nothing is open and there are no favorites yet. Open the guide (⊞) to see your installed applications."))
+    def _keep_at_bottom(self,adj):
+        """The Quick Menu's lists grow upwards from the search field: when they overflow, show their bottom. "changed"
+        comes while GTK is sizing the list, when a new value would not move it yet, so it is set just after."""
+        GLib.idle_add(lambda:(adj.set_value(adj.get_upper()-adj.get_page_size()),GLib.SOURCE_REMOVE)[1])
 
     # ---------------------------------------------------------- Quick Menu rows
     # Each row is the application (or workspace) with one ⋯ button before it. ⋯, ← on the row or a right-click opens
@@ -259,7 +277,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             shown=children.get_visible()
             expander.set_child(glyph("pan-up-symbolic" if shown else "pan-down-symbolic","▴" if shown else "▾"))
             expander.set_tooltip_text("Hide the individual apps" if shown else "Show the individual apps, to open just one")
-        expander.connect("clicked",lambda *_:(children.set_visible(not children.get_visible()),show_expander()))
+        expander.connect("clicked",lambda *_:(children.set_visible(not children.get_visible()),show_expander(),self.app.fit_quick_menu()))
         show_expander(); row.insert_child_after(expander,group[0]); group.insert(1,expander)   # group[0] is ⋯, even when hidden
         group.lead=expander   # ← on the name moves onto it; ← on it opens the row's menu
         self._groups["quick"].append(group)          # registered before its children so navigation order is top to bottom
@@ -464,6 +482,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         for b in self._stars.get(profile_id,[]): self._style_star(b,bool(p and p.favorite))
         if self.quick_content is not None:
             self._groups["quick"]=[]; clear_box(self.quick_content); self._build_quick_content(self.quick_content)
+            self.app.fit_quick_menu()
     def _restore_guide_scroll(self):
         if self.guide_scroll is not None: self.guide_scroll.get_vadjustment().set_value(self._guide_scroll)
         return GLib.SOURCE_REMOVE
@@ -472,14 +491,15 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     # ---------------------------------------------------------- search
     def _refresh_search_results(self):
         if not hasattr(self,"results_box"): return
+        if self._contains(self.results_box,self.get_focus()): self.search_entry.grab_focus()   # its row is about to go (the field's ✕ clicked)
         clear_box(self.results_box); self._result_groups=[]; self._result_mains=[]; self._selected_result=0
         q=self.search_entry.get_text()
         self.results_scroll.set_visible(bool(q.strip()))
         self._shape_search()
-        if not q.strip(): self._search_results=[]; return
+        if not q.strip(): self._search_results=[]; self.app.fit_quick_menu(); return
         self._search_results=search_items(q,self.app.store.profiles,self.app.catalogue.by_id(),self.app.wm.windows())[:12]
         if not self._search_results:
-            self.results_box.append(muted_label("No matches. Try an app name, profile name, channel number, or window title.")); return
+            self.results_box.append(muted_label("No matches. Try an app name, profile name, channel number, or window title.")); self.app.fit_quick_menu(); return
         for i,result in enumerate(self._search_results):
             main=Gtk.Button(); main.add_css_class("launch-row"); main.set_hexpand(True)
             row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10))
@@ -493,7 +513,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             detail=Gtk.Label(label=result["detail"]); detail.add_css_class("muted"); detail.set_ellipsize(3); row.append(detail); main.set_child(row)
             if i==self._selected_result: main.add_css_class("tvwcs-selected")
             main.connect("clicked",lambda _b,r=result:self.app.activate_result(r))
-            line,group=self._options_row(main,result["label"].strip(),items); self._result_groups.append(group); self._result_mains.append(main); self.results_box.append(line)
+            # the best match is nearest the search field, at the bottom; ↑ goes on to the next one
+            line,group=self._options_row(main,result["label"].strip(),items); self._result_groups.append(group); self._result_mains.append(main); self.results_box.prepend(line)
+        self.app.fit_quick_menu()
     def _activate_search(self,*_):
         if self._channel_source: GLib.source_remove(self._channel_source); self._channel_source=0   # Enter launches it now
         q=self.search_entry.get_text().strip()
@@ -573,7 +595,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _ordered_groups(self,pane):
         if self._modal_groups: return self._modal_groups
         if pane!="quick": return list(self._groups[pane])
-        return [self._header_group,[self.search_entry]]+list(self._result_groups)+list(self._groups["quick"])+[getattr(self,"_status_group",[])]
+        # top to bottom as on screen: the results are listed upwards from the search field
+        return [self._header_group]+list(self._groups["quick"])+list(reversed(self._result_groups))+[[self.search_entry],getattr(self,"_status_group",[])]
     @staticmethod
     def _contains(widget,focused): return focused is not None and (focused is widget or focused.is_ancestor(widget))
     def _in_search(self,focused): return self._contains(self.search_entry,focused)   # focus sits on the entry's inner text widget
@@ -685,19 +708,18 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if keyval in (Gdk.KEY_Down,Gdk.KEY_Up):
             step=1 if keyval==Gdk.KEY_Down else -1
             if not self._modal_groups:
+                # The results are above the search field, the best one nearest it: ↑ goes on to the next result.
                 # Keep focus in the search field while arrows change the highlighted result so typing can continue.
                 if typing and self.search_entry.get_text().strip() and self._search_results:
-                    nxt=self._selected_result+step
+                    nxt=self._selected_result-step
                     if 0<=nxt<len(self._search_results): self._select_result(nxt); return True
-                    if step>0: self._focus_first(self._groups["quick"]); return True
-                    if self._header_group: self._header_group[0].grab_focus()
-                    return True
+                    if step<0: self._focus_above_results(); return True   # ↓ from the best match: on to the status row
                 ri=self._result_index(focused)
                 if ri>=0:
-                    nxt=ri+step
+                    nxt=ri-step
                     if 0<=nxt<len(self._result_groups): self._select_result(nxt); self._landing(self._result_groups[nxt]).grab_focus(); return True
-                    if step>0: self._focus_first(self._groups["quick"]); return True
-                    self.search_entry.grab_focus(); return True
+                    if nxt<0: self.search_entry.grab_focus(); return True
+                    self._focus_above_results(); return True
             self._move_group(step); return True
         if keyval==Gdk.KEY_Right and typing and self._search_results and not self._modal_groups \
                 and self.search_entry.get_position()==len(self.search_entry.get_text()):
@@ -709,6 +731,12 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             if not self.search_entry.get_text().strip(): self.ask_search(); return True   # Enter on an empty search: the on-screen keyboard
             self._activate_search(); return True
         return False
+    def _focus_above_results(self):
+        """↑ past the last search result: the lowest row of the lists above it, else the header."""
+        for g in reversed(self._groups["quick"]):
+            w=self._landing(g)
+            if w is not None and w.grab_focus(): return
+        if self._header_group: self._header_group[0].grab_focus()
     def _key_released(self,_controller,keyval,_keycode,state):
         if self._capture is not None:
             spec=self._capture.release(Gdk.keyval_name(keyval))

@@ -7,7 +7,12 @@ on in TV mode (3 seconds) and off at a desk.
 A hidden pointer still rests over something, and applications keep showing that hover (a highlighted button, a
 tooltip). sway takes the pointer's focus away when it hides it. On X11 TVWCS moves the hidden pointer out of the way
 instead: to the bottom-right corner of the focused window, where there is rarely anything to highlight. TVWCS's own
-windows also stop showing hover then (widgets.PointerWatch)."""
+windows also stop showing hover then (widgets.PointerWatch).
+
+Only TVWCS's own session is affected: the unclutter TVWCS starts ends with TVWCS (the kernel stops it when TVWCS
+exits, however it exits), so it never outlives the i3 session. Debian's unclutter-startup package, which apt brings in
+with unclutter-xfixes, would start unclutter in every X session (GNOME, Cinnamon, ...); install.sh leaves it out, and
+turns its autostart off (/etc/default/unclutter) when asked."""
 from __future__ import annotations
 import ctypes, ctypes.util, os, shutil, subprocess
 
@@ -43,6 +48,15 @@ def sway_command(enabled, seconds):
 
 def unclutter_argv(seconds):
     return ["unclutter","-idle",str(seconds)]   # unclutter-xfixes reads the old unclutter's -idle too
+
+PR_SET_PDEATHSIG=1
+def _end_with_parent():
+    """Run in the child before unclutter starts (Linux): it gets SIGTERM when TVWCS exits."""
+    import signal
+    try:
+        libc=ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6",use_errno=True)
+        libc.prctl(PR_SET_PDEATHSIG,signal.SIGTERM,0,0,0)
+    except (OSError,AttributeError): pass
 
 def corner(rect, inset=2):
     """Where the hidden pointer is put: just inside the bottom-right corner of `rect` (an i3 rect)."""
@@ -102,7 +116,8 @@ class CursorHider:
             except (OSError,subprocess.SubprocessError): pass
         if not on: return ""
         if not self.which("unclutter"): return "unclutter is not installed, so the mouse pointer cannot be hidden. Install unclutter-xfixes."
-        try: self.proc=self.popen(unclutter_argv(seconds),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+        try: self.proc=self.popen(unclutter_argv(seconds),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                                  start_new_session=True,preexec_fn=_end_with_parent)
         except OSError as exc: return f"Could not start unclutter: {exc}"
         return ""
     def stop(self):

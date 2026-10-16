@@ -33,7 +33,7 @@ The look follows Metro (Modern UI): flat and typographic.
 
 TVWCS is one borderless floating window placed in the usable area of the workspace on the monitor under the pointer (i3 already excludes the bar). It holds up to two panels:
 
-- **Quick Menu:** a full-height column at the left, always shown when TVWCS is open.
+- **Quick Menu:** a column at the left, always shown when TVWCS is open. It is full height on a TV and whenever Applications is open. At a desk with Applications closed it is only as tall as its contents, kept in the bottom-left corner with the same margins, and it grows upwards as search results appear.
 - **Applications:** opens to the right of it and fills the rest on a TV. At a desk it is only as wide as its rows need (the widest row without its description, plus room for four in five descriptions); a longer description is cut with … and scrolls by while its row is selected, and the pointer shows all of it.
 
 The same margin (the **Screen edge margin**, which also handles TV overscan) separates panels from each other and from the screen edges. TVWCS computes the exact position at run time.
@@ -42,13 +42,14 @@ Navigation is spatial. → past the Quick Menu opens Applications; ← goes back
 
 ### Quick Menu
 
-From top to bottom:
+The header is at the top; everything else sits at the bottom, nearest the search field, with any spare height above it. From top to bottom:
 
-- **Header:** ⚙ Settings, ⏻ power menu, ✕ close (⚙ and ✕ can be hidden), ⊞ Applications.
+- **Header:** ⚙ Settings, ⏻ power menu, ✕ close (⚙ and ✕ can be hidden), ⊞ Applications, then the **key hints**.
+- **Favorites:** pinned launch profiles. Hidden when there are none.
+- **Open applications, by workspace.** A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor"). Hidden when nothing is open. With neither favorites nor open apps, a note points to the guide (⊞) for the installed apps.
+- **Search results**, listed upwards from the search field: the best match is the one nearest it, and ↑ moves on to the next.
 - **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. On a TV the field starts three digits wide with a short hint beside it, and widens for a letter or a fourth digit. OK on the empty field opens the on-screen keyboard (or number keypad).
-- **Open applications, by workspace.** A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor").
-- **Favorites:** pinned launch profiles.
-- **Key hints**, then the **status row:** clock, network, volume, Bluetooth and waiting updates. Each opens its Settings page.
+- **Status row:** clock, network, volume, Bluetooth, waiting updates, and the battery with its charge (charging, plugged in or on battery; only on a computer with a battery). Each opens its Settings page.
 
 Each row has a menu button (⋯), also opened with ← on the row or a right-click. It opens one list of labelled choices in a dialog:
 
@@ -106,7 +107,7 @@ Settings keeps idle times for the screen saver (`screensaver.py`, a logo bouncin
 
 With "Show it when the computer locks", `tvwcs lock` runs xsecurelock (X11 only) with `tvwcs screensaver --xsecurelock` as its saver: that draws the same logo through Xlib into the window xsecurelock gives it, since GTK cannot draw in another program's window. xsecurelock shows its password box on a key and goes back to the saver after a minute.
 
-The mouse pointer is hidden by TVWCS (`cursor.py`): `unclutter` on i3, `seat * hide_cursor` on sway, after the time in Options (by default on a TV only). On i3 a hidden pointer is moved to the bottom-right corner of the focused window so nothing stays highlighted under it.
+The mouse pointer is hidden by TVWCS (`cursor.py`): `unclutter` on i3, `seat * hide_cursor` on sway, after the time in Options (by default on a TV only). On i3 a hidden pointer is moved to the bottom-right corner of the focused window so nothing stays highlighted under it. Only TVWCS's session is affected: its unclutter is stopped by the kernel when TVWCS exits (`PR_SET_PDEATHSIG`), and Debian's `unclutter-startup` (which would start unclutter in every X session) is left out when unclutter-xfixes is installed; `install.sh` offers to turn off an autostart that is already there.
 
 The optional **TVWCS lock screen** (`lockscreen.py`) does not draw a lock itself. It paints one picture per monitor ("Locked — A password is needed. Type <user>'s password, then press Enter to unlock.") and runs i3lock, or swaylock on sway, with it. The power menu's Lock, the idle lock and `tvwcs lock` use it. When the i3 config starts xss-lock, its locker line is replaced too, and restored when the option is turned off.
 

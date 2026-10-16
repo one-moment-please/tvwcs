@@ -229,7 +229,7 @@ class TVWCSApp(Gtk.Application):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.NON_UNIQUE)
         self._welcomed=False
         self.window=None; self.catalogue=ApplicationCatalogue(); self.store=ConfigStore(); self.wm=I3WindowManager()
-        self.layout=None; self._owns_pid=False
+        self.layout=None; self._area=None; self._owns_pid=False
         self.pin_gate=PinGate(); self.owners=WindowOwners()
         self._fullscreen=set()   # windows that were fullscreen when TVWCS was shown; they are made fullscreen again when it hides
         self.idle=IdleWatcher(self); self.cursor=CursorWatcher(self)
@@ -301,14 +301,26 @@ class TVWCSApp(Gtk.Application):
         if monitors is not None and monitors.get_n_items():
             g=monitors.get_item(0).get_geometry(); return {"x":g.x,"y":g.y,"width":g.width,"height":g.height}
         return {"x":0,"y":0,"width":1920,"height":1080}
-    def _update_layout(self,guide,options,focus_output=True):
-        area=self.wm.usable_area(focus=focus_output) or self._fallback_area()
+    def _update_layout(self,guide,options,focus_output=True,area=None):
+        area=area or self.wm.usable_area(focus=focus_output) or self._fallback_area()
+        self._area=area
         s=self.store.settings; f=self.scale_factor
-        width=None
+        width=height=None; quick_width=round(s["quick_width"]*f)
         if guide and s.get("use")=="desktop" and self.window is not None:
             try: width=self.window.apps_width()
             except Exception as exc: print(f"Cannot measure the Applications pane: {exc}",file=sys.stderr)
-        self.layout=compute_layout(area,round(s["margin"]*f),round(s["quick_width"]*f),guide,options,width)
+        if not guide and s.get("use")=="desktop" and self.window is not None:
+            # at a desk the Quick Menu alone is only as tall as its contents, in the bottom-left corner
+            try: height=self.window.quick_height(quick_width)
+            except Exception as exc: print(f"Cannot measure the Quick Menu: {exc}",file=sys.stderr)
+        self.layout=compute_layout(area,round(s["margin"]*f),quick_width,guide,options,width,height)
+    def fit_quick_menu(self):
+        """The Quick Menu's contents changed (search results, favorites): at a desk, resize it to fit them."""
+        w=self.window
+        if w is None or not w.is_visible() or w.guide_open or self.store.settings.get("use")!="desktop": return
+        before=self.layout; self._update_layout(False,False,area=self._area)
+        if before is not None and (before.y,before.height)==(self.layout.y,self.layout.height): return
+        w.set_default_size(self.layout.width,self.layout.height); self.apply_geometry()
     def apply_geometry(self):
         """Ask i3 to float the window at the computed rectangle. Repeated shortly after mapping because
         i3 can only match the window once it exists."""
@@ -364,7 +376,9 @@ class TVWCSApp(Gtk.Application):
         self.wm.focus_output_under_mouse(); self.wm.leave_fullscreen(); self.wm.move_tvwcs_to_current_workspace(); self.refresh_data(rebuild=False)
         w.reset_scroll(); w.note_shown(); w.guide_open=guide; w.options_open=False
         self._update_layout(guide,False,focus_output=True)
-        w.set_default_size(self.layout.width,self.layout.height); w._build(); w.present(); self.apply_geometry()
+        w.set_default_size(self.layout.width,self.layout.height); w._build()
+        if not guide: self._update_layout(False,False,area=self._area); w.set_default_size(self.layout.width,self.layout.height)   # measured once built
+        w.present(); self.apply_geometry()
         w.focus_pane_soon("guide" if guide else "search")   # the Quick Menu opens on its search field, ready for a channel number
         if not self.store.settings.get("use") and not self._welcomed:   # first run: TV or desk?
             self._welcomed=True; GLib.timeout_add(120,lambda:(w.first_run(None),GLib.SOURCE_REMOVE)[1])
@@ -381,7 +395,9 @@ class TVWCSApp(Gtk.Application):
         """The interface size changed (in Settings > Options): rebuild everything at the new size."""
         set_scale(self.scale_factor); w=self.window
         self._update_layout(w.guide_open,w.options_open,focus_output=False)
-        w.set_default_size(self.layout.width,self.layout.height); w._build(); self.apply_geometry(); w.focus_pane_soon("guide" if w.guide_open else "quick")
+        w.set_default_size(self.layout.width,self.layout.height); w._build()
+        if not w.guide_open: self._update_layout(False,False,area=self._area); w.set_default_size(self.layout.width,self.layout.height)
+        self.apply_geometry(); w.focus_pane_soon("guide" if w.guide_open else "quick")
 
     # ---------------------------------------------------------- open windows and workspaces
     def workspace_entries(self): return build_entries(self.wm.windows(),self.wm.workspaces(),self.match_application_window)

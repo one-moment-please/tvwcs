@@ -331,6 +331,29 @@ class InstallTests(unittest.TestCase):
         self.assertRegex(out,r"adwaita-icon-theme +icons for apps and buttons"); self.assertRegex(out,r"fonts-open-sans +Open Sans: the font")
         papirus=self.home/".local"/"share"/"icons"/"Papirus"; papirus.mkdir(parents=True); (papirus/"index.theme").write_text("")   # the user's own theme counts
         self.assertNotIn("icons for apps",self.run_install(**env))
+    def test_installs_unclutter_without_its_every_session_autostart(self):
+        if shutil.which("unclutter"): self.skipTest("unclutter is installed here")
+        env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","xprintidle","xsecurelock"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
+        (bin_/"dpkg-query").write_text('#!/bin/sh\nprintf "un "\n'); (bin_/"dpkg-query").chmod(0o755)
+        self.converse(["y","n","n"],**env)
+        self.assertRegex((bin_/"apt").read_text(),r"apt-get install -y .*unclutter-xfixes.* unclutter-startup-\n")
+        (bin_/"dpkg-query").write_text('#!/bin/sh\nprintf "ii "\n'); (bin_/"apt").unlink()   # someone installed it: left alone
+        self.converse(["y","n","n"],**env)
+        self.assertNotIn("unclutter-startup",(bin_/"apt").read_text())
+    def test_offers_to_turn_off_unclutter_in_every_x_session(self):
+        env,_bin=self.fake_tools(); etc=Path(self.env["TVWCS_ETC"])
+        (etc/"X11"/"Xsession.d").mkdir(parents=True); (etc/"X11"/"Xsession.d"/"90unclutter").write_text("")
+        default=etc/"default"/"unclutter"; default.parent.mkdir(); text='# set by debconf\nSTART_UNCLUTTER="true"\nEXTRA_OPTS="-idle 1 -root"\n'
+        default.write_text(text)
+        out=self.converse([],{"Turn it off":"n"},**env)
+        self.assertIn("so the mouse pointer also hides in your other",out); self.assertEqual(default.read_text(),text)
+        self.assertNotIn("Turn it off",self.converse([],**env))   # a "no" is remembered
+        (self.home/".config"/"tvwcs"/"unclutter-autostart-kept").unlink()
+        out=self.converse([],{"Turn it off":"y"},**env)
+        self.assertEqual(default.read_text(),'# set by debconf\nSTART_UNCLUTTER="false"\nEXTRA_OPTS="-idle 1 -root"\n',out)
+        self.assertNotIn("unclutter is set to start",self.converse([],**env))
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
         for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","unclutter","xprintidle","xsecurelock"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
@@ -408,6 +431,17 @@ class InstallTests(unittest.TestCase):
         self.assertTrue((self.home/".config"/"tvwcs"/"sway-session.conf").is_file())
         self.write_i3("set $mod Mod4\n"); self.converse(["y"]*12,**env)   # your usual config gets TVWCS only on a clear yes
         self.assertTrue(self.i3.read_text().endswith("include ~/.local/share/tvwcs/tvwcs.conf\n")); self.assert_hands_off(override)
+    def test_warns_that_lightdm_cannot_start_sway_reliably(self):
+        env,_override=self.alongside("lightdm","sway"); sway=self.home/".config"/"tvwcs"/"sway-session.conf"
+        out=self.converse([],{"Set TVWCS up for sway anyway?":"n","Use your current keyboard layout":"y"},TVWCS_WMS="i3 sway",**env)
+        self.assertIn("login screen (lightdm) may not be able to start Wayland sessions such as sway",out)
+        self.assertIn("Left sway out.",out); self.assertFalse(sway.exists()); self.assertTrue((self.home/".config"/"tvwcs"/"i3-session.conf").exists())
+        out=self.converse([],{"Set TVWCS up for sway anyway?":"y","Use your current keyboard layout":"y"},TVWCS_WMS="i3 sway",**env)
+        self.assertIn("install a login screen that supports Wayland, such as SDDM",out); self.assertTrue(sway.exists())
+        self.assertNotIn("Set TVWCS up for sway anyway?",self.converse([],{"Use your current keyboard layout":"y"},TVWCS_WMS="i3 sway",**env))   # asked once
+        etc=Path(self.env["TVWCS_ETC"]); (etc/"X11").mkdir(); (etc/"X11"/"default-display-manager").write_text("/usr/sbin/gdm3\n")
+        (self.home/".config"/"tvwcs"/"sway-login-screen").unlink()
+        self.assertNotIn("Warning:",self.converse([],{"Use your current keyboard layout":"y"},TVWCS_WMS="i3 sway",**env))   # GDM starts sway
     def test_alongside_without_a_terminal(self):
         """Scripted: TVWCS_ASSUME_YES adds the login screen entry, but never TVWCS to your usual config."""
         env,override=self.alongside("lightdm"); self.write_i3("set $mod Mod4\n")

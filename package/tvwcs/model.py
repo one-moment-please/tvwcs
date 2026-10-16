@@ -374,19 +374,23 @@ class Layout:
     def guide_width(self) -> int:
         return 0 if not self.guide_open else max(0,self.width-self.quick_width-self.margin)
 
-def compute_layout(area, margin, quick_width, guide_open, options_open=False, guide_width=None) -> Layout:
+def compute_layout(area, margin, quick_width, guide_open, options_open=False, guide_width=None, quick_height=None) -> Layout:
     """Panels left to right: Quick Menu | Applications (tabbed), each pair separated by one `margin`.
     The Quick Menu sits at the left of `area` (the usable workspace rectangle) with `margin` px above,
     below and to its left. The tabbed Applications pane fills the rest; Settings is a tab inside it, so
     the window no longer grows when it opens. The window spans only what is open. `options_open` is
     accepted for compatibility with older callers and ignored. `guide_width` (desktop use) caps the Applications pane
-    at what its contents need, so the window does not fill the screen."""
+    at what its contents need, so the window does not fill the screen. `quick_height` (desktop use, Applications closed)
+    shrinks the Quick Menu to what its contents need, kept in the bottom-left corner with the same margins."""
     ax,ay,aw,ah=(int(area[k]) for k in ("x","y","width","height"))
     margin=max(0,min(int(margin),aw//4,ah//4))
     full=max(1,aw-2*margin); height=max(1,ah-2*margin)
     qw=max(1,min(int(quick_width),int(full*0.45)))
     width=full
     if guide_width: width=max(qw+margin+1,min(full,qw+margin+int(guide_width)))
+    if quick_height and not guide_open:
+        h=max(1,min(height,int(quick_height)))
+        return Layout(ax+margin,ay+ah-margin-h,qw,h,qw,margin,False)
     return Layout(ax+margin,ay+margin,width if guide_open else qw,height,qw,margin,bool(guide_open))
 
 # ---------------------------------------------------------------- badges
