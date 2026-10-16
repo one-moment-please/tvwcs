@@ -23,7 +23,7 @@ SYSTEM_ACTIONS=(
     SystemAction("shutdown","Shut down","system-shutdown-symbolic","⏻","Power off the computer now? Unsaved work in open applications may be lost."),
 )
 
-POWER_MENU=("lock","sleep","reboot","shutdown","logout")   # the power menu's order; lock and logout only when they apply
+POWER_MENU=("lock","sleep","reboot","shutdown","logout")   # the power menu's order; logout only with a login screen
 DISPLAY_MANAGERS=("gdm","gdm3","lightdm","sddm","lxdm","xdm","slim","greetd","ly","entrance","emptty")
 
 def login_manager_installed(exists=os.path.exists, which=shutil.which):
@@ -37,11 +37,10 @@ def login_manager_installed(exists=os.path.exists, which=shutil.which):
     return any(which(name) for name in DISPLAY_MANAGERS)
 
 def power_menu(settings=None, display_manager=None):
-    """The actions the Quick Menu's power menu offers, in order."""
-    settings=settings or {}
+    """The actions the Quick Menu's power menu offers, in order. `settings` is accepted for older callers."""
     dm=login_manager_installed() if display_manager is None else display_manager
     by_id={a.id:a for a in SYSTEM_ACTIONS}
-    return [by_id[i] for i in POWER_MENU if (i!="lock" or settings.get("quick_lock_button")) and (i!="logout" or dm)]
+    return [by_id[i] for i in POWER_MENU if i!="logout" or dm]
 
 def _sway(env,which): return bool(env.get("SWAYSOCK")) and bool(which("swaymsg"))
 

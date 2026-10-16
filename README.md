@@ -18,7 +18,7 @@ It works with normal desktop apps. It is not a media center and needs no plugins
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications pane open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">Buttons at the top: ⚙ Settings, ⏻ power menu, ✕ close, ⊞ Applications. Below: <b>Favorites</b>, <b>Open applications</b> (by workspace; ▾ shows the apps that share one), then the search field. At the bottom: the clock, and icons for network, volume, Bluetooth and updates.</td>
+    <td valign="top">✕ close at the top. Below: <b>Favorites</b>, <b>Open applications</b> (by workspace; ▴ unfolds the apps that share one, above it), then the search field. At the bottom: the clock, icons for network, volume, Bluetooth and the battery that each unfold a panel, and ⏻ power. The arrow strip along the right edge opens Applications.</td>
     <td valign="top"><b>Channels</b> lists apps you gave a number. <b>All applications</b> lists every app by category; OK/Enter folds a category. ☆ makes an app a favorite, ✎ edits its launch profiles.</td>
   </tr>
   <tr>
@@ -135,20 +135,22 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 | **←** on a Quick Menu row (or right-click) | Open that row's menu |
 
 - **First start:** TVWCS asks whether it is used on a TV or at a desk. This sets the interface size and how apps open.
-- **Quick Menu layout:** the title and buttons are at the top; your favorites, open apps, search and the status row are at the bottom, with search results appearing above the search field. A section with nothing in it is hidden. At a desk the Quick Menu is only as tall as what it shows; opening Applications stretches it to the full height.
-- **Row menu (⋯):** one menu of labelled choices: open the app in a new workspace or this one, start it with one of its own shortcuts, close it, or move a workspace to another monitor.
-- **Workspaces with several apps:** the square ▾ button between ⋯ and the workspace's name shows its individual apps, to open just one; ▴ hides them again. It stays visible even when the ⋯ buttons are hidden. On the name, ← moves onto it; ← again opens the row's menu.
+- **Quick Menu layout:** the title and ✕ are at the top; your favorites, open apps, search and the status row are at the bottom, with search results appearing above the search field. A section with nothing in it is hidden. At a desk the Quick Menu is only as tall as what it shows; opening Applications stretches it to the full height.
+- **Row options (⋯):** they unfold upwards, just above their row and indented a little: open the app in a new workspace or this one, start it with one of its own shortcuts, close it, or move a workspace to another monitor. Back folds them away.
+- **Workspaces with several apps:** the square ▴ button between ⋯ and the workspace's name unfolds its individual apps above it, to open just one; ▾ folds them again. It stays visible even when the ⋯ buttons are hidden. On the name, ← moves onto it; ← again opens the row's menu.
 - **Channels:** 000 to 999. Channel 000 opens Settings unless you give it to another app. Setting a channel shows three digit boxes; typing replaces the number.
 - **Slow apps:** while an app takes a few seconds to open, TVWCS shows "Starting…" so the screen is never blank, and the Quick Menu still opens.
 - **Launch profiles (✎):** a profile is one way to start an app. It can have a channel number, a hotkey, a custom command, a description and a PIN. The editor opens inside the TVWCS window: each field is a row, with Save, Cancel and Delete at the bottom. A PIN-protected profile asks for its PIN first. The PIN is a lock for a shared TV, not real security.
-- **Power menu (⏻):** Sleep, Reboot, Shut down; Log out when there is a login screen; Lock when switched on in Options. If a power action needs your password, TVWCS asks for it on screen and never stores it.
+- **Status panels:** network, volume, Bluetooth and battery icons unfold a panel above the status row: the connection and its address with Wi-Fi on/off; mute and volume for output and input; the connected Bluetooth devices with Disconnect and Bluetooth on/off; the battery's time left or time to full. Each has a button for its Settings page.
+- **Power menu (⏻):** at the bottom right: Lock, Sleep, Reboot, Shut down; Log out when there is a login screen.
+- **Applications:** the thin strip of arrows along the Quick Menu's right edge opens Applications; the arrows turn round to close it again. If a power action needs your password, TVWCS asks for it on screen and never stores it.
 - **Other keys:** set keys for Applications, fullscreen, a gamepad or any app in **Settings › Remote and hotkeys**. A gamepad needs a key mapper such as AntiMicroX.
 
 From a terminal, `~/.local/share/tvwcs/bin/tvwcs` takes `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
 
 ## Settings
 
-Open **TVWCS Settings** with ⚙ in the Quick Menu, from Applications (under System), or with `tvwcs settings [page]`. Pages are tabs on the left: **→** enters a page, **Back** returns to the tabs. Text is typed on a keyboard or on the on-screen keyboard.
+Open **TVWCS Settings** with channel 000, from a status panel's settings button, from Applications (under System), or with `tvwcs settings [page]`. Pages are tabs on the left: **→** enters a page, **Back** returns to the tabs. Text is typed on a keyboard or on the on-screen keyboard.
 
 | Page (`tvwcs settings …`) | What it does |
 |---|---|

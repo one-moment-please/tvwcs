@@ -135,6 +135,8 @@ class CursorWatcher:
         if self.source: GLib.source_remove(self.source); self.source=0
         self.hider.stop()
 
+GUIDE_STRIP=14   # px (at desktop scale): the guide strip beside the Quick Menu is never thinner than this, even with no margin
+
 class StatusWatcher:
     """Keeps the bottom of the Quick Menu current (the clock, and the network, volume, Bluetooth and updates icons) and
     does TV mode's housekeeping: the bar stays hidden, and the Quick Menu comes back once no application is open.
@@ -313,7 +315,7 @@ class TVWCSApp(Gtk.Application):
             # at a desk the Quick Menu alone is only as tall as its contents, in the bottom-left corner
             try: height=self.window.quick_height(quick_width)
             except Exception as exc: print(f"Cannot measure the Quick Menu: {exc}",file=sys.stderr)
-        self.layout=compute_layout(area,round(s["margin"]*f),quick_width,guide,options,width,height)
+        self.layout=compute_layout(area,round(s["margin"]*f),quick_width,guide,options,width,height,strip=round(GUIDE_STRIP*f))
     def fit_quick_menu(self):
         """The Quick Menu's contents changed (search results, favorites): at a desk, resize it to fit them."""
         w=self.window
@@ -697,7 +699,7 @@ class TVWCSApp(Gtk.Application):
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
         if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
     def open_settings(self,page=None):
-        """The Quick Menu's ⚙ (or a status icon, opening its page): the Settings app, a separate application. It opens
+        """A status icon or panel's settings button, opening its page (or channel 000, with no page): the Settings app, a separate application. It opens
         where any app would (Settings > Options > Where apps open): an open Settings window is brought up that way,
         else a new one starts in a workspace of its own or tiled here."""
         app=self.catalogue.by_id().get(SETTINGS_DESKTOP_ID)

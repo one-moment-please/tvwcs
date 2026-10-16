@@ -123,6 +123,28 @@ class NavigationTests(unittest.TestCase):
         win._fold_options(W("popup item")); g.collapse.assert_not_called()
         win._popovers=0; win._modal_groups=[NavGroup([W("cancel")])]
         win._fold_options(W("cancel")); g.collapse.assert_not_called()
+    def test_open_options_sit_just_above_their_row_in_the_navigation_order(self):
+        win=make_window(); a=options_row(win,expanded=True); b=options_row(win,expanded=True)
+        o1,o2=W("option 2"),W("option 1"); b[0].options=[NavGroup([o1]),NavGroup([o2])]
+        order=win._ordered_groups("quick")
+        self.assertEqual([order.index(g) for g in (a[0],*b[0].options,b[0])],[1,2,3,4])
+        W.focus=b[3]; win._move_group(-1); self.assertIs(W.focus,o2)   # ↑ from the row: its nearest option
+        win._move_group(-1); self.assertIs(W.focus,o1); win._move_group(-1); self.assertIs(W.focus,a[3])
+    def test_left_and_right_stay_on_an_option(self):
+        win=make_window(); g=options_row(win,expanded=True)[0]; opt=W("option"); item=NavGroup([opt]); item.option_item=True; g.options=[item]; W.focus=opt
+        self.assertTrue(win._move_within_group(1)); self.assertTrue(win._move_within_group(-1)); win.app.show_panels.assert_not_called(); self.assertIs(W.focus,opt)
+    def test_an_open_status_panel_is_between_search_and_the_status_row(self):
+        win=make_window(); p=W("wifi"); win._panel_groups=[NavGroup([p])]; status=NavGroup([W("clock"),W("power")]); win._status_group=status
+        order=win._ordered_groups("quick"); self.assertEqual(order[-2:],[win._panel_groups[0],status]); self.assertEqual(order[-3],[win.search_entry])
+    def test_a_panel_stays_open_while_the_selection_is_on_what_it_owns(self):
+        win=make_window(); collapse=MagicMock(); opener=W("power"); inside=W("lock")
+        win._open_row=types.SimpleNamespace(owns=lambda w:w is opener or w is inside,expanded=lambda:True,collapse=collapse); win._popovers=0
+        win._fold_options(inside); win._fold_options(opener); collapse.assert_not_called()
+        win._keep_panel=True; win._fold_options(W("elsewhere")); collapse.assert_not_called()   # being redrawn
+        win._keep_panel=False; win._fold_options(W("elsewhere")); collapse.assert_called_once(); self.assertIsNone(win._open_row)
+    def test_back_folds_open_options_onto_their_row(self):
+        win=make_window(); g,toggle,opt,main=options_row(win,expanded=True); g.collapse=MagicMock(); win._open_row=g; W.focus=opt
+        ui_window.TVWCSWindow._escape(win); g.collapse.assert_called_once(); self.assertIs(W.focus,main); win.app.hide_window.assert_not_called()
     def lanes(self):
         guide=W("guide_pane"); win=make_window(guide_open=True,guide_pane=guide); rows={}
         for lane in (0,1):

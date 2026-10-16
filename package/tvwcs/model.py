@@ -108,9 +108,7 @@ DEFAULT_SETTINGS={
     "always_new_workspace":False,   # every app, launched or already open, opens in a workspace of its own
     "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
     "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
-    "quick_settings_button":True,   # the Quick Menu's ⚙ button, which opens the Settings app
     "quick_close_button":True,      # the Quick Menu's ✕ button (Esc and Back close it too)
-    "quick_lock_button":False,      # a Lock button in the Quick Menu's power menu
     "update_prereleases":False,     # TVWCS's updater also offers prereleases (releases not yet tested and marked latest)
     "clock_24h":False,              # the Quick Menu's clock shows 14:05 instead of 2:05 PM
     "tv_hide_bar":True,             # TV mode: hide the i3 / sway bar (the Quick Menu shows the time and status instead)
@@ -181,7 +179,7 @@ def _clean_settings(raw) -> dict:
     shares=raw.get("network_shares")
     if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
-                "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
+                "quick_close_button","update_prereleases",
                 "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","screensaver_on_lock","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["features"]=clean_features(raw.get("features"))
@@ -370,28 +368,34 @@ class Layout:
     quick_width: int
     margin: int
     guide_open: bool
+    gap: int=-1        # the strip between the Quick Menu and Applications (the guide button); -1: `margin`
+    @property
+    def strip(self) -> int: return self.margin if self.gap<0 else self.gap
     @property
     def guide_width(self) -> int:
-        return 0 if not self.guide_open else max(0,self.width-self.quick_width-self.margin)
+        return 0 if not self.guide_open else max(0,self.width-self.quick_width-self.strip)
 
-def compute_layout(area, margin, quick_width, guide_open, options_open=False, guide_width=None, quick_height=None) -> Layout:
+def compute_layout(area, margin, quick_width, guide_open, options_open=False, guide_width=None, quick_height=None, strip=0) -> Layout:
     """Panels left to right: Quick Menu | Applications (tabbed), each pair separated by one `margin`.
     The Quick Menu sits at the left of `area` (the usable workspace rectangle) with `margin` px above,
     below and to its left. The tabbed Applications pane fills the rest; Settings is a tab inside it, so
     the window no longer grows when it opens. The window spans only what is open. `options_open` is
     accepted for compatibility with older callers and ignored. `guide_width` (desktop use) caps the Applications pane
     at what its contents need, so the window does not fill the screen. `quick_height` (desktop use, Applications closed)
-    shrinks the Quick Menu to what its contents need, kept in the bottom-left corner with the same margins."""
+    shrinks the Quick Menu to what its contents need, kept in the bottom-left corner with the same margins.
+    The gap between the two panels holds the thin guide button, so it is at least `strip` wide (with a margin of 0),
+    and it stays at the Quick Menu's right while Applications is closed."""
     ax,ay,aw,ah=(int(area[k]) for k in ("x","y","width","height"))
     margin=max(0,min(int(margin),aw//4,ah//4))
     full=max(1,aw-2*margin); height=max(1,ah-2*margin)
     qw=max(1,min(int(quick_width),int(full*0.45)))
+    gap=max(margin,int(strip))
     width=full
-    if guide_width: width=max(qw+margin+1,min(full,qw+margin+int(guide_width)))
+    if guide_width: width=max(qw+gap+1,min(full,qw+gap+int(guide_width)))
     if quick_height and not guide_open:
         h=max(1,min(height,int(quick_height)))
-        return Layout(ax+margin,ay+ah-margin-h,qw,h,qw,margin,False)
-    return Layout(ax+margin,ay+margin,width if guide_open else qw,height,qw,margin,bool(guide_open))
+        return Layout(ax+margin,ay+ah-margin-h,qw+gap,h,qw,margin,False,gap)
+    return Layout(ax+margin,ay+margin,width if guide_open else qw+gap,height,qw,margin,bool(guide_open),gap)
 
 # ---------------------------------------------------------------- badges
 

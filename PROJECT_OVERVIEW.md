@@ -21,7 +21,7 @@ The look follows Metro (Modern UI): flat and typographic.
 - **Square.** No rounded corners, gradients or shadows.
 - **Solid colour.** Dark surfaces by default (a light mode is an option), one accent colour (chosen in Settings), large light type, small spaced capitals for section titles. Text contrast is kept high.
 - **Clear focus.** The selected item is a solid accent block with a white frame. Dangerous actions turn red.
-- **Real icons.** App logos wherever an app is listed; a coloured letter tile when there is none. Symbols where the meaning is universal (⚙ ⏻ ✕ ⊞ ⋯ ≡ ☆ ✎), words elsewhere.
+- **Real icons.** App logos wherever an app is listed; a coloured letter tile when there is none. Symbols where the meaning is universal (⏻ ✕ ⋯ ≡ ☆ ✎), words elsewhere.
 - **Scales to the room.** Desktop, TV Mode (1080p) and 4K TV Mode sizes. The size applies at once.
 - **Calm motion.** Short fades, turned off by **Reduce motion**.
 - **Everything in one window.** Dialogs, editors, messages and the on-screen keyboard are drawn inside the TVWCS window, so they cannot get lost behind it.
@@ -44,17 +44,24 @@ Navigation is spatial. → past the Quick Menu opens Applications; ← goes back
 
 The header is at the top; everything else sits at the bottom, nearest the search field, with any spare height above it. From top to bottom:
 
-- **Header:** ⚙ Settings, ⏻ power menu, ✕ close (⚙ and ✕ can be hidden), ⊞ Applications, then the **key hints**.
+- **Header:** the title and ✕ close (it can be hidden).
 - **Favorites:** pinned launch profiles. Hidden when there are none.
-- **Open applications, by workspace.** A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor"). Hidden when nothing is open. With neither favorites nor open apps, a note points to the guide (⊞) for the installed apps.
+- **Open applications, by workspace.** A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor"). Hidden when nothing is open. With neither favorites nor open apps, a note points to Applications (→) for the installed apps.
 - **Search results**, listed upwards from the search field: the best match is the one nearest it, and ↑ moves on to the next.
 - **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. On a TV the field starts three digits wide with a short hint beside it, and widens for a letter or a fourth digit. OK on the empty field opens the on-screen keyboard (or number keypad).
-- **Status row:** clock, network, volume, Bluetooth, waiting updates, and the battery with its charge (charging, plugged in or on battery; only on a computer with a battery). Each opens its Settings page.
+- **Status row:** clock, waiting updates, network, volume, Bluetooth, the battery with its charge (charging, plugged in or on battery; only on a computer with a battery), and ⏻ power. The clock and the updates icon open their Settings page. The others unfold a panel above the row, indented a little, like a row's options:
+  - **⏻ Power:** Lock (nearest the button), Sleep, Reboot, Shut down, and Log out when there is a login screen.
+  - **Network:** the connection in use (Wi-Fi network and signal, or the wired connection) with its address, Wi-Fi on or off, and Network settings.
+  - **Volume:** mute, − and + (and a slider) for the output and the input, and Sound settings.
+  - **Bluetooth:** the connected devices, each with Disconnect, Bluetooth on or off, and Bluetooth settings.
+  - **Battery:** the charge and about how long until it is empty (or charged), from the kernel's estimate or the rate it drains at, and Power settings.
+  Details that need a command (network, Bluetooth, sound) are read in the background; the selection moves into the panel once they arrive. A panel folds away when the selection leaves it and its icon, with Back, or with its icon again.
+- **Guide strip:** a thin button the full height of the Quick Menu, in the gap between it and Applications (at least 14 px, even with no screen edge margin). Its triangles point away from the Quick Menu while Applications is closed and back towards it while it is open; clicking it opens or closes Applications. With a remote, → past the end of a row does the same.
 
-Each row has a menu button (⋯), also opened with ← on the row or a right-click. It opens one list of labelled choices in a dialog:
+Each row has a menu button (⋯), also opened with ← on the row or a right-click. Its options unfold upwards, above the row, indented a little on both sides, close to their row and with a small gap to the row above, the first option nearest the row. ↑ from the row goes into them; they fold away when the selection leaves them and their row, with Back, or with ⋯ again:
 
 - **App:** open it the other way (tiled here, or in its own workspace), its own `.desktop` actions, Close when it is open.
-- **Workspace:** move it to another monitor, expand it into its apps, or close it and everything on it (asks first).
+- **Workspace:** move it to another monitor, or close it and everything on it (asks first). Its ▴ button unfolds its individual apps upwards, above it.
 - **Favorite:** its launch mode and `.desktop` actions.
 
 Messages, errors and a "Starting <app>…" card are shown in the window. The first time TVWCS opens it asks whether it is used on a TV or at a desk.
@@ -101,7 +108,7 @@ Three sets: keyboard (default: tap Super for the Quick Menu), remote (default: F
 
 ### Power and locking
 
-The power menu has Sleep, Reboot and Shut down, Log out when there is a login screen, and Lock when enabled. Reboot, Shut down and Log out ask first, with Cancel selected. Power actions use `systemctl`. When polkit refuses, TVWCS uses a no-password sudo or doas rule (the installer offers a narrow one), else asks for the sudo password in its own dialog and passes it to `sudo -S` without storing it.
+The power menu has Lock, Sleep, Reboot and Shut down, and Log out when there is a login screen. Reboot, Shut down and Log out ask first, with Cancel selected. Power actions use `systemctl`. When polkit refuses, TVWCS uses a no-password sudo or doas rule (the installer offers a narrow one), else asks for the sudo password in its own dialog and passes it to `sudo -S` without storing it.
 
 Settings keeps idle times for the screen saver (`screensaver.py`, a logo bouncing round a black screen), screen off, lock and sleep (TVWCS watches idle time itself on i3; it runs `swayidle` on sway), and a second set for a laptop on battery, plus what to do when its battery is nearly empty (`power.py` reads `/sys/class/power_supply`). Nothing happens while sound plays or an app inhibits idle. The screen saver ends when the screen turns off.
 
