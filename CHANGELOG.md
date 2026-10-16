@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.5.0 — 2026-10-16
+
+- Settings > Displays has a **Scale** that makes text and controls bigger. In sway each display has its own, from 100 % to 300 % in steps of 25 %. In i3 (X11) there is one scale for every display, in whole steps (100 %, 200 %, 300 %); turning on **Fractional scaling** also offers 125 %, 150 %, 175 % and so on. A fractional scale is drawn at the next whole step and shrunk by xrandr, as GNOME does it, so it is a little less sharp. Only scales that leave a display at least 540 pixels high are offered, and a new scale goes back after 15 seconds unless it is kept.
+- In i3 the scale reaches apps through Xft.dpi (and ~/.Xresources, so i3 and the next log-in use it too) and, for GTK apps, through xsettingsd, which install.sh now asks for in i3.
 ## 3.4.3 — 2026-10-16
 
 - The real cause of "Logging in…" hanging is fixed: greetd's worker locks its memory, and pam_ecryptfs ran out of stack under the default memory-lock limit about one login in three. TVWCS's login screen now lifts greetd's limit (/etc/systemd/system/greetd.service.d/tvwcs-memlock.conf, removed when the login screen is turned off) and no longer rewrites greetd's PAM config: greetd's own comes back on update, so home folders encrypted with eCryptfs unlock as usual.

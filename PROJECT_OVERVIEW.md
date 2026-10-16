@@ -140,7 +140,7 @@ On a first install it asks for everything or a minimal install (`TVWCS_INSTALL`)
 | i3 / sway fragment (starts TVWCS, includes hotkeys, window rules) | `~/.local/share/tvwcs/tvwcs.conf` |
 | User data and settings | `~/.config/tvwcs/config.json` |
 | Hotkeys, written by TVWCS | `~/.config/tvwcs/hotkeys.conf` |
-| Kept display settings | `~/.config/tvwcs/displays.json` |
+| Kept display settings | `~/.config/tvwcs/displays.json` (i3's scale also in `~/.Xresources` and `~/.config/tvwcs/xsettingsd.conf`) |
 | TVWCS's own session configs (alongside) | `~/.config/tvwcs/<wm>-session.conf` |
 | PID file and per-session files | `$XDG_RUNTIME_DIR` |
 

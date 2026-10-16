@@ -45,7 +45,7 @@ FEATURES=(
 BY_KEY={f.key:f for f in FEATURES}
 PAGE_FEATURE={p:f.key for f in FEATURES for p in f.pages}
 # Packages TVWCS itself needs, even in a minimal install: never uninstalled from here
-CORE_PACKAGES={"python3-gi","gir1.2-gtk-4.0","i3","sway","xdotool","x11-xserver-utils","libxss1","swayidle","libglib2.0-bin",
+CORE_PACKAGES={"python3-gi","gir1.2-gtk-4.0","i3","sway","xdotool","x11-xserver-utils","xsettingsd","libxss1","swayidle","libglib2.0-bin",
                "adwaita-icon-theme","fonts-open-sans","xdg-desktop-portal","xdg-desktop-portal-gtk","xserver-xorg","xinit"}
 
 def clean(raw):
