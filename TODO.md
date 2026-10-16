@@ -462,3 +462,30 @@ What it still lacked, found by reading the code (none of it was tested):
 - Unverified package names: `gtk4` (PyGObject needs `typelib-1_0-Gtk-4_0`), `unclutter`, `xinit`.
 - Leap 15.6's python3 is 3.6 (TVWCS needs 3.9+): only Tumbleweed and Leap 16 can work.
 - Test it end to end in a Tumbleweed VM (the HTPC has libvirt).
+
+---
+
+## 4. eCryptfs home folders with TVWCS's login screen (not started)
+
+Since 3.4.2, TVWCS's login screen logs in through a PAM config of its own, `/etc/pam.d/tvwcs-greetd`
+(`pam_config()` in `package/tvwcs/loginscreen.py`): greetd's config with its `@include` lines spelt out and every
+`pam_ecryptfs.so` line replaced by `pam_permit.so`. That was needed because pam_ecryptfs crashed greetd's session
+worker in `pam_sm_authenticate` (`__asprintf_chk`, on Graham's X1 Yoga, Debian 13, the second login after a boot), and
+greetd then waited for ever. When `/home/.ecryptfs` exists, TVWCS keeps greetd's own PAM config, so an encrypted home
+still unlocks, and the crash can come back.
+
+To support encrypted homes properly:
+
+- **Find the root cause.** Reproduce in a VM with ecryptfs-utils installed and a home that is not encrypted, log in
+  and out twice through greetd, and read the core dump (`coredumpctl gdb`, with debug symbols for pam_ecryptfs).
+  Likely suspects: a NULL passed to `asprintf` for a value pam_ecryptfs reads from the PAM environment or the user's
+  `~/.ecryptfs` files, which greetd's worker sets up differently from login or LightDM. Check whether Debian's or
+  upstream's ecryptfs-utils already has a fix, and whether LightDM on the same machine crashes the same way.
+- **Keep the module only for the people who need it.** Instead of all or nothing, wrap the pam_ecryptfs lines so they
+  run only for users with an eCryptfs home, for example `auth [success=1 default=ignore] pam_succeed_if.so quiet
+  user notingroup ecryptfs-users` in front of each (or a `pam_exec` test for `/home/.ecryptfs/<user>`), keeping the
+  jump counts of the lines around them right.
+- **Session side.** With an encrypted home, the session's `pam_ecryptfs` mounts the home folder; check that greetd's
+  session (and TVWCS's start-session, which runs after PAM) sees the mounted folder, and that logging out unmounts it.
+- **Tests.** Unit tests with sample `common-auth` / `common-session` files from a system using eCryptfs, and one real
+  login with an encrypted home in a VM.
