@@ -3,7 +3,7 @@
 ## 3.3.0 — 2026-10-16
 
 **Quick Menu**
-- A new order, built up from the bottom: the status row stays at the bottom, the search field is just above it with the search results above the field (the best match nearest it; ↑ moves to the next), then your open applications, then your favorites. The title and buttons stay at the top, with the key hints under them. Open applications and favorites are hidden when there are none; with neither, a note points to the guide (⊞) for the installed applications.
+- A new order, built up from the bottom: the status row stays at the bottom, the search field is just above it with the search results above the field (the best match nearest it; ↑ and ↓ move the highlight while you keep typing), then your open applications, then your favorites. The title and buttons stay at the top, with the key hints under them. Open applications and favorites are hidden when there are none; with neither, a note points to the guide (⊞) for the installed applications.
 - The status row has a battery button on a computer with a battery: the charge in percent, with a mark while charging or plugged in. It opens Power and sleep.
 - At a desk, the Quick Menu is only as tall as its contents, in the bottom-left corner with the same margins, and grows upwards as search results appear. Opening Applications stretches it to the full height, with everything but the title and buttons kept at the bottom.
 

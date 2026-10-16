@@ -218,8 +218,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not favorites and not entries:
             content.append(muted_label("Nothing is open and there are no favorites yet. Open the guide (⊞) to see your installed applications."))
     def _keep_at_bottom(self,adj):
-        """The Quick Menu's lists grow upwards from the search field: when they overflow, show their bottom."""
-        adj.set_value(adj.get_upper()-adj.get_page_size())
+        """The Quick Menu's lists grow upwards from the search field: when they overflow, show their bottom. "changed"
+        comes while GTK is sizing the list, when a new value would not move it yet, so it is set just after."""
+        GLib.idle_add(lambda:(adj.set_value(adj.get_upper()-adj.get_page_size()),GLib.SOURCE_REMOVE)[1])
 
     # ---------------------------------------------------------- Quick Menu rows
     # Each row is the application (or workspace) with one ⋯ button before it. ⋯, ← on the row or a right-click opens
@@ -490,6 +491,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     # ---------------------------------------------------------- search
     def _refresh_search_results(self):
         if not hasattr(self,"results_box"): return
+        if self._contains(self.results_box,self.get_focus()): self.search_entry.grab_focus()   # its row is about to go (the field's ✕ clicked)
         clear_box(self.results_box); self._result_groups=[]; self._result_mains=[]; self._selected_result=0
         q=self.search_entry.get_text()
         self.results_scroll.set_visible(bool(q.strip()))
@@ -708,10 +710,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             if not self._modal_groups:
                 # The results are above the search field, the best one nearest it: ↑ goes on to the next result.
                 # Keep focus in the search field while arrows change the highlighted result so typing can continue.
-                if typing and self.search_entry.get_text().strip() and self._search_results and step<0:
-                    nxt=self._selected_result+1
-                    if nxt<len(self._search_results): self._select_result(nxt); return True
-                    self._focus_above_results(); return True
+                if typing and self.search_entry.get_text().strip() and self._search_results:
+                    nxt=self._selected_result-step
+                    if 0<=nxt<len(self._search_results): self._select_result(nxt); return True
+                    if step<0: self._focus_above_results(); return True   # ↓ from the best match: on to the status row
                 ri=self._result_index(focused)
                 if ri>=0:
                     nxt=ri-step
