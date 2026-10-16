@@ -26,8 +26,9 @@ button.user-button { padding: 10px; background: transparent; }
 button.user-button:focus, button.user-button:focus-visible { background: @ACCENT@; }
 .user-name { font-size: 20px; }
 button.key { min-height: 52px; min-width: 44px; padding: 0 6px; font-size: 20px; }
-button.key.pad { min-height: 64px; font-size: 26px; }
-button.key.wide { font-size: 16px; }
+button.key.letter { min-height: 68px; min-width: 68px; padding: 0; font-size: 40px; }
+button.key.pad { min-height: 76px; min-width: 76px; padding: 0; font-size: 40px; }
+button.key.wide { font-size: 16px; min-height: 56px; }
 entry.password-field { font-size: 26px; min-height: 56px; }
 .signing-in { color: @MUTED@; }
 .greeter-status { font-size: 18px; }
@@ -129,31 +130,31 @@ class GreeterWindow(Gtk.ApplicationWindow):
         left.append(self.tile(full,190))
         n=Gtk.Label(label=full); n.add_css_class("greeter-user"); n.set_xalign(0); n.set_max_width_chars(16); n.set_wrap(True); left.append(n)
         if full!=login: m=Gtk.Label(label=login); m.add_css_class("muted"); m.set_xalign(0); left.append(m)
-        right=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); right.set_hexpand(True); right.set_size_request(S(620),-1); cols.append(right)
+        right=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); right.set_halign(Gtk.Align.START); right.set_size_request(S(716),-1); cols.append(right)   # as wide as the full keyboard
         h=Gtk.Label(label="Password"); h.add_css_class("section-title"); h.set_xalign(0); right.append(h)
         self.entry=Gtk.PasswordEntry(); self.entry.add_css_class("password-field"); self.entry.set_show_peek_icon(True); self.entry.set_text(typed)
         self.entry.connect("activate",lambda *_:self.submit()); self.entry.set_margin_bottom(S(4)); right.append(self.entry)
         self.status=Gtk.Label(label=error or " "); self.status.add_css_class("greeter-status"); self.status.add_css_class("error" if error else "signing-in"); self.status.set_xalign(0); self.status.set_wrap(True)
         self.status.set_margin_bottom(S(6)); self.status.set_size_request(-1,S(30)); right.append(self.status)   # the same height with a message or without
         self.entry.connect("changed",lambda *_:self.clear_error())
-        def line(widgets, homogeneous=True):
+        def line(widgets, homogeneous=True, fill=False):   # fill: as wide as the letter rows above
             box=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); box.set_homogeneous(homogeneous)
             for w in widgets: box.append(w)
-            box.set_margin_bottom(S(4)); right.append(box); self.rows.append(list(widgets))
+            box.set_margin_bottom(S(4)); box.set_halign(Gtk.Align.FILL if fill else Gtk.Align.START); right.append(box); self.rows.append(list(widgets))
         def key(label, handler, *css):
             b=Gtk.Button(label=label); b.add_css_class("key")
             for c in css: b.add_css_class(c)
             b.connect("clicked",lambda _b:handler()); return b
         if self.digits:
             for r in (("1","2","3"),("4","5","6"),("7","8","9")): line([key(d,lambda d=d:self.type(d),"pad") for d in r])
-            line([key("⌫",self.erase,"pad"),key("0",lambda:self.type("0"),"pad"),key("ABC  Full keyboard",self.switch,"pad","wide")])
+            line([key("⌫",self.erase,"pad"),key("0",lambda:self.type("0"),"pad"),key("ABC  Full keyboard",self.switch,"wide")],homogeneous=False)
         else:
             for r in range(4):
-                made=[key("",lambda r=r,c=c:self.type(KEYS[self.layer][r][c])) for c in range(10)]
+                made=[key("",lambda r=r,c=c:self.type(KEYS[self.layer][r][c]),"letter") for c in range(10)]   # square keys
                 self.keys.append(made); line(made)
             line([key("⇧ Shift",lambda:self.set_layer("lower" if self.layer=="upper" else "upper"),"wide"),
                   key("&123",lambda:self.set_layer("lower" if self.layer=="symbols" else "symbols"),"wide"),
-                  key("Space",lambda:self.type(" "),"wide"),key("⌫",self.erase,"wide"),key("123  Number pad",self.switch,"wide")])
+                  key("Space",lambda:self.type(" "),"wide"),key("⌫",self.erase,"wide"),key("123  Number pad",self.switch,"wide")],fill=True)
             self.label_keys()
         name=next((s["name"] for s in self.sessions if s["id"]==self.session),"No session")
         sess=Gtk.Button(); sl=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); a=Gtk.Label(label="Session"); a.set_xalign(0); a.set_hexpand(True)
@@ -208,6 +209,7 @@ class GreeterWindow(Gtk.ApplicationWindow):
             self.memory.remember(user,session["id"],keyboard)
             if self.app.demo: self.status.set_text(f"Logged in (demo): would start {session['name']}."); self.entry.set_text(""); return
             self.app.quit()   # greetd starts the session once the greeter has gone
+            GLib.timeout_add_seconds(3,lambda:os._exit(0))   # gone even if something keeps GTK's main loop running
         threading.Thread(target=lambda:(lambda r:GLib.idle_add(lambda:(done(r),GLib.SOURCE_REMOVE)[1]))(work()),daemon=True).start()
 
     # ---------------------------------------------------------- dialogs
