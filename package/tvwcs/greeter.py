@@ -10,6 +10,7 @@ from pathlib import Path
 from tvwcs import loginscreen
 
 class GreetdError(Exception): pass
+TIMEOUT=90   # seconds to wait for greetd's answer (PAM may take a while), rather than "Logging in…" for ever
 
 class Greetd:
     """A connection to greetd. Each method sends one request and returns greetd's answer (a dict)."""
@@ -17,7 +18,7 @@ class Greetd:
         if sock is None:
             sock_path=sock_path or os.environ.get("GREETD_SOCK")
             if not sock_path: raise GreetdError("GREETD_SOCK is not set: the login screen must be started by greetd.")
-            sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); sock.connect(sock_path)
+            sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); sock.settimeout(TIMEOUT); sock.connect(sock_path)
         self.sock=sock
     def close(self):
         try: self.sock.close()
