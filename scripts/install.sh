@@ -620,6 +620,10 @@ session_entry() {   # session_entry <i3|sway>: the login screen's entry for it
         "Exec=$BINDIR/tvwcs-session $1" "TryExec=$1" "DesktopNames=$1"
 }
 entry_path() { if [ "$1" = i3 ]; then echo "$SHARE/xsessions/tvwcs-i3.desktop"; else echo "$SHARE/wayland-sessions/tvwcs-sway.desktop"; fi; }
+sway_console_hint() {   # a login screen made for X only (such as Linux Mint's) does not list a sway session
+    case " $SESSION_WMS " in *" sway "*)
+        echo "If the login screen does not list \"TVWCS (sway)\", start it from a text console with:  '$BINDIR/tvwcs-session' sway" ;; esac
+}
 setup_login_entries() {
     # A copy of the wrapper in TVWCS's own folder, for startx and for computers without a login screen.
     session_wrapper > "$DEST/bin/tvwcs-session"; chmod +x "$DEST/bin/tvwcs-session"
@@ -640,7 +644,7 @@ setup_login_entries() {
         same_file "$STAGE/$WM.desktop" "$(entry_path "$WM")" 2>/dev/null || ALL_SAME=""
     done
     echo
-    if [ -n "$ALL_SAME" ]; then echo "The login screen already lists TVWCS's session."; rm -rf "$STAGE"; LOGIN_ENTRY=1; return 0; fi
+    if [ -n "$ALL_SAME" ]; then echo "The login screen already lists TVWCS's session."; rm -rf "$STAGE"; LOGIN_ENTRY=1; sway_console_hint; return 0; fi
     if ! ask "Add a \"TVWCS\" session to the login screen? This adds$(for WM in $SESSION_WMS; do printf ' %s' "$(entry_path "$WM")"; done) and $BINDIR/tvwcs-session, and asks for your password once."; then
         echo "No login screen entry was added. Run install.sh again to add it, or start the session from a text console with:"
         echo "    startx '$DEST/bin/tvwcs-session' i3"; rm -rf "$STAGE"; return 0
@@ -648,9 +652,24 @@ setup_login_entries() {
     if as_root sh -c 'set -e; mkdir -p "$(dirname "$1")"; cp "$2" "$1"; chmod 0755 "$1"; shift 2
                       while [ $# -gt 0 ]; do mkdir -p "$(dirname "$1")"; cp "$2" "$1"; chmod 0644 "$1"; shift 2; done' sh "$@"; then
         echo "Added TVWCS's session to the login screen (delete$(for WM in $SESSION_WMS; do printf ' %s' "$(entry_path "$WM")"; done) and $BINDIR/tvwcs-session to undo it)."
-        LOGIN_ENTRY=1
+        LOGIN_ENTRY=1; sway_console_hint
     else echo "Could not add the login screen entry; nothing was changed." >&2; fi
     rm -rf "$STAGE"
+}
+
+# sway started by hand (`sway` on a text console) reads ~/.config/sway/config, and without one it reads your i3 config,
+# which sway cannot run (lines such as "tiling_drag modifier titlebar" are i3's only). TVWCS's own sway session never
+# does that, so it is started with tvwcs-session; your plain sway gets a config of its own here if you like.
+sway_fallback_check() {
+    command -v sway >/dev/null 2>&1 || return 0
+    [ -z "$(wm_config sway)" ] && [ -n "$(wm_config i3)" ] || return 0
+    echo
+    echo "You have an i3 config but no sway config. sway started on its own (typing \"sway\" on a text console) then reads"
+    echo "your i3 config, and stops at lines only i3 understands. TVWCS's sway session is not affected: start it with"
+    echo "    '$DEST/bin/tvwcs-session' sway"
+    if ask "Create a sway config of its own for plain sway too ($CONFIG_HOME/sway/config, from the standard template)?"; then
+        choose_keys; create_sway_config || true
+    fi
 }
 
 echo
@@ -664,6 +683,7 @@ LOGIN_ENTRY=""
 if [ "$SETUP" = alongside ]; then
     for WM in $WMS; do setup_session_config "$WM"; done
     setup_login_entries
+    case " $SESSION_WMS " in *" sway "*) sway_fallback_check ;; esac
     for WM in $WMS; do   # your usual config: only on request
         CFG=$(wm_config "$WM"); [ -n "$CFG" ] && include_in "$WM" "$CFG" optional
     done

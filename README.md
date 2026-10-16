@@ -158,6 +158,7 @@ A page whose tool is missing says what to install.
 - **"TVWCS is already running":** delete the stale `$XDG_RUNTIME_DIR/tvwcs.pid`.
 - **The edges of TVWCS are cut off on the TV:** raise **Settings › Options › Screen edge margin**, or turn off overscan in the TV's picture settings.
 - **Wrong monitor (i3):** install `xdotool`.
+- **sway says "Invalid tiling_drag command" (or other errors about your i3 config):** sway started on its own reads `~/.config/i3/config` when there is no `~/.config/sway/config`, and i3-only lines stop it. Start TVWCS's sway session with `tvwcs-session sway` instead (from a text console, or **TVWCS (sway)** at the login screen; a login screen made only for X, such as Linux Mint's, may not list it). `install.sh` also offers to create a sway config of its own.
 - **Letters instead of icons:** install `adwaita-icon-theme` or `papirus-icon-theme`.
 - **Check for updates fails:** TVWCS needs internet access to `api.github.com`.
 
