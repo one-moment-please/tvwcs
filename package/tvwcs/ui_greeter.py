@@ -199,9 +199,12 @@ class GreeterWindow(Gtk.ApplicationWindow):
         cmd=loginscreen.start_session_argv(session)
         env=[f"XDG_SESSION_TYPE={session['kind']}"]+([f"XDG_CURRENT_DESKTOP={session['desktop']}",f"XDG_SESSION_DESKTOP={session['desktop']}"] if session.get("desktop") else [])
         def work():
-            try: client=self.app.connect()
+            try:
+                client=self.app.connect()
+                return greeter.log_in(client,user,password,cmd,env)
             except (OSError,greeter.GreetdError) as exc: return f"Could not reach greetd: {exc}"
-            return greeter.log_in(client,user,password,cmd,env)
+            except Exception as exc:   # never leave "Logging in…" up for ever
+                print(f"tvwcs-greeter: logging in failed: {exc!r}",file=sys.stderr); return f"Logging in failed: {exc}"
         def done(problem):
             self.busy=False
             if problem:

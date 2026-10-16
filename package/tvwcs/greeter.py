@@ -73,6 +73,11 @@ def log_in(greetd, username, password, cmd, env=()):
         if reply.get("type")!="success":
             greetd.cancel(); return reply.get("description") or "The session could not be started."
         return ""
+    except (TimeoutError,socket.timeout):
+        # greetd's worker died checking the password (a PAM module that crashes, such as pam_ecryptfs) and greetd
+        # waits for it for ever: nothing logs in until greetd is restarted
+        return ("The computer's login system stopped answering (see journalctl -u greetd). Restart the computer to try "
+                "again; if it keeps happening, a PAM module is crashing.")
     except (OSError,ValueError,GreetdError,struct.error) as exc:
         return f"Could not reach greetd: {exc}"
 

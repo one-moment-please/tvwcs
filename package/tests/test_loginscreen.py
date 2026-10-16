@@ -168,6 +168,11 @@ class GreetdTests(unittest.TestCase):
         self.assertEqual(f.got[-1],{"type":"start_session","cmd":["sway"],"env":["XDG_SESSION_TYPE=wayland"]})
         self.assertEqual([m["type"] for m in f.got[-4:]],["create_session","post_auth_message_response","post_auth_message_response","start_session"])
         self.assertNotIn("response",f.got[-3])   # nothing answered to the notice
+    def test_a_greetd_that_stops_answering_is_reported(self):
+        """greetd waits for ever when its worker crashes in PAM: the greeter says so instead of "Logging in…"."""
+        a,b=socket.socketpair(); a.settimeout(0.2)
+        try: self.assertIn("stopped answering",greeter.log_in(greeter.Greetd(sock=a),"tv","pw",["i3"]))
+        finally: a.close(); b.close()
     def test_without_greetd(self):
         with mock.patch.dict(os.environ,{},clear=True):
             with self.assertRaises(greeter.GreetdError): greeter.Greetd()

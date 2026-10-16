@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.2 — 2026-10-16
+
+- When the computer's login system stops answering (greetd waits for ever if a PAM module crashes while checking the password, as pam_ecryptfs can), the login screen says so and suggests restarting, instead of showing "Logging in…" until the computer is restarted. Any other failure while logging in is shown too.
+
 ## 3.4.1 — 2026-10-16
 
 - TVWCS's login screen starts the "TVWCS (i3)" session again. Its command reached Debian's Xsession split in two, which showed "Xsession: unsupported number of arguments (2); falling back to default session."
