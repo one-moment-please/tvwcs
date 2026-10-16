@@ -7,7 +7,8 @@ class PinTests(unittest.TestCase):
         for ok in ("1234","00000","12345678"): self.assertTrue(valid_pin(ok),ok)
         for bad in ("","123","123456789","12a4","12 34",None): self.assertFalse(valid_pin(bad),bad)
     def test_hash_and_check(self):
-        h=make_hash("4321"); self.assertTrue(valid_hash(h)); self.assertNotIn("4321",h)
+        h=make_hash("4321"); self.assertTrue(valid_hash(h))
+        self.assertRegex(h,r"^[0-9a-f]{32}\$[0-9a-f]+$")             # only salt$digest in hex: the PIN itself is not kept (random hex can contain "4321")
         self.assertTrue(check_pin("4321",h)); self.assertFalse(check_pin("4322",h)); self.assertFalse(check_pin("",h))
         self.assertNotEqual(h,make_hash("4321"))                       # salted
         with self.assertRaises(ValueError): make_hash("12")
