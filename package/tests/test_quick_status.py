@@ -53,6 +53,23 @@ class VolumeAndBluetoothTests(unittest.TestCase):
         self.assertEqual(qs.parse_bluetooth(show.replace("yes","no"),""),"off")
         self.assertEqual(qs.parse_bluetooth("No default controller available\n",""),"")
 
+class BatteryTests(unittest.TestCase):
+    def supply(self, files):
+        root=tempfile.mkdtemp()
+        for name,values in files.items():
+            os.makedirs(os.path.join(root,name))
+            for k,v in values.items(): Path(root,name,k).write_text(v+"\n")
+        return root
+    def test_reads_the_charge_and_whether_it_charges(self):
+        self.assertEqual(qs.read_battery(self.supply({"AC":{"type":"Mains","online":"1"}})),(None,""))   # a desktop: no icon
+        self.assertEqual(qs.read_battery(self.supply({"AC":{"type":"Mains","online":"0"},"BAT0":{"type":"Battery","status":"Discharging","capacity":"64"}})),(64,"battery"))
+        self.assertEqual(qs.read_battery(self.supply({"AC":{"type":"Mains","online":"1"},"BAT0":{"type":"Battery","status":"Charging","capacity":"41"}})),(41,"charging"))
+        self.assertEqual(qs.read_battery(self.supply({"AC":{"type":"Mains","online":"1"},"BAT0":{"type":"Battery","status":"Full","capacity":"100"}})),(100,"plugged"))
+    def test_icons(self):
+        self.assertEqual(qs.battery_icon(qs.Status(battery=64,power="battery"))[::2],("battery-level-60-symbolic","Battery 64%, on battery"))
+        self.assertEqual(qs.battery_icon(qs.Status(battery=41,power="charging"))[::2],("battery-level-40-charging-symbolic","Battery 41%, charging"))
+        self.assertEqual(qs.battery_icon(qs.Status(battery=100,power="plugged"))[0],"battery-level-100-charged-symbolic")
+
 class DateTimeTests(unittest.TestCase):
     def test_reads_timedatectl(self):
         self.assertEqual(dt.parse_show(SHOW),("America/New_York",True,False,True))

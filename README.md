@@ -2,7 +2,7 @@
 
 TVWCS (TV Window Channel Switcher) lets you use an ordinary Linux computer from the couch with a remote. It runs on top of the i3 or sway window manager and gives you:
 
-- a **Quick Menu** at the left of the screen: search, your open apps and your favorites;
+- a **Quick Menu** at the bottom left of the screen: your favorites, your open apps, search, and a status row with the clock, network, sound, Bluetooth and battery;
 - an **Applications** pane beside it: every installed app by category, plus your own numbered **Channels**;
 - a **Settings** app for the things a TV computer needs: sound, displays, Wi-Fi, Bluetooth, power, updates and more.
 
@@ -78,6 +78,10 @@ It first prints what it found (for example `Found: no login screen, no desktop s
 1. **This computer is only for TVWCS.** It can log you in automatically at start-up and go straight into TVWCS, like a TV. It adds one `include` line to your i3/sway config (or creates a config). Automatic login is only offered when there is no login screen, and is off unless you say yes: anyone who switches the computer on gets your session.
 2. **Next to my other desktops.** It adds **TVWCS (i3)** and/or **TVWCS (sway)** to your login screen. That session uses its own config in `~/.config/tvwcs/`, so your usual i3 or sway is not changed. It never sets up automatic login. Adding TVWCS to your usual i3/sway config as well is a separate question, and the default is no.
 
+Some login screens, such as LightDM (Linux Mint's), cannot reliably start Wayland sessions like sway. When yours is one of them, the installer warns before setting TVWCS up for sway and asks whether to go on. If you do, install a login screen that supports Wayland, such as SDDM (`sudo apt install sddm`) or greetd with tuigreet. i3 works with any login screen.
+
+Hiding the mouse pointer only affects TVWCS's own session. If unclutter was set up to start in every X session (Debian's `unclutter-startup` package, which earlier TVWCS versions installed along with `unclutter-xfixes`), the installer offers to turn that off.
+
 On a first install it also asks **what to install**: everything TVWCS can use, or a **minimal install** with the Quick Menu, the applications list and basic Settings. A minimal install leaves out the software of the optional features (sound, Bluetooth, network, storage, the terminal, Flathub apps, the screen saver, hiding the pointer) and turns off those whose software is missing. **Settings › Features** turns them on later.
 
 After that it may ask to:
@@ -107,6 +111,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 | **←** on a Quick Menu row (or right-click) | Open that row's menu |
 
 - **First start:** TVWCS asks whether it is used on a TV or at a desk. This sets the interface size and how apps open.
+- **Quick Menu layout:** the title and buttons are at the top; your favorites, open apps, search and the status row are at the bottom, with search results appearing above the search field. A section with nothing in it is hidden. At a desk the Quick Menu is only as tall as what it shows; opening Applications stretches it to the full height.
 - **Row menu (⋯):** one menu of labelled choices: open the app in a new workspace or this one, start it with one of its own shortcuts, close it, or move a workspace to another monitor.
 - **Channels:** 000 to 999. Channel 000 opens Settings unless you give it to another app. Setting a channel shows three digit boxes; typing replaces the number.
 - **Slow apps:** while an app takes a few seconds to open, TVWCS shows "Starting…" so the screen is never blank, and the Quick Menu still opens.

@@ -243,6 +243,33 @@ login_manager() {   # the login screen installed here, or ""
     done
     echo ""
 }
+# Login screens that start Wayland sessions such as sway reliably. Others (LightDM, as on Linux Mint, LXDM, XDM, SLiM...)
+# are made for X: a sway session chosen there may not start, or start without a working seat.
+WAYLAND_LOGIN_SCREENS="gdm gdm3 sddm greetd ly emptty lemurs tbsm"
+login_screen_name() {   # the login screen that runs at boot (lightdm, gdm3...), or "" for none
+    if [ -L "$ETC/systemd/system/display-manager.service" ]; then
+        N=$(readlink "$ETC/systemd/system/display-manager.service"); N=${N##*/}; echo "${N%.service}"; return
+    fi
+    if [ -s "$ETC/X11/default-display-manager" ]; then N=$(sed -n 1p "$ETC/X11/default-display-manager"); echo "${N##*/}"; return; fi
+    N=$(login_manager); [ "$N" = display-manager.service ] && N=unknown; echo "$N"
+}
+SWAY_LOGIN_OK=$CONFIG_HOME/tvwcs/sway-login-screen
+sway_login_screen_ok() {   # 0: go on with sway; 1: leave sway out (the login screen cannot start it, and that was the answer)
+    LS=$(login_screen_name); [ -n "$LS" ] || return 0
+    case " $WAYLAND_LOGIN_SCREENS " in *" $LS "*) return 0 ;; esac
+    [ "$(cat "$SWAY_LOGIN_OK" 2>/dev/null)" = "$LS" ] && return 0   # asked before, and the answer was to go on
+    echo
+    if [ "$LS" = unknown ]; then LSN="This computer's login screen"; else LSN="This computer's login screen ($LS)"; fi
+    echo "Warning: $LSN may not be able to start Wayland sessions such as sway reliably. Choosing sway"
+    echo "there can fail to start, or start without a working keyboard and mouse. i3 works with any login screen."
+    if [ -t 0 ]; then
+        ask_no "Set TVWCS up for sway anyway?" || { echo "Left sway out."; return 1; }
+        mkdir -p "$(dirname "$SWAY_LOGIN_OK")"; echo "$LS" > "$SWAY_LOGIN_OK"
+    fi
+    echo "For sway, install a login screen that supports Wayland, such as SDDM ($(install_hint sddm)) or"
+    echo "greetd with tuigreet ($(install_hint "greetd tuigreet")). Installing one asks which login screen to use at boot."
+    return 0
+}
 init_system() {   # systemd or other (TVWCS supports systemd only; TODO.md says what others would need)
     if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd; else echo other; fi
 }
@@ -335,9 +362,15 @@ without_x_server() {   # the packages given, less the X server's (XLibre replace
         case "$P" in xserver-xorg) ;; *) printf '%s ' "$P" ;; esac
     done
 }
+deb_installed() { dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii'; }
 pkg_install() {   # pkg_install <packages>: install them with this distribution's package manager, as root
     case "$(distro)" in
-        debian) as_root apt-get update -q && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+        debian)
+            # apt would also bring in unclutter-startup (recommended), which starts unclutter in every X session, other
+            # desktops too; TVWCS starts it in its own session. "name-" tells apt to leave it out (unless already there).
+            case " $* " in *" unclutter-xfixes "*)
+                if command -v dpkg-query >/dev/null 2>&1 && ! deb_installed unclutter-startup; then set -- "$@" unclutter-startup-; fi ;; esac
+            as_root apt-get update -q && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
         *) return 1 ;;
     esac
 }
@@ -353,6 +386,7 @@ offer_wm_install() {
     printf "Install one now? 1) %s  2) sway  3) neither [1]: " "$I3_CHOICE"
     read -r ANSWER || ANSWER=3
     case "$ANSWER" in ""|1*|[Ii]*) WM=i3 ;; 2*|[Ss]*) WM=sway ;; *) echo "Nothing was installed."; return 0 ;; esac
+    if [ "$WM" = sway ] && ! sway_login_screen_ok; then echo "Nothing was installed."; return 0; fi
     PKGS=$(wm_packages "$WM")
     # shellcheck disable=SC2086   # one word per package
     if [ "$WM" = i3 ] && [ -n "$XSERVER" ]; then PKGS=$(without_x_server $PKGS); PKGS=${PKGS% }; fi
@@ -435,6 +469,30 @@ if [ -n "$NEEDS" ]; then
         echo "To install them:  $(install_hint "$ALL")"
     fi
 fi
+# unclutter started in every X session: Debian's unclutter-startup (which apt installed along with unclutter-xfixes
+# before TVWCS 3.3.0 left it out) hides the pointer in other desktops too. TVWCS hides it in its own session by itself,
+# so offer to turn that autostart off. Kept on when someone wants it: a "no" is remembered.
+UNCLUTTER_DEFAULT=$ETC/default/unclutter
+UNCLUTTER_KEPT=$CONFIG_HOME/tvwcs/unclutter-autostart-kept
+check_unclutter_autostart() {
+    [ -f "$ETC/X11/Xsession.d/90unclutter" ] && grep -Eq '^[[:space:]]*START_UNCLUTTER="?true"?[[:space:]]*$' "$UNCLUTTER_DEFAULT" 2>/dev/null || return 0
+    [ ! -f "$UNCLUTTER_KEPT" ] || return 0
+    echo
+    echo "unclutter is set to start in every X session ($UNCLUTTER_DEFAULT), so the mouse pointer also hides in your other"
+    echo "desktops. TVWCS hides the pointer in its own session by itself and does not need this. (It comes from the"
+    echo "unclutter-startup package, which apt installs along with unclutter-xfixes.)"
+    if ask_yes "Turn it off, so the pointer is only hidden in TVWCS's session?"; then
+        if as_root sed -i 's/^[[:space:]]*START_UNCLUTTER=.*/START_UNCLUTTER="false"/' "$UNCLUTTER_DEFAULT"; then
+            echo "Turned it off in $UNCLUTTER_DEFAULT; other desktops keep their pointer from the next log-in."
+        else echo "Could not change $UNCLUTTER_DEFAULT; nothing was changed." >&2; fi
+    elif [ -t 0 ]; then
+        mkdir -p "$(dirname "$UNCLUTTER_KEPT")"; echo "Kept on by choice; delete this file to be asked again." > "$UNCLUTTER_KEPT"
+        echo "Left it on; you will not be asked again."
+    else
+        echo "To turn it off, set START_UNCLUTTER=\"false\" in $UNCLUTTER_DEFAULT."
+    fi
+}
+[ -n "$CHECK_ONLY" ] || check_unclutter_autostart
 # A minimal install: the features whose software is missing start turned off (Settings > Features turns them on).
 if [ -n "$MINIMAL" ] && [ -z "$CHECK_ONLY" ]; then
     PYTHONPATH="$DEST" python3 -m tvwcs.features minimal || echo "Could not turn the optional features off; do it in Settings > Features." >&2
@@ -710,6 +768,12 @@ if [ -z "$WMS" ]; then
     command -v sway >/dev/null 2>&1 && WMS="$WMS sway"
     [ -n "$WMS" ] || WMS="i3"   # nothing installed yet: still say what to add once it is
 fi
+case " $WMS " in *" sway "*)
+    if ! sway_login_screen_ok; then
+        WMS=$(echo " $WMS " | sed 's/ sway / /; s/^ *//; s/ *$//')
+        [ -n "$WMS" ] || echo "Nothing was set up. Install i3 (it works with any login screen) and run install.sh again."
+    fi ;;
+esac
 LOGIN_ENTRY=""
 if [ "$SETUP" = alongside ]; then
     for WM in $WMS; do setup_session_config "$WM"; done

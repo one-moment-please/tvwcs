@@ -100,9 +100,15 @@ def missing_packages(feature, run=subprocess.run):
     return [p for p in feature.packages if not states.get(p,False)] if states else list(feature.packages)
 
 VALID_PACKAGE=re.compile(r"[a-z0-9][a-z0-9+.-]*")
-def install_argv(packages):
+# Packages apt would bring in with one of ours (as recommended) that change other desktops too: unclutter-startup starts
+# unclutter in every X session, not only TVWCS's. Left out ("name-" tells apt not to install it) unless already there.
+NOT_WITH={"unclutter-xfixes":"unclutter-startup"}
+def install_argv(packages, run=subprocess.run):
     if not packages or not all(VALID_PACKAGE.fullmatch(p) for p in packages): raise ValueError("Unexpected package name.")
-    return ["env","DEBIAN_FRONTEND=noninteractive","sh","-c",'apt-get update -q && apt-get install -y "$@"',"sh",*packages]
+    unwanted=[NOT_WITH[p] for p in packages if p in NOT_WITH]
+    states=package_states(unwanted,run) if unwanted else {}
+    skip=[f"{u}-" for u in unwanted if states.get(u) is False]
+    return ["env","DEBIAN_FRONTEND=noninteractive","sh","-c",'apt-get update -q && apt-get install -y "$@"',"sh",*packages,*skip]
 
 def remove_argv(packages):
     """apt-get remove: only these packages (never autoremove or purge; their settings stay)."""

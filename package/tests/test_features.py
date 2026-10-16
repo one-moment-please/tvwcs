@@ -1,5 +1,5 @@
 """Settings > Features (features.py): what is on, and when a feature's packages may be uninstalled."""
-import os, tempfile, unittest
+import os, shutil, tempfile, unittest
 from types import SimpleNamespace
 from unittest import mock
 
@@ -50,5 +50,11 @@ class FeatureTests(unittest.TestCase):
     def test_package_names_are_checked(self):
         with self.assertRaises(ValueError): F.install_argv(["bluez; rm -rf /"])
         self.assertEqual(F.install_argv(["bluez"])[-1],"bluez")
+    def test_unclutter_is_installed_without_its_every_session_autostart(self):
+        if not shutil.which("dpkg-query"): self.skipTest("dpkg-query is not installed here")
+        class Done: stdout="unclutter-startup\tun \n"
+        self.assertEqual(F.install_argv(["unclutter-xfixes"],run=lambda *a,**k:Done())[-2:],["unclutter-xfixes","unclutter-startup-"])
+        Done.stdout="unclutter-startup\tii \n"   # installed already (by its owner): left alone
+        self.assertEqual(F.install_argv(["unclutter-xfixes"],run=lambda *a,**k:Done())[-1],"unclutter-xfixes")
 
 if __name__=="__main__": unittest.main()

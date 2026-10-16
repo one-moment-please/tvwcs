@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.3.0 — 2026-10-16
+
+**Quick Menu**
+- A new order, built up from the bottom: the status row stays at the bottom, the search field is just above it with the search results above the field (the best match nearest it; ↑ moves to the next), then your open applications, then your favorites. The title and buttons stay at the top, with the key hints under them. Open applications and favorites are hidden when there are none; with neither, a note points to the guide (⊞) for the installed applications.
+- The status row has a battery button on a computer with a battery: the charge in percent, with a mark while charging or plugged in. It opens Power and sleep.
+- At a desk, the Quick Menu is only as tall as its contents, in the bottom-left corner with the same margins, and grows upwards as search results appear. Opening Applications stretches it to the full height, with everything but the title and buttons kept at the bottom.
+
+**Hiding the mouse pointer**
+- Only TVWCS's own session hides the pointer. The unclutter TVWCS starts now always ends with TVWCS, so it never outlives the i3 session.
+- Installing unclutter-xfixes (by the installer or Settings › Features) no longer brings in unclutter-startup, which started unclutter in every X session, so other desktops hid their pointer too. When that autostart is already on, the installer explains it and offers to turn it off (a "no" is remembered).
+
+**Installer**
+- When the login screen cannot reliably start Wayland sessions (LightDM, as on Linux Mint, and other X-only ones), the installer warns before setting TVWCS up for sway and asks whether to go on. Going on suggests a login screen that can, such as SDDM or greetd with tuigreet. Declining leaves sway out; the answer is remembered for that login screen.
+
 ## 3.2.1 — 2026-10-16
 
 - The screen saver covers every monitor, each with its own bouncing logo, instead of only the one in use. Any key, click or pointer movement ends it on all of them, and focus goes back to the workspace that had it.

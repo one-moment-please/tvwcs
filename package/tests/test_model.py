@@ -270,6 +270,12 @@ class LayoutTests(unittest.TestCase):
     def test_second_monitor_offset(self):
         l=compute_layout({"x":1920,"y":0,"width":1920,"height":1080},20,460,False)
         self.assertEqual(l.x,1940)
+    def test_desktop_quick_menu_fits_its_contents_in_the_bottom_left_corner(self):
+        l=compute_layout(self.AREA,20,460,False,quick_height=400)
+        self.assertEqual((l.x,l.y,l.width,l.height),(20,30+1050-20-400,460,400))
+        self.assertEqual(compute_layout(self.AREA,20,460,False,quick_height=5000).height,1010)   # never taller than the screen
+        l=compute_layout(self.AREA,20,460,True,quick_height=400)   # Applications open: the full height
+        self.assertEqual((l.y,l.height),(50,1010))
     def test_small_screen_is_clamped(self):
         l=compute_layout({"x":0,"y":0,"width":800,"height":600},20,460,True)
         self.assertLessEqual(l.quick_width,int((800-40)*0.45)); self.assertGreater(l.guide_width,0)

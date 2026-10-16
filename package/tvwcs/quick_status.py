@@ -1,5 +1,5 @@
 """What the status icons at the bottom of the Quick Menu show: the network (and the Wi-Fi signal), the volume,
-Bluetooth and whether updates are waiting. No GTK dependency; each read is quick and safe to run on a worker thread
+Bluetooth, the battery (and whether it is charging) and whether updates are waiting. No GTK dependency; each read is quick and safe to run on a worker thread
 (the updates check is slow and is run rarely, see main.StatusWatcher)."""
 from __future__ import annotations
 import os
@@ -15,6 +15,8 @@ class Status:
     muted: bool=False
     bluetooth: str=""        # "" (no adapter), "off", "on" or "connected"
     updates: int=0           # updates waiting (system packages and Flatpak), from the last check
+    battery: int|None=None   # the computer's battery in percent; None without one
+    power: str=""            # "battery" (running on it), "charging", or "plugged" (plugged in, not charging: full)
 
 # ---------------------------------------------------------------------- network
 def default_interface(route_text):
@@ -87,9 +89,17 @@ def count_updates():
     except Exception: return 0   # a broken package manager never breaks the Quick Menu
     return s.total if s.available else 0
 
+# ---------------------------------------------------------------------- battery
+def read_battery(root=None):
+    """-> (percent or None, "battery" | "charging" | "plugged" | "")."""
+    from tvwcs import power
+    b=power.read_battery(root)
+    if not b.present: return None,""
+    return b.percent,("battery" if b.on_battery else "charging" if b.charging else "plugged")
+
 def read(updates=0):
-    network,signal=read_network(); volume,muted=read_volume()
-    return Status(network,signal,volume,muted,read_bluetooth(),updates)
+    network,signal=read_network(); volume,muted=read_volume(); battery,power=read_battery()
+    return Status(network,signal,volume,muted,read_bluetooth(),updates,battery,power)
 
 # ---------------------------------------------------------------------- what each icon shows
 def network_icon(s):
@@ -111,6 +121,15 @@ def bluetooth_icon(s):
     if s.bluetooth=="off": return "bluetooth-disabled-symbolic","ᛒ","Bluetooth is off"
     if s.bluetooth=="connected": return "bluetooth-active-symbolic","ᛒ","Bluetooth: a device is connected"
     return "bluetooth-active-symbolic","ᛒ","Bluetooth is on"
+
+def battery_icon(s):
+    """The level in steps of ten (the icon themes' battery-level-N icons), with a charging mark while plugged in."""
+    if s.battery is None: return "battery-missing-symbolic","🔋","No battery"
+    level=max(0,min(100,round(s.battery/10)*10))
+    plugged="battery-level-100-charged-symbolic" if level==100 else f"battery-level-{level}-charging-symbolic"   # there is no 100-charging
+    if s.power=="charging": return plugged,"⚡",f"Battery {s.battery}%, charging"
+    if s.power=="plugged": return plugged,"🔌",f"Battery {s.battery}%, plugged in"
+    return f"battery-level-{level}-symbolic","🔋",f"Battery {s.battery}%, on battery"
 
 def updates_icon(s):
     return "software-update-available-symbolic","⟳",f"{s.updates} update{'s' if s.updates!=1 else ''} available"
