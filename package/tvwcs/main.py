@@ -14,7 +14,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
-from tvwcs.model import CONFIG_HOME, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
+from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, apply_use, effective_scale, apps_open, LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, PIN_LAUNCH_AND_SHOW, SCALE_PRESETS, ConfigStore, compute_layout, is_4k
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import appearance, power, privilege, quick_status, screensaver, tv_mode
@@ -258,7 +258,11 @@ class TVWCSApp(Gtk.Application):
     def _update_layout(self,guide,options,focus_output=True):
         area=self.wm.usable_area(focus=focus_output) or self._fallback_area()
         s=self.store.settings; f=self.scale_factor
-        self.layout=compute_layout(area,round(s["margin"]*f),round(s["quick_width"]*f),guide,options)
+        width=None
+        if guide and s.get("use")=="desktop" and self.window is not None:
+            try: width=self.window.apps_width()
+            except Exception as exc: print(f"Cannot measure the Applications pane: {exc}",file=sys.stderr)
+        self.layout=compute_layout(area,round(s["margin"]*f),round(s["quick_width"]*f),guide,options,width)
     def apply_geometry(self):
         """Ask i3 to float the window at the computed rectangle. Repeated shortly after mapping because
         i3 can only match the window once it exists."""
@@ -631,9 +635,16 @@ class TVWCSApp(Gtk.Application):
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
         if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
     def open_settings(self,page=None):
-        """The Quick Menu's ⚙ (or a status icon, opening its page): the Settings app, a separate application, so it opens
-        as a window of its own."""
+        """The Quick Menu's ⚙ (or a status icon, opening its page): the Settings app, a separate application. It opens
+        where any app would (Settings > Options > Where apps open): an open Settings window is brought up that way,
+        else a new one starts in a workspace of its own or tiled here."""
+        app=self.catalogue.by_id().get(SETTINGS_DESKTOP_ID)
+        profile=self.default_profile(app) if app else None
+        mode=self.launch_mode(profile)
+        existing=self.wm.find_matching(profile,app) if profile is not None else None
         self.hide_window(launched=True)
+        if existing is not None: self.wm.focus(existing["con_id"],mode)
+        else: self.wm.prepare_for_launch(mode)
         try: subprocess.Popen([str(LAUNCHER),"settings",*([page] if page else [])],start_new_session=True,stdin=subprocess.DEVNULL)
         except OSError as exc: self.notify_message(f"Could not open Settings: {exc}")
     def launch_by_hotkey(self,profile_id):

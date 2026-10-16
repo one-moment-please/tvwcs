@@ -71,8 +71,8 @@ button.status-wide { padding: 0 8px; }
 .status-count { font-size: 14px; font-weight: 700; }
 button.status-off { color: @FAINT@; }
 /* the Quick Menu's channel hint and the "Starting …" card */
-.channel-hint { color: @MUTED@; font-size: 13px; }
-.channel-hint-digits { color: @ACCENT@; font-size: 22px; font-weight: 400; letter-spacing: 2px; padding: 0 8px; border: 2px solid @ACCENT@; }
+.channel-hint { color: @MUTED@; font-size: 15px; }
+entry.channel-entry { font-size: 24px; }
 .digit-box { min-width: 56px; min-height: 64px; font-size: 34px; font-weight: 300; background: @RAISED@; border: 2px solid @BORDER@; }
 .digit-box.current { border-color: @ACCENT@; }
 button.menu-item { padding: 0 16px; }

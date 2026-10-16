@@ -136,10 +136,12 @@ class Page:
             if ident is not None: self._ids[f"{ident}#{k}"]=w
         return g
 
-    def row(self, label, value="", on_activate=None, detail="", icon=None, fallback="", ident=None, extras=(), value_css="setting-value", swatch=None):
+    def row(self, label, value="", on_activate=None, detail="", icon=None, fallback="", ident=None, extras=(), value_css="setting-value", swatch=None, indent=0):
         """One row: an optional icon, its name (and a detail line under it), its value on the right (after a square of
-        the colour `swatch`); square extra buttons follow it on the same row. ← / → move between them."""
+        the colour `swatch`); square extra buttons follow it on the same row. ← / → move between them. `indent` (px)
+        sets it in under the row before it, as a partition under its drive."""
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4))
+        if indent: line.set_margin_start(S(indent))
         b=Gtk.Button(); b.add_css_class("launch-row"); b.set_hexpand(True)
         if on_activate is None: b.add_css_class("info-row")
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14))
@@ -1475,7 +1477,8 @@ class StoragePage(Page):
         if not s.drives: self.note("No drives were found.")
         for d in s.drives: self.drive_rows(d,s)
         if not s.udisks: self.note("Install udisks2 to open and close drives here.","error")
-        self.note("Close a drive before unplugging it. A drive's files are in the folder shown under it once it is open.")
+        self.note("Each drive's partitions are listed under it. Mounting a partition makes its files readable, in the folder shown "
+                  "under it. Unmount it, or switch the drive off with ⏏, before unplugging it.")
         self.section("NETWORK SHARES")
         missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
         if missing: self.note("Connecting to network shares needs "+" and ".join(missing)+". Install it with sudo apt install "
@@ -1496,14 +1499,23 @@ class StoragePage(Page):
                  fallback="🖴",ident=f"drive:{d.name}",extras=extras)
         for v in d.volumes:
             if v.fstype=="swap": continue
-            used=f"{storage.size_text(v.used)} used, {storage.size_text(v.avail)} free" if v.mounted and (v.used or v.avail) else storage.size_text(v.size)
-            detail=" · ".join(x for x in (v.fstype,", ".join(v.mountpoints) if v.mounted else "Not open",used) if x)
+            space=f"{storage.size_text(v.used)} used, {storage.size_text(v.avail)} free" if v.mounted and (v.used or v.avail) else storage.size_text(v.size)
+            where=", ".join(v.mountpoints)
             go=None
+            if v.system:   # /, /home, /boot...: always in use, never unmounted from here
+                value,detail="Part of the system",f"Always in use · its files are in {where}" if where else "Always in use"
+            elif v.mounted:
+                value,detail="Mounted",f"Its files are in {where}"
+            else:
+                value,detail="Not mounted","Mount it to see its files"
             if not v.system and s.udisks and v.fstype not in ("crypto_LUKS","LVM2_member"):
-                go=(lambda v=v:self.act(lambda:storage.unmount(v.path),f"Closing {v.title}…","Storage")) if v.mounted else \
-                   (lambda v=v:self.act(lambda:storage.mount(v.path),f"Opening {v.title}…","Storage"))
-            self.row(f"   {v.title}","Open" if v.mounted else "Closed",go,detail=detail,ident=f"vol:{v.name}",
-                     value_css="state-on" if v.mounted else "setting-value")
+                go=(lambda v=v:self.act(lambda:storage.unmount(v.path),f"Unmounting {v.title}…","Storage")) if v.mounted else \
+                   (lambda v=v:self.act(lambda:storage.mount(v.path),f"Mounting {v.title}…","Storage"))
+                if not v.mounted: detail="Select to mount it and see its files"
+                else: detail+=" · select to unmount"
+            detail=" · ".join(x for x in (v.fstype,detail,space) if x)
+            self.row(v.title,value,go,detail=detail,ident=f"vol:{v.name}",indent=44,
+                     value_css="state-on" if v.mounted and not v.system else "setting-value")
 
     def eject(self, d):
         def work():

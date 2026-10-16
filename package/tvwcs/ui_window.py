@@ -12,7 +12,7 @@ from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
-from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, icon_only, muted_label, section_title, usable)
+from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, icon_only, Marquee, muted_label, scroll_to_show, section_title, usable)
 
 FOCUS_TIP_DELAY=3000                     # ms a selected icon-only button waits before showing its tooltip (Settings > Options > Button hints)
 FOCUS_TIP_DURATION=6000                  # ms the tooltip then stays up
@@ -45,6 +45,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._search_results=[]; self._selected_result=0; self._result_groups=[]; self._result_mains=[]; self._stars={}
         self._modal_groups=[]; self._modal_back=None; self._return_focus=None; self._last_focus={}; self._pin=None; self._chan=None
         self._open_row=None; self._text=None
+        self._descriptions=[]
 
     # ================================================================== construction
     def _build(self):
@@ -106,9 +107,14 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         guide_btn=Gtk.Button(); guide_btn.add_css_class("square"); guide_btn.set_child(glyph("view-grid-symbolic","⊞")); guide_btn.set_tooltip_text("Open Applications (+)"); guide_btn.connect("clicked",lambda *_:self.app.show_mode("guide")); header.append(guide_btn); self.guide_button=guide_btn
         pane.append(header); self._header_group=buttons+[guide_btn]
         body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_vexpand(True); pane.append(body)
-        self.search_entry=Gtk.SearchEntry(); self.search_entry.set_placeholder_text("Search, or type a channel number"); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search)
-        self.search_entry.connect("changed",self._search_typed); body.append(self.search_entry)
-        self.channel_hint=self._build_channel_hint(); body.append(self.channel_hint)
+        self.search_entry=Gtk.SearchEntry(); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search)
+        self.search_entry.connect("changed",self._search_typed)
+        # On a TV the field is three digits wide, with what to type beside it; it stretches once letters (or a fourth
+        # digit) show it is a search. At a desk it is one full-width field.
+        line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); line.append(self.search_entry)
+        self.channel_hint=Gtk.Label(label="Type a channel number, or letters to search"); self.channel_hint.add_css_class("channel-hint")
+        self.channel_hint.set_xalign(0); self.channel_hint.set_hexpand(True); self.channel_hint.set_wrap(True); line.append(self.channel_hint)
+        body.append(line); self._search_narrow=None; self._shape_search()
         self.results_scroll=Gtk.ScrolledWindow(); self.results_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); self.results_scroll.set_max_content_height(S(280)); self.results_scroll.set_propagate_natural_height(True); self.results_scroll.set_visible(False)
         self.results_box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); self.results_scroll.set_child(self.results_box); body.append(self.results_scroll)
         scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); body.append(scroll)
@@ -119,17 +125,18 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         pane.append(self._build_status_bar())
         return pane
 
-    def _build_channel_hint(self):
-        """Under the search field: typing a channel number opens that channel (shown while the field is empty)."""
-        hint=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); hint.set_margin_start(S(2))
-        digits=Gtk.Label(label="0 0 0"); digits.add_css_class("channel-hint-digits"); hint.append(digits)
-        text=Gtk.Label(); text.add_css_class("channel-hint"); text.set_xalign(0); text.set_hexpand(True); text.set_wrap(True); hint.append(text)
-        channels=self.app.store.assigned()
-        if channels:
-            p=channels[0]; digits.set_text(" ".join(f"{p.channel:03d}"))
-            text.set_text(f"Type a channel number to open it, such as {p.channel:03d} for {p.name}")
-        else: text.set_text("Type a channel number to open it. Give apps numbers in Applications (✎).")
-        return hint
+    def _shape_search(self):
+        """TV: a narrow channel field with its hint while the text could still be a channel number (empty, or up to
+        three digits); the full width otherwise. Desktop: always the full width, without the hint."""
+        e=self.search_entry; q=e.get_text(); tv=self.app.store.settings.get("use")=="tv"
+        narrow=tv and (q=="" or (q.isdigit() and len(q)<=CHANNEL_DIGITS))
+        if getattr(self,"_search_narrow",None)==narrow: return
+        self._search_narrow=narrow
+        e.set_hexpand(not narrow); e.set_halign(Gtk.Align.START if narrow else Gtk.Align.FILL)
+        e.set_width_chars(CHANNEL_DIGITS+1 if narrow else -1); e.set_max_width_chars(CHANNEL_DIGITS+1 if narrow else -1)   # + the ✕ that clears it
+        (e.add_css_class if narrow else e.remove_css_class)("channel-entry")
+        e.set_placeholder_text("000" if narrow else "Search, or type a channel number")
+        self.channel_hint.set_visible(narrow)
 
     def _show_hints(self):
         """The keys that work right now, named as on a remote (OK, Back) or a keyboard (Enter, Esc)."""
@@ -385,7 +392,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if description:
             name.set_max_width_chars(32)
             if p.pin_hash: inner.append(self._lock_mark())
-            d=Gtk.Label(label=description); d.add_css_class("description"); d.set_xalign(0); d.set_hexpand(True); d.set_ellipsize(3); inner.append(d)
+            # cut with … when it does not fit: it scrolls by while the row is selected, and the pointer shows all of it
+            d=Marquee(description,"description"); inner.append(d); self._descriptions.append((main,d))
+            focus=Gtk.EventControllerFocus(); focus.connect("enter",lambda *_a,m=d:m.run(True)); focus.connect("leave",lambda *_a,m=d:m.run(False)); main.add_controller(focus)
+            main.set_has_tooltip(True); main.connect("query-tooltip",self._description_tip,d)
         else:
             name.set_hexpand(True)
             if p.pin_hash: inner.append(self._lock_mark())
@@ -417,6 +427,24 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             group.expand=lambda:open_options(); group.expanded=lambda:bool(pop_holder and pop_holder[-1].get_visible())
         return row
 
+    @staticmethod
+    def _description_tip(_widget,_x,_y,_keyboard,tooltip,marquee):
+        if not marquee.truncated: return False
+        tooltip.set_text(marquee.text); return True
+    def apps_width(self):
+        """At a desk the Applications pane is only as wide as its rows need: the widest row without its description,
+        plus room for most descriptions (four in five) in full. The rest are cut with … (see Marquee)."""
+        if self.guide_pane is None:
+            self.guide_pane=self._build_guide_pane(); self.panes.append(self.guide_pane); self.guide_pane.set_visible(self.guide_open)
+        rows=[]; texts=[]
+        for main,d in self._descriptions:
+            row=main.get_parent()
+            if row is None: continue
+            rows.append(row.measure(Gtk.Orientation.HORIZONTAL,-1)[1]-d.label.measure(Gtk.Orientation.HORIZONTAL,-1)[1])
+            texts.append(d.label.measure(Gtk.Orientation.HORIZONTAL,-1)[1])
+        if not rows: return S(640)
+        texts.sort(); most=texts[min(len(texts)-1,int(len(texts)*0.8))]
+        return max(rows)+most+2*S(24)+S(16)   # the list's side margins, and its scroll bar
     def _style_star(self,button,favorite):
         button.set_child(glyph("starred-symbolic" if favorite else "non-starred-symbolic","★" if favorite else "☆"))
         button.set_tooltip_text("Remove favorite" if favorite else "Add to favorites")
@@ -437,8 +465,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         clear_box(self.results_box); self._result_groups=[]; self._result_mains=[]; self._selected_result=0
         q=self.search_entry.get_text()
         self.results_scroll.set_visible(bool(q.strip()))
-        hint=getattr(self,"channel_hint",None)
-        if hint is not None: hint.set_visible(not q)
+        self._shape_search()
         if not q.strip(): self._search_results=[]; return
         self._search_results=search_items(q,self.app.store.profiles,self.app.catalogue.by_id(),self.app.wm.windows())[:12]
         if not self._search_results:
@@ -481,6 +508,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         for i,b in enumerate(self._result_mains):
             b.remove_css_class("tvwcs-selected")
             if i==index: b.add_css_class("tvwcs-selected")
+        # the highlight moves while the selection stays in the search field, so the list does not follow it by itself
+        if 0<=index<len(self._result_mains): scroll_to_show(self.results_scroll,self._result_mains[index])
     def _type_to_search(self,text):
         e=self.search_entry; value=e.get_text()+text
         e.grab_focus(); e.set_text(value); e.set_position(-1)

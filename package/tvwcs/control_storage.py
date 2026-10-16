@@ -40,7 +40,14 @@ class Volume:
         """Holds the running system (/, /boot, /home, swap...): shown, never unmounted from here."""
         return any(m in ("/","/boot","/boot/efi","/home","/usr","/var","[SWAP]") for m in self.mountpoints) or self.fstype=="swap"
     @property
-    def title(self): return self.label or self.name
+    def title(self):
+        """Its label; a system partition without one is named for what it holds ("System", "Home", "Boot")."""
+        if self.label: return self.label
+        for m in self.mountpoints:
+            if m in _SYSTEM_NAMES: return f"{_SYSTEM_NAMES[m]} ({self.name})"
+        return self.name
+
+_SYSTEM_NAMES={"/":"System","/home":"Home","/boot":"Boot","/boot/efi":"Boot","/usr":"Programs","/var":"System data"}
 
 @dataclass
 class Drive:
