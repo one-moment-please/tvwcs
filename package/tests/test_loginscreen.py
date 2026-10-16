@@ -45,23 +45,25 @@ class RootTests(unittest.TestCase):
         self.assertEqual(log.read_text(),"1 i3\n")
 
     def test_logs_in_without_pam_ecryptfs_unless_a_home_folder_uses_it(self):
-        """pam_ecryptfs can crash greetd while it checks a password: TVWCS's own PAM config leaves it out."""
-        pam=self.etc/"pam.d"; pam.mkdir()
-        (pam/"greetd").write_text("#%PAM-1.0\n@include common-auth\n@include common-account\n")
+        """pam_ecryptfs can crash greetd while it checks a password: greetd's PAM config is written without it (greetd
+        always reads /etc/pam.d/greetd), and greetd's own comes back when the login screen is turned off."""
+        pam=self.etc/"pam.d"; pam.mkdir(); own="#%PAM-1.0\n@include common-auth\n@include common-account\n"
+        (pam/"greetd").write_text(own)
         (pam/"common-auth").write_text("auth\t[success=1 default=ignore]\tpam_unix.so nullok\nauth\trequisite\tpam_deny.so\n"
                                        "auth\trequired\tpam_permit.so\nauth\toptional\tpam_ecryptfs.so unwrap\n")
         (pam/"common-account").write_text("account\trequired\tpam_unix.so\n")
         self.use("lightdm"); self.c.enable({},before="lightdm")
-        text=(pam/"tvwcs-greetd").read_text(); lines=[l for l in text.splitlines() if not l.startswith("#")]
+        lines=[l for l in (pam/"greetd").read_text().splitlines() if not l.startswith("#")]
         self.assertEqual(lines,["auth\t[success=1 default=ignore]\tpam_unix.so nullok","auth\trequisite\tpam_deny.so","auth\trequired\tpam_permit.so",
                                 "auth optional pam_permit.so   # was: auth\toptional\tpam_ecryptfs.so unwrap","account\trequired\tpam_unix.so"])
-        self.assertEqual(loginscreen.greetd_config()["general"],{"service":"tvwcs-greetd"})
-        self.c.set_autologin("tv","i3"); self.assertEqual(loginscreen.greetd_config()["general"],{"service":"tvwcs-greetd"})   # kept
+        self.assertEqual((pam/"greetd.tvwcs-backup").read_text(),own)
+        self.c.update({}); self.assertEqual((pam/"greetd.tvwcs-backup").read_text(),own)   # again: still greetd's own kept
         (self.root/"home"/".ecryptfs").mkdir(parents=True); self.c.update({})   # an encrypted home: greetd's own PAM config
-        self.assertFalse((pam/"tvwcs-greetd").exists()); self.assertNotIn("general",loginscreen.greetd_config())
-        self.assertEqual(loginscreen.greetd_config()["initial_session"]["user"],"tv")
-        (self.root/"home"/".ecryptfs").rmdir(); self.c.update({}); self.assertTrue((pam/"tvwcs-greetd").exists())
-        self.c.disable("lightdm"); self.assertFalse((pam/"tvwcs-greetd").exists())
+        self.assertEqual((pam/"greetd").read_text(),own); self.assertFalse((pam/"greetd.tvwcs-backup").exists())
+        (self.root/"home"/".ecryptfs").rmdir(); self.c.update({}); self.assertIn("pam_permit.so   # was:",(pam/"greetd").read_text())
+        self.c.disable("lightdm"); self.assertEqual((pam/"greetd").read_text(),own); self.assertFalse((pam/"greetd.tvwcs-backup").exists())
+        (pam/"common-auth").write_text("auth\trequired\tpam_unix.so\n"); self.use("lightdm"); self.c.enable({},before="lightdm")
+        self.assertEqual((pam/"greetd").read_text(),own)   # no pam_ecryptfs: greetd's own, untouched
     def test_sessions_put_tvwcs_first_and_leave_out_hidden_and_missing_ones(self):
         (self.root/"usr"/"share"/"xsessions"/"i3-with-shmlog.desktop").write_text("[Desktop Entry]\nName=i3 (with debug log)\nExec=i3-with-shmlog\nTryExec=i3\n")
         ids=[s["id"] for s in loginscreen.sessions()]

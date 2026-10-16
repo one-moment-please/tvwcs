@@ -3,7 +3,7 @@
 ## 3.4.2 — 2026-10-16
 
 - When the computer's login system stops answering (greetd waits for ever if a PAM module crashes while checking the password, as pam_ecryptfs can), the login screen says so and suggests restarting, instead of showing "Logging in…" until the computer is restarted. Any other failure while logging in is shown too.
-- Logging in through TVWCS's login screen no longer goes through pam_ecryptfs when no home folder is encrypted with eCryptfs: TVWCS gives greetd a PAM config of its own (/etc/pam.d/tvwcs-greetd) with that module left out, so it no longer needs unticking in pam-auth-update.
+- Logging in through TVWCS's login screen no longer goes through pam_ecryptfs when no home folder is encrypted with eCryptfs: TVWCS writes greetd's PAM config (/etc/pam.d/greetd) with that module left out, keeping greetd's own as greetd.tvwcs-backup and putting it back when the login screen is turned off, so pam_ecryptfs no longer needs unticking in pam-auth-update.
 - The login screen fits a 1280×800 screen again: the keyboard, the Session row and Sleep / Restart / Shut down no longer overlap, the TV icon no longer crowds the user's tile, and the icon in the Session button is small.
 
 ## 3.4.1 — 2026-10-16

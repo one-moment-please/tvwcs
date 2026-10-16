@@ -242,19 +242,21 @@ user = "_greetd"
 """
 
 # PAM for logging in through TVWCS's login screen. pam_ecryptfs (in Debian's common-auth whenever ecryptfs-utils is
-# installed) can crash greetd's worker while checking the password, and greetd then waits for ever. Where no home
-# folder is encrypted with eCryptfs, the login screen uses greetd's PAM config with that module left out.
-PAM_SERVICE="tvwcs-greetd"
-PAM_FILE=f"/etc/pam.d/{PAM_SERVICE}"
+# installed) can crash greetd's worker while checking the password, and greetd then waits for ever. greetd always uses
+# /etc/pam.d/greetd, so where no home folder is encrypted with eCryptfs, TVWCS writes that file with the module left
+# out, keeping greetd's own as PAM_BACKUP; turning the login screen off puts it back.
+PAM_FILE="/etc/pam.d/greetd"
+PAM_BACKUP="/etc/pam.d/greetd.tvwcs-backup"
+PAM_MARK="# Written by TVWCS"
 ECRYPTFS_HOMES="/home/.ecryptfs"
 def pam_config() -> str:
-    """The text of PAM_FILE: /etc/pam.d/greetd with its @include lines spelt out and each pam_ecryptfs line replaced by
-    pam_permit (so the jumps of the lines around it still count right), or "" when greetd's own config is to be used."""
+    """greetd's own PAM config with its @include lines spelt out and each pam_ecryptfs line replaced by pam_permit (so
+    the jumps of the lines around it still count right), or "" when greetd's own is to be used as it is."""
     if path(ECRYPTFS_HOMES).exists(): return ""
-    base=_read("/etc/pam.d/greetd")
+    base=_read(PAM_BACKUP) if PAM_MARK in _read(PAM_FILE) else _read(PAM_FILE)
     if not base: return ""
-    out=["# Written by TVWCS: greetd's PAM config (/etc/pam.d/greetd) for TVWCS's login screen, without pam_ecryptfs,",
-         "# which can crash greetd while it checks a password. TVWCS writes it again when its login screen is updated."]
+    out=[f"{PAM_MARK} for its login screen: greetd's PAM config without pam_ecryptfs, which can crash greetd while it",
+         f"# checks a password. greetd's own is {PAM_BACKUP}; turning TVWCS's login screen off puts it back."]
     changed=False
     def expand(text, depth=0):
         nonlocal changed
@@ -268,19 +270,11 @@ def pam_config() -> str:
     expand(base)
     return "\n".join(out)+"\n" if changed else ""
 
-def with_service(text, service) -> str:
-    """TVWCS's greetd config text with its [general] section saying `service` (none for "")."""
-    text=re.sub(r"\n\[general\]\nservice = \"[^\"\n]*\"\n","",text)
-    if not service: return text
-    return re.sub(r"(\[terminal\]\n(?:[^\[\n][^\n]*\n)*)",lambda m:m.group(1).rstrip("\n")+f"\n\n[general]\nservice = {json.dumps(service)}\n",text,count=1)
-
-def write_greetd_config(user, autologin=None, vt=GREETD_VT, service="") -> str:
+def write_greetd_config(user, autologin=None, vt=GREETD_VT) -> str:
     """greetd's config for TVWCS's login screen. autologin: (user, session) for the initial session, which logs that
-    user in at start-up (the login screen then shows after logging out). service: the PAM service for logging in, ""
-    for greetd's own."""
+    user in at start-up (the login screen then shows after logging out)."""
     lines=["# Written by TVWCS (Settings > Features > Login screen). Turning that off puts back the config from before.",
-           "[terminal]",f"vt = {vt}"]+(["","[general]",f"service = {json.dumps(service)}"] if service else [])+\
-          ["","[default_session]",f"command = {json.dumps(greeter_command())}",f"user = {json.dumps(user)}"]
+           "[terminal]",f"vt = {vt}","","[default_session]",f"command = {json.dumps(greeter_command())}",f"user = {json.dumps(user)}"]
     if autologin:
         who,session=autologin
         lines+=["","[initial_session]",f"command = {json.dumps(shlex.join(start_session_argv(session)))}",f"user = {json.dumps(who)}"]
@@ -457,7 +451,7 @@ class Changer:
         if cur=="greetd" and path(GREETD_CONF).exists() and not greetd_is_ours(cfg) and not path(GREETD_BACKUP).exists():
             shutil.copy2(path(GREETD_CONF),path(GREETD_BACKUP))
         if cur!="tvwcs": self.write(PREVIOUS,(cur or "")+"\n")
-        self.write(GREETD_CONF,write_greetd_config(user,_autologin_pair(autologin_to),service=self.pam()))
+        self.write(GREETD_CONF,write_greetd_config(user,_autologin_pair(autologin_to))); self.pam()
         if self._getty_is_tvwcs(): self.remove(GETTY_OVERRIDE); self.systemctl("daemon-reload")
         self.switch_to("greetd")
         self.out(f"TVWCS's login screen shows from the next start{' (after '+name(cur)+')' if cur and cur!='tvwcs' else ''}.")
@@ -465,15 +459,17 @@ class Changer:
     def update(self, settings, version="", source=None):
         """Bring TVWCS's copy and look up to date (the login screen stays as it is)."""
         self.install_files(source,version); self.write_look(settings)
-        if greetd_is_ours():   # its PAM config too, from greetd's as it is now
-            service=self.pam()
-            if greetd_config().get("general",{}).get("service","")!=service: self.write(GREETD_CONF,with_service(_read(GREETD_CONF),service))
+        if greetd_is_ours(): self.pam()   # its PAM config too, from greetd's as it is now
         self.out("Updated TVWCS's login screen.")
-    def pam(self) -> str:
-        """Write (or remove) TVWCS's PAM config for greetd; the service name to use, "" for greetd's own."""
+    def pam(self):
+        """Write greetd's PAM config without pam_ecryptfs (keeping greetd's own), or put greetd's own back."""
         text=pam_config()
-        if text: self.write(PAM_FILE,text); return PAM_SERVICE
-        self.remove(PAM_FILE); return ""
+        if text:
+            if PAM_MARK not in _read(PAM_FILE): shutil.copy2(path(PAM_FILE),path(PAM_BACKUP))
+            self.write(PAM_FILE,text)
+        else: self.restore_pam()
+    def restore_pam(self):
+        if path(PAM_BACKUP).exists() and PAM_MARK in _read(PAM_FILE): os.replace(path(PAM_BACKUP),path(PAM_FILE))
 
     def disable(self, to, autologin_to=None):
         """Turn TVWCS's login screen off. to: a login screen's unit (the previous one, or one just installed), or "" for
@@ -482,7 +478,8 @@ class Changer:
         elif greetd_is_ours(): self.write(GREETD_CONF,GREETD_DEFAULT)   # greetd's own config, so turning greetd on later works
         self.switch_to(to)
         if not to and autologin_to: self.set_getty(autologin_to[0])
-        for p in (LOOK,PREVIOUS,PAM_FILE): self.remove(p)
+        for p in (LOOK,PREVIOUS): self.remove(p)
+        self.restore_pam()
         shutil.rmtree(path(GREETER_LIB),ignore_errors=True)
         if to and autologin_to: self.set_autologin(autologin_to[0],autologin_to[1],to)
         self.out(f"From the next start, the computer uses {name(to)}." if to else "From the next start, the computer has no login screen.")
@@ -504,8 +501,7 @@ class Changer:
         if unit=="tvwcs":
             cfg=greetd_config(); greeter_user=cfg.get("default_session",{}).get("user",GREETD_USER)
             vt=cfg.get("terminal",{}).get("vt",GREETD_VT)
-            self.write(GREETD_CONF,write_greetd_config(greeter_user,_autologin_pair((user,session)) if user else None,vt if isinstance(vt,int) else GREETD_VT,
-                                                       cfg.get("general",{}).get("service","")))
+            self.write(GREETD_CONF,write_greetd_config(greeter_user,_autologin_pair((user,session)) if user else None,vt if isinstance(vt,int) else GREETD_VT))
         elif unit=="lightdm":
             if user: self.write(LIGHTDM_AUTOLOGIN,"# Written by TVWCS (Settings > User).\n[Seat:*]\n"
                                 f"autologin-user={user}\n"+(f"autologin-session={session}\n" if session else ""))

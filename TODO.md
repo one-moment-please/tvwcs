@@ -467,8 +467,9 @@ What it still lacked, found by reading the code (none of it was tested):
 
 ## 4. eCryptfs home folders with TVWCS's login screen (not started)
 
-Since 3.4.2, TVWCS's login screen logs in through a PAM config of its own, `/etc/pam.d/tvwcs-greetd`
-(`pam_config()` in `package/tvwcs/loginscreen.py`): greetd's config with its `@include` lines spelt out and every
+Since 3.4.2, TVWCS's login screen writes greetd's PAM config, `/etc/pam.d/greetd` (`pam_config()` in
+`package/tvwcs/loginscreen.py`; greetd 0.9 cannot be pointed at another one), keeping greetd's own as
+`greetd.tvwcs-backup`: greetd's config with its `@include` lines spelt out and every
 `pam_ecryptfs.so` line replaced by `pam_permit.so`. That was needed because pam_ecryptfs crashed greetd's session
 worker in `pam_sm_authenticate` (`__asprintf_chk`, on Graham's X1 Yoga, Debian 13, the second login after a boot), and
 greetd then waited for ever. When `/home/.ecryptfs` exists, TVWCS keeps greetd's own PAM config, so an encrypted home
