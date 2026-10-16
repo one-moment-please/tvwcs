@@ -136,6 +136,7 @@ class NavGroup(list):
     Rows whose options fold away have `toggle` (the options button) plus `expand` and `expanded`."""
     def __init__(self,widgets=(),entry=None):
         super().__init__(widgets); self.entry=entry; self.toggle=None; self.expand=None; self.expanded=None; self.column=False   # column: a grid row, Up/Down keeps the column
+        self.lead=None   # a Quick Menu row's first button after ⋯ when it is not `entry`: ← on entry moves to it, ← on it opens the menu
         self.lane=None   # in a multi-column layout (Settings), which column the row is in; ←/→ jump between lanes
 
 def screen_height():
