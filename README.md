@@ -78,6 +78,8 @@ It first prints what it found (for example `Found: no login screen, no desktop s
 1. **This computer is only for TVWCS.** It can log you in automatically at start-up and go straight into TVWCS, like a TV. It adds one `include` line to your i3/sway config (or creates a config). Automatic login is only offered when there is no login screen, and is off unless you say yes: anyone who switches the computer on gets your session.
 2. **Next to my other desktops.** It adds **TVWCS (i3)** and/or **TVWCS (sway)** to your login screen. That session uses its own config in `~/.config/tvwcs/`, so your usual i3 or sway is not changed. It never sets up automatic login. Adding TVWCS to your usual i3/sway config as well is a separate question, and the default is no.
 
+On a first install it also asks **what to install**: everything TVWCS can use, or a **minimal install** with the Quick Menu, the applications list and basic Settings. A minimal install leaves out the software of the optional features (sound, Bluetooth, network, storage, the terminal, Flathub apps, the screen saver, hiding the pointer) and turns off those whose software is missing. **Settings › Features** turns them on later.
+
 After that it may ask to:
 
 - install i3 (with Xorg) or sway, if neither is installed;
@@ -88,7 +90,7 @@ After that it may ask to:
 
 It asks before changing any of your files and saves a copy as `<file>.tvwcs-backup` first.
 
-**Settings for scripted installs:** `TVWCS_SETUP=dedicated` or `alongside` answers the first question. `TVWCS_WMS=i3` (or `sway`) sets up only that window manager. `TVWCS_DEST=<folder>` installs somewhere else. `TVWCS_ASSUME_YES=1` answers yes to adding TVWCS to your configs and the login screen (it never installs packages). `TVWCS_NO_RESTART=1` skips restarting a running TVWCS.
+**Settings for scripted installs:** `TVWCS_SETUP=dedicated` or `alongside` answers the first question. `TVWCS_INSTALL=full` or `minimal` answers what to install. `TVWCS_WMS=i3` (or `sway`) sets up only that window manager. `TVWCS_DEST=<folder>` installs somewhere else. `TVWCS_ASSUME_YES=1` answers yes to adding TVWCS to your configs and the login screen (it never installs packages). `TVWCS_NO_RESTART=1` skips restarting a running TVWCS.
 
 ## Using it with a remote
 
@@ -101,7 +103,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 | **OK** / Enter | Open, switch to or choose the selected item |
 | **Back** / Esc | Go back one step |
 | **OK** on the empty search field | Open the on-screen keyboard (or number keypad) |
-| Any letter or digit | Search. A channel number (000 to 999) then OK opens that channel |
+| Any letter or digit | Search. A channel number (000 to 999) then OK opens that channel. On a TV the search field starts three digits wide; typing a letter or a fourth digit widens it |
 | **←** on a Quick Menu row (or right-click) | Open that row's menu |
 
 - **First start:** TVWCS asks whether it is used on a TV or at a desk. This sets the interface size and how apps open.
@@ -120,21 +122,24 @@ Open **TVWCS Settings** with ⚙ in the Quick Menu, from Applications (under Sys
 
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
-| **Options** (`options`) | TV or desktop monitor (TV also turns on button hints), light or dark mode (dark by default; passed on to apps that follow the system's choice), background colour, interface size (applies at once), accent colour, screen edge margin for TVs that cut off the edges (overscan), Reduce motion, Quick Menu buttons, where apps open (full screen one per workspace, side by side, or as each app's profile says), what opens at login, and whether password dialogs open with the full keyboard or a number pad. |
+| **Options** (`options`) | TV or desktop monitor (TV also turns on button hints), hiding the mouse pointer after a few seconds without moving (on by default on a TV, off at a desk; a hidden pointer is moved to the corner of the window so nothing stays highlighted), light or dark mode (dark by default; passed on to apps that follow the system's choice), background colour, interface size (applies at once), accent colour, screen edge margin for TVs that cut off the edges (overscan), Reduce motion, Quick Menu buttons, where apps open (full screen one per workspace, side by side, or as each app's profile says), what opens at login, and whether password dialogs open with the full keyboard or a number pad. |
+| **Features** (`features`) | Turn the features that need extra software on or off: sound, Bluetooth, network, storage, the terminal, Flathub apps, the screen saver, the screen saver when locked, and hiding the pointer. Turning one on installs what it needs. Turning one off can also uninstall its packages, but only when nothing else installed needs them. A feature that is off keeps its tab, which offers to turn it on. |
 | **Remote and hotkeys** (`hotkeys`) | Keys for the keyboard, remote and gamepad, and apps that have their own hotkey. |
 | **Sound** (`sound`) | Volume, mute, and output (speakers, HDMI, headphones) and microphone. |
 | **Displays** (`displays`) | Resolution, refresh rate and arrangement. A change goes back after 15 seconds unless you keep it. |
-| **Power and sleep** (`power`) | When the screen saver starts, the screen turns off, the computer locks and it sleeps. The screen saver is a bouncing DVD logo, TVWCS's logo or a picture of your own. The lock screen to use. |
+| **Power and sleep** (`power`) | When the screen saver starts, the screen turns off, the computer locks and it sleeps. A laptop has these times twice, plugged in and on battery, and a choice of what to do when the battery is nearly empty. The screen saver is a bouncing DVD logo, TVWCS's logo or a picture of your own, and can also show while the computer is locked (i3, with xsecurelock). It never runs while the screen is off. The lock screen to use. |
 | **Bluetooth** (`bluetooth`) | Pair, connect and forget devices. Shows battery levels. |
-| **Date and time** (`datetime`) | Time zone, network time, 12- or 24-hour clock. Setting the time by hand in one of three ways: each field with ▲ and ▼, steps forward and back, or four digits on the number pad. |
+| **Date and time** (`datetime`) | Time zone, network time, 12- or 24-hour clock. Setting the time by hand: a box for each of year, month, day, hour and minute, typed in or changed with ▲ and ▼, with AM and PM for the 12-hour clock. |
 | **Apps** (`apps`) | Install and remove apps from Flathub, with no password. |
 | **Software updates** (`updates`) | System and Flatpak updates, and TVWCS's own updates (including prereleases and rolling back). |
 | **System information** (`system`) | Hardware and versions. Turns the SSH server on or off and shows how to connect. |
 | **Terminal** (`terminal`) | A terminal, with Tab and Esc buttons for a remote. |
 | **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. An Ethernet port the Debian installer set up (shown as "not managed") can be handed to NetworkManager; the old setup is kept as a backup. |
-| **Storage** (`storage`) | Drives: open, close and safely remove them. Network shares (Windows/Samba, NFS, SFTP, WebDAV, FTP): add, connect and disconnect. Passwords are not saved. |
+| **Storage** (`storage`) | Drives, with their partitions under them: mount and unmount partitions and safely remove drives. Partitions of the running system are marked as part of it. Network shares (Windows/Samba, NFS, SFTP, WebDAV, FTP): add, connect and disconnect. Passwords are not saved. |
 
-A page whose tool is missing says what to install.
+A page whose tool is missing says what to install. When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.
+
+**Screen saver when locked:** with **Power and sleep › Show it when the computer locks** on, locking shows the screen saver. A key shows the password box; after a minute without a key the screen saver comes back. It uses xsecurelock (X11 only, so not on sway) instead of i3lock and TVWCS's lock screen picture.
 
 **Lock screen:** in **Power and sleep › Lock screen** you can choose the **TVWCS lock screen** (off by default). It shows "Locked" and says whose password to type, then press Enter. It uses i3lock (swaylock on sway), so install that first. The power menu's Lock, the idle lock and xss-lock all use it. Switching back restores your previous locker. `tvwcs lock` locks by hand.
 

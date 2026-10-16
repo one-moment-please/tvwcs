@@ -34,7 +34,7 @@ The look follows Metro (Modern UI): flat and typographic.
 TVWCS is one borderless floating window placed in the usable area of the workspace on the monitor under the pointer (i3 already excludes the bar). It holds up to two panels:
 
 - **Quick Menu:** a full-height column at the left, always shown when TVWCS is open.
-- **Applications:** opens to the right of it and fills the rest.
+- **Applications:** opens to the right of it and fills the rest on a TV. At a desk it is only as wide as its rows need (the widest row without its description, plus room for four in five descriptions); a longer description is cut with … and scrolls by while its row is selected, and the pointer shows all of it.
 
 The same margin (the **Screen edge margin**, which also handles TV overscan) separates panels from each other and from the screen edges. TVWCS computes the exact position at run time.
 
@@ -45,7 +45,7 @@ Navigation is spatial. → past the Quick Menu opens Applications; ← goes back
 From top to bottom:
 
 - **Header:** ⚙ Settings, ⏻ power menu, ✕ close (⚙ and ✕ can be hidden), ⊞ Applications.
-- **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. OK on the empty field opens the on-screen keyboard (or number keypad).
+- **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. On a TV the field starts three digits wide with a short hint beside it, and widens for a letter or a fourth digit. OK on the empty field opens the on-screen keyboard (or number keypad).
 - **Open applications, by workspace.** A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor").
 - **Favorites:** pinned launch profiles.
 - **Key hints**, then the **status row:** clock, network, volume, Bluetooth and waiting updates. Each opens its Settings page.
@@ -102,15 +102,21 @@ Three sets: keyboard (default: tap Super for the Quick Menu), remote (default: F
 
 The power menu has Sleep, Reboot and Shut down, Log out when there is a login screen, and Lock when enabled. Reboot, Shut down and Log out ask first, with Cancel selected. Power actions use `systemctl`. When polkit refuses, TVWCS uses a no-password sudo or doas rule (the installer offers a narrow one), else asks for the sudo password in its own dialog and passes it to `sudo -S` without storing it.
 
-Settings keeps idle times for the screen saver (`screensaver.py`, a logo bouncing round a black screen), screen off, lock and sleep (TVWCS watches idle time itself on i3; it runs `swayidle` on sway). Nothing happens while sound plays or an app inhibits idle.
+Settings keeps idle times for the screen saver (`screensaver.py`, a logo bouncing round a black screen), screen off, lock and sleep (TVWCS watches idle time itself on i3; it runs `swayidle` on sway), and a second set for a laptop on battery, plus what to do when its battery is nearly empty (`power.py` reads `/sys/class/power_supply`). Nothing happens while sound plays or an app inhibits idle. The screen saver ends when the screen turns off.
+
+With "Show it when the computer locks", `tvwcs lock` runs xsecurelock (X11 only) with `tvwcs screensaver --xsecurelock` as its saver: that draws the same logo through Xlib into the window xsecurelock gives it, since GTK cannot draw in another program's window. xsecurelock shows its password box on a key and goes back to the saver after a minute.
+
+The mouse pointer is hidden by TVWCS (`cursor.py`): `unclutter` on i3, `seat * hide_cursor` on sway, after the time in Options (by default on a TV only). On i3 a hidden pointer is moved to the bottom-right corner of the focused window so nothing stays highlighted under it.
 
 The optional **TVWCS lock screen** (`lockscreen.py`) does not draw a lock itself. It paints one picture per monitor ("Locked — A password is needed. Type <user>'s password, then press Enter to unlock.") and runs i3lock, or swaylock on sway, with it. The power menu's Lock, the idle lock and `tvwcs lock` use it. When the i3 config starts xss-lock, its locker line is replaced too, and restored when the option is turned off.
 
 ## Settings app
 
-A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Options, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network, Storage. Each page is also a `.desktop` action, so it can be a channel or favorite.
+A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Options, Features, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network, Storage. Each page is also a `.desktop` action, so it can be a channel or favorite.
 
 It drives standard tools rather than services: `pactl` (PipeWire/PulseAudio), `xrandr` or `swaymsg`, `bluetoothctl`, `nmcli` (read-only `ip` fallback), `timedatectl`, apt plus Flatpak, OpenSSH via `systemctl`, and VTE for the terminal. A page whose tool is missing says what to install. Changes TVWCS needs to know about are sent with `tvwcs reload`.
+
+**Features** (`features.py`): the parts that need extra software (sound, Bluetooth, network, storage, terminal, Flathub apps, screen saver, screen saver when locked, hiding the pointer) can be turned off. A page whose feature is off only offers to turn it on, and its Quick Menu icon is hidden. Turning one on installs its packages with apt; turning one off can uninstall them with `apt-get remove`, only after `apt-get -s remove` shows nothing else would go, and never packages TVWCS itself or another feature that is on needs.
 
 ## Supported systems
 
@@ -123,7 +129,7 @@ Debian and its family (apt), with systemd. Support for Arch, Fedora, Void, Alpin
 - **dedicated:** adds `include ~/.local/share/tvwcs/tvwcs.conf` to the user's i3/sway config (or creates one from the standard template), and, with no display manager, offers automatic login on tty1 (a systemd getty drop-in plus marked lines in the shell's login file that run `startx` or `sway`).
 - **alongside:** writes `~/.config/tvwcs/<wm>-session.conf` (template plus the include line) and login screen entries `tvwcs-i3.desktop` / `tvwcs-sway.desktop` that run `/usr/local/bin/tvwcs-session <wm>`. The wrapper exports `TVWCS_SESSION` and `TVWCS_SESSION_CONFIG` so TVWCS knows which config is its own. It never sets up automatic login. Adding the include line to the usual config is optional (default no).
 
-It also installs missing packages (including an icon theme and Open Sans), offers i3 or sway when neither is installed, offers the power sudo rule, asks TV or desktop, restarts a running TVWCS and migrates installs from `~/.config/i3/tvwcs` (2.6 and older). Every change to a user file is asked first and backed up as `<file>.tvwcs-backup`. Environment variables are listed at the top of the script.
+On a first install it asks for everything or a minimal install (`TVWCS_INSTALL`); a minimal one skips the features' packages and turns off the features whose software is missing (`python3 -m tvwcs.features minimal`). Later runs, and `--missing`, leave out the packages of features that are off. It also installs missing packages (including an icon theme and Open Sans), offers i3 or sway when neither is installed, offers the power sudo rule, asks TV or desktop, restarts a running TVWCS and migrates installs from `~/.config/i3/tvwcs` (2.6 and older). Every change to a user file is asked first and backed up as `<file>.tvwcs-backup`. Environment variables are listed at the top of the script.
 
 ## Where things live
 
@@ -146,7 +152,7 @@ Logic modules have no GTK dependency and are tested without a display.
 | Area | Modules |
 |---|---|
 | Core | `model` (profiles, settings, layout, search), `applications` (discovery, window matching), `workspaces`, `ownership`, `profile_draft`, `pinlock`, `hotkeys` |
-| System | `window_manager` (i3 / sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `flatpak_env`, `appearance` (light/dark for apps, background colour), `screensaver` |
+| System | `window_manager` (i3 / sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `cursor`, `features`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `flatpak_env`, `appearance` (light/dark for apps, background colour), `screensaver` |
 | Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_datetime`, `control_storage`, `control_updates`, `control_flatpak`, `control_ssh`, `control_sysinfo` |
 | GTK interface | `main` (app, CLI), `ui_window` (Quick Menu, Applications, dialogs, on-screen keyboard), `ui_editors` (profile editor), `ui_control` and `ui_control_pages` (Settings), `widgets`, `theme` |
 
