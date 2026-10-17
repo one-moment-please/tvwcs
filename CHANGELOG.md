@@ -2,8 +2,8 @@
 
 ## 3.5.1 — 2026-10-17
 
-- Settings > Network can manage Wi-Fi on a computer where Debian was installed over Wi-Fi. Debian's installer puts that Wi-Fi network in /etc/network/interfaces, so NetworkManager left the adapter alone and no network could be chosen or changed. Settings now shows the adapter as "Not managed" and offers to hand it to NetworkManager: the network name and password from that file become a saved NetworkManager connection, the file's lines for it become comments (a copy is kept as interfaces.before-tvwcs), and NetworkManager reconnects. If it cannot connect, everything is put back as it was, so the computer stays online.
-- Handing an Ethernet port over the same way now keeps a fixed address set in the installer, and is also undone if NetworkManager cannot connect it.
+- Settings > Network can take over the network of a minimal Debian install. There ifupdown runs the network (/etc/network/interfaces), and NetworkManager will not touch it, so Wi-Fi networks could not be chosen or changed (an install over Wi-Fi) and Ethernet could only be shown. Choosing the "Not managed" Ethernet port or Wi-Fi adapter now offers one button that uninstalls ifupdown, removes /etc/network and restarts NetworkManager, which then manages every port. It warns first that the Wi-Fi network has to be chosen again, and any IP address, gateway or DNS servers set by hand set again. This replaces the earlier Ethernet-only take-over. If uninstalling ifupdown fails, its ports are brought back up.
+- Network is no longer one of Settings > Features: NetworkManager is always installed, even in a minimal install, and is never offered for uninstalling.
 
 ## 3.5.0 — 2026-10-16
 

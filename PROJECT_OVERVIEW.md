@@ -154,7 +154,7 @@ Logic modules have no GTK dependency and are tested without a display.
 |---|---|
 | Core | `model` (profiles, settings, layout, search), `applications` (discovery, window matching), `workspaces`, `ownership`, `profile_draft`, `pinlock`, `hotkeys` |
 | System | `window_manager` (i3 / sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `cursor`, `features`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `flatpak_env`, `appearance` (light/dark for apps, background colour), `screensaver` |
-| Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network` (+ `ifupdown_handover`, run as root), `control_datetime`, `control_storage`, `control_updates`, `control_flatpak`, `control_ssh`, `control_sysinfo` |
+| Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_datetime`, `control_storage`, `control_updates`, `control_flatpak`, `control_ssh`, `control_sysinfo` |
 | GTK interface | `main` (app, CLI), `ui_window` (Quick Menu, Applications, dialogs, on-screen keyboard), `ui_editors` (profile editor), `ui_control` and `ui_control_pages` (Settings), `widgets`, `theme` |
 
 ```

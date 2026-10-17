@@ -1,5 +1,5 @@
 import datetime, unittest
-from tvwcs import control_datetime as dt, control_network as net, ifupdown_handover as ho
+from tvwcs import control_datetime as dt, control_network as net
 
 # /etc/network/interfaces as Debian's installer writes it (the HTPC's)
 INTERFACES="""# This file describes the network interfaces available on your system
@@ -18,77 +18,28 @@ iface enp1s0 inet dhcp
 NM_CONF="[main]\nplugins=ifupdown,keyfile\n\n[ifupdown]\nmanaged=false\n"
 
 class IfupdownTests(unittest.TestCase):
-    def test_finds_the_device_stanza_only(self):
-        lines=INTERFACES.splitlines()
-        self.assertEqual([lines[i] for i in net.ifupdown_lines(INTERFACES,"enp1s0")],["allow-hotplug enp1s0","iface enp1s0 inet dhcp"])
-        self.assertEqual(net.ifupdown_lines(INTERFACES,"wlan0"),[])
-    def test_takes_the_options_under_iface_too(self):
-        text="auto eth0\niface eth0 inet static\n    address 10.0.0.2\n    gateway 10.0.0.1\n\niface lo inet loopback\n"
-        self.assertEqual(net.ifupdown_lines(text,"eth0"),[0,1,2,3])
-    def test_comments_the_device_out(self):
-        out=net.without_device(INTERFACES,"enp1s0")
-        self.assertIn(net.TAKEN_NOTE,out); self.assertIn("# allow-hotplug enp1s0\n# iface enp1s0 inet dhcp",out)
-        self.assertIn("\nauto lo\niface lo inet loopback\n",out); self.assertEqual(net.ifupdown_lines(out,"enp1s0"),[])
-    def test_auto_line_naming_others_keeps_them(self):
-        out=net.without_device("auto lo eth0\niface eth0 inet dhcp\n","eth0")
-        self.assertIn("# auto lo eth0\nauto lo\n",out)
-    def test_network_manager_ignores_ifupdown(self):
-        self.assertTrue(net.ifupdown_ignored(NM_CONF))
-        self.assertFalse(net.ifupdown_ignored(NM_CONF.replace("managed=false","managed=true")))
-        self.assertFalse(net.ifupdown_ignored("[main]\nplugins=keyfile\n"))
-
-# /etc/network/interfaces after installing Debian over Wi-Fi (root-only, it holds the password)
-WIFI_INTERFACES="""source /etc/network/interfaces.d/*
-
-auto lo
-iface lo inet loopback
-
-# The primary network interface
-allow-hotplug wlp2s0
-iface wlp2s0 inet dhcp
-	wpa-ssid My Home Net
-	wpa-psk  correct horse
-"""
-
-class HandoverTests(unittest.TestCase):
-    def test_reads_the_wifi_network_and_password(self):
-        options=ho.stanza(WIFI_INTERFACES,"wlp2s0")
-        self.assertEqual(options["method"],"dhcp")
-        self.assertEqual(ho.wifi_settings(options),("My Home Net","wpa-psk","correct horse"))
-        self.assertIsNone(ho.wifi_settings(ho.stanza(INTERFACES,"enp1s0")))
-        self.assertEqual(ho.wifi_settings({"wireless-essid":"Cafe"}),("Cafe","",""))
-    def test_wifi_keyfile(self):
-        name,ident,text=ho.keyfile("wlp2s0",ho.stanza(WIFI_INTERFACES,"wlp2s0"),"wifi",ident="1234")
-        self.assertEqual(name,"My Home Net")
-        self.assertIn("type=wifi\ninterface-name=wlp2s0",text)
-        self.assertIn("ssid="+";".join(str(b) for b in b"My Home Net")+";",text)
-        self.assertIn("[wifi-security]\nkey-mgmt=wpa-psk\npsk=correct horse\n",text)
-        self.assertIn("[ipv4]\nmethod=auto",text)
-    def test_open_wifi_has_no_security_section(self):
-        _n,_i,text=ho.keyfile("wlan0",{"method":"dhcp","wireless-essid":"Cafe"},"wifi")
-        self.assertNotIn("wifi-security",text)
-    def test_wired_on_dhcp_needs_no_keyfile_but_a_fixed_address_is_kept(self):
-        self.assertIsNone(ho.keyfile("enp1s0",ho.stanza(INTERFACES,"enp1s0"),"ethernet"))
-        text="iface eth0 inet static\n    address 10.0.0.2\n    netmask 255.255.255.0\n    gateway 10.0.0.1\n    dns-nameservers 1.1.1.1 9.9.9.9\n"
-        _n,_i,out=ho.keyfile("eth0",ho.stanza(text,"eth0"),"ethernet")
-        self.assertIn("method=manual\naddress1=10.0.0.2/24,10.0.0.1\ndns=1.1.1.1;9.9.9.9;",out)
-    def test_keyfile_escapes(self):
-        self.assertEqual(ho._esc(" a\\b"),"\\sa\\\\b")
-    def test_a_root_only_interfaces_file_counts_as_ifupdown(self):
+    def test_hand_over_uninstalls_ifupdown_and_removes_its_folder(self):
+        argv=net.take_over_argv("wlp2s0","ifupdown")
+        self.assertEqual(argv[:2],["sh","-c"]); self.assertEqual(argv[-1],"wlp2s0")
+        self.assertIn("apt-get purge -y ifupdown",argv[2]); self.assertIn("rm -rf /etc/network\n",argv[2])
+        self.assertIn("systemctl restart NetworkManager",argv[2])
+        self.assertLess(argv[2].index("apt-get purge"),argv[2].index("rm -rf"))
+        self.assertNotIn("apt-get",net.take_over_argv("enp1s0","config")[2])
+        with self.assertRaises(ValueError): net.take_over_argv("wl;rm","ifupdown")
+    def test_reason_is_ifupdown_only_where_network_manager_ignores_it(self):
         import os, tempfile
         from unittest import mock
         with tempfile.TemporaryDirectory() as d:
             conf=os.path.join(d,"nm.conf"); open(conf,"w").write(NM_CONF)
-            ifaces=os.path.join(d,"interfaces"); open(ifaces,"w").write(WIFI_INTERFACES)
-            with mock.patch.object(net,"NM_CONF",conf), mock.patch.object(net,"interfaces_files",lambda:[ifaces]):
+            ifaces=os.path.join(d,"interfaces"); open(ifaces,"w").write(INTERFACES); os.chmod(ifaces,0o600)
+            with mock.patch.object(net,"NM_CONF",conf), mock.patch.object(net,"INTERFACES",ifaces), mock.patch.object(net,"have",lambda c:True):
                 self.assertEqual(net.unmanaged_reason("wlp2s0"),"ifupdown")
-                self.assertEqual(net.unmanaged_reason("enp9s0"),"config")
-                with mock.patch.object(net,"_unreadable",lambda p:True):
-                    self.assertEqual(net.unmanaged_reason("enp9s0"),"ifupdown")
-    def test_take_over_runs_the_helper_on_its_own(self):
-        argv=net.take_over_argv("wlp2s0")
-        self.assertEqual(argv[:2],["python3","-I"]); self.assertTrue(argv[2].endswith("ifupdown_handover.py")); self.assertEqual(argv[3],"wlp2s0")
-        with self.assertRaises(ValueError): net.take_over_argv("wl;rm")
+                open(conf,"w").write("[main]\nplugins=keyfile\n")
+                self.assertEqual(net.unmanaged_reason("wlp2s0"),"config")
+    def test_network_manager_ignores_ifupdown(self):
+        self.assertTrue(net.ifupdown_ignored(NM_CONF))
+        self.assertFalse(net.ifupdown_ignored(NM_CONF.replace("managed=false","managed=true")))
+        self.assertFalse(net.ifupdown_ignored("[main]\nplugins=keyfile\n"))
 
 class SetTimeTests(unittest.TestCase):
     when=datetime.datetime(2026,1,31,23,59)

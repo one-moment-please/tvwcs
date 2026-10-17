@@ -261,11 +261,13 @@ def apply_ipv4(uuid, settings):
     problem=_outcome(run(["nmcli","connection","modify",uuid,*args],timeout=15))
     return problem or activate(uuid)
 
-# ------------------------------------------------------------------ a port NetworkManager leaves alone
-# Debian's installer sets up the port it installed over (Ethernet or Wi-Fi) in /etc/network/interfaces, run by
-# ifupdown, and NetworkManager then leaves it unmanaged. ifupdown_handover hands it over, as root (see there).
-from tvwcs import ifupdown_handover
-from tvwcs.ifupdown_handover import INTERFACES, INTERFACES_D, TAKEN_NOTE, ifupdown_lines, without_device, interfaces_files
+# ------------------------------------------------------------------ ports ifupdown has, which NetworkManager leaves alone
+# A minimal Debian install (and any install over Wi-Fi) sets up its network port in /etc/network/interfaces, run by
+# ifupdown. NetworkManager's ifupdown plugin, with Debian's default "managed=false", then leaves that port unmanaged,
+# so Settings could only show it. Handing the network to NetworkManager uninstalls ifupdown and removes /etc/network,
+# then restarts NetworkManager, which manages every port from then on: Ethernet connects again with DHCP, and the
+# Wi-Fi network is chosen again here (a fixed address set in the installer has to be set again too).
+INTERFACES="/etc/network/interfaces"
 NM_CONF="/etc/NetworkManager/NetworkManager.conf"
 
 def ifupdown_ignored(conf_text):
@@ -285,18 +287,41 @@ def _read(path):
         with open(path,encoding="utf-8") as f: return f.read()
     except OSError: return ""
 
-def _unreadable(path):
-    """The file is there but only root can read it (Debian's installer makes /etc/network/interfaces so when it holds a Wi-Fi password)."""
-    return os.path.exists(path) and not os.access(path,os.R_OK)
-
 def unmanaged_reason(device):
-    """Why NetworkManager leaves `device` alone: "ifupdown" (it is set up in /etc/network/interfaces, which Settings can
-    take over; also when that file is readable by root only, as after installing over Wi-Fi), "config" (another
-    setting; Settings can still ask NetworkManager to manage it), or ""."""
-    if ifupdown_ignored(_read(NM_CONF)) and any(ifupdown_lines(_read(p),device) or _unreadable(p) for p in interfaces_files()): return "ifupdown"
+    """Why NetworkManager leaves `device` alone: "ifupdown" (ifupdown is installed, with /etc/network/interfaces, and
+    NetworkManager is set to leave what it lists alone; the installer makes that file readable by root only when it
+    holds a Wi-Fi password, so it is not read here), or "config" (another setting; Settings can still ask
+    NetworkManager to manage it)."""
+    if os.path.exists(INTERFACES) and (have("ifup") or os.path.exists("/sbin/ifup")) and ifupdown_ignored(_read(NM_CONF)): return "ifupdown"
     return "config"
 
-def take_over_argv(device, python=None):
-    """The root command that hands `device` to NetworkManager (ifupdown_handover, run on its own with -I)."""
+# Run as root. The ports ifupdown has up are taken down first, so no DHCP client or wpa_supplicant of its own is
+# left running beside NetworkManager's.
+DROP_IFUPDOWN_SCRIPT=r'''set -u
+devs=""
+if command -v ifquery >/dev/null 2>&1; then devs=$(ifquery --state 2>/dev/null | cut -d= -f1 | grep -vx lo); fi
+for d in $devs; do ifdown --force "$d" 2>/dev/null || true; done
+if dpkg-query -W -f='${Status}' ifupdown 2>/dev/null | grep -q installed; then
+  if ! DEBIAN_FRONTEND=noninteractive apt-get purge -y ifupdown; then
+    for d in $devs; do ifup "$d" 2>/dev/null || true; done   # back as it was, so the computer stays online
+    exit 1
+  fi
+fi
+rm -rf /etc/network
+for d in $devs; do ip addr flush dev "$d" 2>/dev/null || true; done
+systemctl restart NetworkManager
+for i in 1 2 3 4 5 6 7 8 9 10; do nmcli -t general >/dev/null 2>&1 && break; sleep 1; done
+for d in $devs "$@"; do nmcli device set "$d" managed yes 2>/dev/null || true; done
+echo "NetworkManager manages the network now."
+'''
+SET_MANAGED_SCRIPT=r'''set -u
+nmcli device set "$1" managed yes
+sleep 1
+nmcli device connect "$1" || true
+'''
+
+def take_over_argv(device, reason):
+    """The root command that hands `device` to NetworkManager: with "ifupdown", ifupdown is uninstalled and
+    /etc/network removed (every port goes to NetworkManager); otherwise NetworkManager is only asked to manage it."""
     if not re.fullmatch(r"[A-Za-z0-9_.:-]+",device): raise ValueError("Unexpected device name.")
-    return [python or "python3","-I",os.path.abspath(ifupdown_handover.__file__),device]
+    return ["sh","-c",DROP_IFUPDOWN_SCRIPT if reason=="ifupdown" else SET_MANAGED_SCRIPT,"sh",device]
