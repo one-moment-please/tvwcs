@@ -472,6 +472,7 @@ if command -v i3 >/dev/null 2>&1 && ! command -v unclutter >/dev/null 2>&1; then
 if command -v i3 >/dev/null 2>&1 && ! command -v xsecurelock >/dev/null 2>&1; then need xsecurelock "the screen saver while the computer is locked (i3)" lock_saver; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v xrandr >/dev/null 2>&1; then need "$(pkg xrandr)" "Settings: displays (sway has its own)"; fi
 if command -v i3 >/dev/null 2>&1 && ! command -v xsetroot >/dev/null 2>&1; then need "$(pkg xrandr)" "the background colour (xsetroot, in i3)"; fi
+if command -v i3 >/dev/null 2>&1 && ! command -v xsettingsd >/dev/null 2>&1; then need xsettingsd "Settings: displays (GTK apps follow the scale, in i3)"; fi
 command -v udisksctl >/dev/null 2>&1 || need udisks2 "Settings: storage (opening and closing drives)" storage
 # Helper programs that are not on PATH (TVWCS_LIBEXEC lets the tests point elsewhere).
 libexec_has() { for d in ${TVWCS_LIBEXEC:-/usr/libexec /usr/lib/gvfs /usr/lib}; do [ -e "$d/$1" ] && return 0; done; return 1; }

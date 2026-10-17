@@ -377,7 +377,7 @@ class InstallTests(unittest.TestCase):
     def test_installs_unclutter_without_its_every_session_autostart(self):
         if shutil.which("unclutter"): self.skipTest("unclutter is installed here")
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","xprintidle","xsecurelock"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","xprintidle","xsecurelock","xsettingsd"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
         (bin_/"apt-get").write_text(f'#!/bin/sh\necho "apt-get $*" >> "{bin_}/apt"\n'); (bin_/"apt-get").chmod(0o755)
         (bin_/"dpkg-query").write_text('#!/bin/sh\nprintf "un "\n'); (bin_/"dpkg-query").chmod(0o755)
         self.converse(["y","n","n"],**env)
@@ -399,7 +399,7 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn("unclutter is set to start",self.converse([],**env))
     def test_lists_missing_packages_with_their_use_and_installs_them(self):
         env,bin_=self.fake_tools(); (Path(self.env["TVWCS_ETC"])/"os-release").write_text("ID=debian\n")
-        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","unclutter","xprintidle","xsecurelock"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
+        for tool in ("i3","pactl","bluetoothctl","nmcli","xrandr","xsetroot","udisksctl","gio","gsettings","xdotool","pipewire","unclutter","xprintidle","xsecurelock","xsettingsd"): (bin_/tool).write_text("#!/bin/sh\n"); (bin_/tool).chmod(0o755)
         for helper in ("gvfsd-smb","xdg-desktop-portal-gtk"): (bin_/helper).write_text("")
         env["TVWCS_LIBEXEC"]=str(bin_)
         (bin_/"python3").write_text('#!/bin/sh\nexit 1\n'); (bin_/"python3").chmod(0o755)   # no GTK, no VTE

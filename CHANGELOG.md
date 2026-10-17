@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.6.0 — 2026-10-16
+## 3.6.0 — 2026-10-17
 
 **Quick Menu**
 - A row's options (⋯, ← or a right-click) unfold in the Quick Menu itself instead of a dialog: upwards, just above their app or workspace, indented a little on both sides and with a small gap to the row above, so it is clear whose they are. ↑ from the row goes into them; Back, ⋯ again or moving away folds them.
@@ -9,6 +9,11 @@
 - The network, volume, Bluetooth and battery icons unfold a panel above the status row: the connections, the one in use first (a wired port NetworkManager leaves to ifupdown included), with address and signal, and Wi-Fi on or off; mute, − and + for the output and the input; the connected Bluetooth devices with Disconnect, and Bluetooth on or off; the battery's estimated time left, or time until fully charged. Each panel has a button for its Settings page.
 - The ⚙ Settings button and its option are gone: Settings is channel 000, and each status panel opens its own page.
 - The ⊞ Applications button is now a thin strip along the whole right edge of the Quick Menu, in the gap before Applications, filled with triangles that point away from the Quick Menu when it opens Applications and back towards it when it closes them.
+
+## 3.5.0 — 2026-10-16
+
+- Settings > Displays has a **Scale** that makes text and controls bigger. In sway each display has its own, from 100 % to 300 % in steps of 25 %. In i3 (X11) there is one scale for every display, in whole steps (100 %, 200 %, 300 %); turning on **Fractional scaling** also offers 125 %, 150 %, 175 % and so on. A fractional scale is drawn at the next whole step and shrunk by xrandr, as GNOME does it, so it is a little less sharp. Only scales that leave a display at least 540 pixels high are offered, and a new scale goes back after 15 seconds unless it is kept.
+- In i3 the scale reaches apps through Xft.dpi (and ~/.Xresources, so i3 and the next log-in use it too) and, for GTK apps, through xsettingsd, which install.sh now asks for in i3.
 
 ## 3.4.3 — 2026-10-16
 
