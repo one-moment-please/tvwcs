@@ -388,9 +388,10 @@ class TVWCSApp(Gtk.Application):
         w=self.window
         if w is None or not w.is_visible(): return
         if w.guide_open and not guide and self.has_dialogs(): self.dismiss_dialogs()   # an app's dialog from Applications closes with it
+        back=w._last_focus.get("quick")   # closing the Guide moves GTK's selection to the first button (✕), not back here
         self._update_layout(guide,options,focus_output=False)
         w.set_panels(guide,options); w.set_default_size(self.layout.width,self.layout.height); self.apply_geometry()
-        if focus: w.focus_pane_soon(focus)
+        if focus: w.focus_pane_soon(focus,back if focus=="quick" else None)
     def apply_scale(self):
         """The interface size changed (in Settings > Options): rebuild everything at the new size."""
         set_scale(self.scale_factor); w=self.window
@@ -697,7 +698,7 @@ class TVWCSApp(Gtk.Application):
         if self.store.settings["scale"]!=old: set_scale(self.scale_factor)
         if self.window.is_visible(): self.apply_scale() if self.store.settings["scale"]!=old else self.window._build()
     def open_settings(self,page=None):
-        """The Quick Menu's ⚙ (or a status icon, opening its page): the Settings app, a separate application. It opens
+        """A status icon or panel's settings button, opening its page (or channel 000, with no page): the Settings app, a separate application. It opens
         where any app would (Settings > Options > Where apps open): an open Settings window is brought up that way,
         else a new one starts in a workspace of its own or tiled here."""
         app=self.catalogue.by_id().get(SETTINGS_DESKTOP_ID)

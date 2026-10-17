@@ -108,9 +108,7 @@ DEFAULT_SETTINGS={
     "always_new_workspace":False,   # every app, launched or already open, opens in a workspace of its own
     "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
     "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
-    "quick_settings_button":True,   # the Quick Menu's ⚙ button, which opens the Settings app
     "quick_close_button":True,      # the Quick Menu's ✕ button (Esc and Back close it too)
-    "quick_lock_button":False,      # a Lock button in the Quick Menu's power menu
     "update_prereleases":False,     # TVWCS's updater also offers prereleases (releases not yet tested and marked latest)
     "clock_24h":False,              # the Quick Menu's clock shows 14:05 instead of 2:05 PM
     "tv_hide_bar":True,             # TV mode: hide the i3 / sway bar (the Quick Menu shows the time and status instead)
@@ -181,7 +179,7 @@ def _clean_settings(raw) -> dict:
     shares=raw.get("network_shares")
     if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
     for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
-                "quick_settings_button","quick_close_button","quick_lock_button","update_prereleases",
+                "quick_close_button","update_prereleases",
                 "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","screensaver_on_lock","reduce_motion","channel_zero_done"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["features"]=clean_features(raw.get("features"))

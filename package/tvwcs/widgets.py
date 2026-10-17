@@ -138,6 +138,8 @@ class NavGroup(list):
         super().__init__(widgets); self.entry=entry; self.toggle=None; self.expand=None; self.expanded=None; self.column=False   # column: a grid row, Up/Down keeps the column
         self.lead=None   # a Quick Menu row's first button after ⋯ when it is not `entry`: ← on entry moves to it, ← on it opens the menu
         self.lane=None   # in a multi-column layout (Settings), which column the row is in; ←/→ jump between lanes
+        self.options=[]  # a Quick Menu row's open options (NavGroups), shown just above it
+        self.option_item=False   # one of those options
 
 def screen_height():
     """The tallest connected monitor's height in logical pixels (0 when there is no display yet)."""
