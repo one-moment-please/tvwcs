@@ -18,20 +18,24 @@ iface enp1s0 inet dhcp
 NM_CONF="[main]\nplugins=ifupdown,keyfile\n\n[ifupdown]\nmanaged=false\n"
 
 class IfupdownTests(unittest.TestCase):
-    def test_finds_the_device_stanza_only(self):
-        lines=INTERFACES.splitlines()
-        self.assertEqual([lines[i] for i in net.ifupdown_lines(INTERFACES,"enp1s0")],["allow-hotplug enp1s0","iface enp1s0 inet dhcp"])
-        self.assertEqual(net.ifupdown_lines(INTERFACES,"wlan0"),[])
-    def test_takes_the_options_under_iface_too(self):
-        text="auto eth0\niface eth0 inet static\n    address 10.0.0.2\n    gateway 10.0.0.1\n\niface lo inet loopback\n"
-        self.assertEqual(net.ifupdown_lines(text,"eth0"),[0,1,2,3])
-    def test_comments_the_device_out(self):
-        out=net.without_device(INTERFACES,"enp1s0")
-        self.assertIn(net.TAKEN_NOTE,out); self.assertIn("# allow-hotplug enp1s0\n# iface enp1s0 inet dhcp",out)
-        self.assertIn("\nauto lo\niface lo inet loopback\n",out); self.assertEqual(net.ifupdown_lines(out,"enp1s0"),[])
-    def test_auto_line_naming_others_keeps_them(self):
-        out=net.without_device("auto lo eth0\niface eth0 inet dhcp\n","eth0")
-        self.assertIn("# auto lo eth0\nauto lo\n",out)
+    def test_hand_over_uninstalls_ifupdown_and_removes_its_folder(self):
+        argv=net.take_over_argv("wlp2s0","ifupdown")
+        self.assertEqual(argv[:2],["sh","-c"]); self.assertEqual(argv[-1],"wlp2s0")
+        self.assertIn("apt-get purge -y ifupdown",argv[2]); self.assertIn("rm -rf /etc/network\n",argv[2])
+        self.assertIn("systemctl restart NetworkManager",argv[2])
+        self.assertLess(argv[2].index("apt-get purge"),argv[2].index("rm -rf"))
+        self.assertNotIn("apt-get",net.take_over_argv("enp1s0","config")[2])
+        with self.assertRaises(ValueError): net.take_over_argv("wl;rm","ifupdown")
+    def test_reason_is_ifupdown_only_where_network_manager_ignores_it(self):
+        import os, tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            conf=os.path.join(d,"nm.conf"); open(conf,"w").write(NM_CONF)
+            ifaces=os.path.join(d,"interfaces"); open(ifaces,"w").write(INTERFACES); os.chmod(ifaces,0o600)
+            with mock.patch.object(net,"NM_CONF",conf), mock.patch.object(net,"INTERFACES",ifaces), mock.patch.object(net,"have",lambda c:True):
+                self.assertEqual(net.unmanaged_reason("wlp2s0"),"ifupdown")
+                open(conf,"w").write("[main]\nplugins=keyfile\n")
+                self.assertEqual(net.unmanaged_reason("wlp2s0"),"config")
     def test_network_manager_ignores_ifupdown(self):
         self.assertTrue(net.ifupdown_ignored(NM_CONF))
         self.assertFalse(net.ifupdown_ignored(NM_CONF.replace("managed=false","managed=true")))

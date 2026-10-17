@@ -38,10 +38,11 @@ class FeatureTests(unittest.TestCase):
     def test_no_uninstall_of_what_is_not_installed_or_apt_refuses(self):
         self.assertIn("not installed",F.removable(F.BY_KEY["bluetooth"],{},fake_run(set()),self.proc)[1])
         self.assertIn("broken",F.removable(F.BY_KEY["bluetooth"],{},fake_run({"bluez"},code=100),self.proc)[1])
-    def test_a_running_network_manager_is_never_uninstalled(self):
+    def test_a_feature_in_use_is_never_uninstalled(self):
         os.makedirs(os.path.join(self.proc,"42"))
         with open(os.path.join(self.proc,"42","comm"),"w") as f: f.write("NetworkManager\n")
-        packages,why=F.removable(F.BY_KEY["network"],{},fake_run({"network-manager"},"Remv network-manager [1]\n"),self.proc)
+        nm=F.Feature("nm","NM","",("network-manager",),(("cmd","nmcli"),),in_use=("NetworkManager",))
+        packages,why=F.removable(nm,{},fake_run({"network-manager"},"Remv network-manager [1]\n"),self.proc)
         self.assertEqual(packages,[]); self.assertIn("NetworkManager is running",why)
     def test_packages_of_tvwcs_itself_are_kept(self):
         fake=F.Feature("x","X","",("x11-xserver-utils","extra"),())

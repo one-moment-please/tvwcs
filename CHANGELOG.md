@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.5.1 — 2026-10-17
+
+- Settings > Network can take over the network of a minimal Debian install. There ifupdown runs the network (/etc/network/interfaces), and NetworkManager will not touch it, so Wi-Fi networks could not be chosen or changed (an install over Wi-Fi) and Ethernet could only be shown. Choosing the "Not managed" Ethernet port or Wi-Fi adapter now offers one button that uninstalls ifupdown, removes /etc/network and restarts NetworkManager, which then manages every port. It warns first that the Wi-Fi network has to be chosen again, and any IP address, gateway or DNS servers set by hand set again. This replaces the earlier Ethernet-only take-over. If uninstalling ifupdown fails, its ports are brought back up.
+- Network is no longer one of Settings > Features: NetworkManager is always installed, even in a minimal install, and is never offered for uninstalling.
+
 ## 3.5.0 — 2026-10-16
 
 - Settings > Displays has a **Scale** that makes text and controls bigger. In sway each display has its own, from 100 % to 300 % in steps of 25 %. In i3 (X11) there is one scale for every display, in whole steps (100 %, 200 %, 300 %); turning on **Fractional scaling** also offers 125 %, 150 %, 175 % and so on. A fractional scale is drawn at the next whole step and shrunk by xrandr, as GNOME does it, so it is a little less sharp. Only scales that leave a display at least 540 pixels high are offered, and a new scale goes back after 15 seconds unless it is kept.

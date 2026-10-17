@@ -1448,8 +1448,8 @@ class NetworkPage(Page):
         self.section("WI-FI")
         wireless=s.of_kind("wifi")
         if not wireless: self.note("No Wi-Fi adapter was found."); return
-        if not s.managed:
-            for i in wireless: self.ethernet_row(i,False)
+        if not s.managed or wireless[0].state.startswith("unmanaged"):
+            for i in wireless: self.ethernet_row(i,s.managed)
             return
         self.row("Wi-Fi",_on_off(s.wifi_enabled),lambda:self.act(lambda:network.set_wifi(not s.wifi_enabled),
                  "Switching Wi-Fi "+("off…" if s.wifi_enabled else "on…"),"Wi-Fi"),icon="network-wireless-symbolic",fallback="📶",ident="wifi")
@@ -1486,28 +1486,30 @@ class NetworkPage(Page):
         if managed: self.ip_row(i)
 
     def take_over(self, i):
-        """Hand a port that NetworkManager leaves alone to it (control_network: Debian's installer set it up in
-        /etc/network/interfaces)."""
-        reason=network.unmanaged_reason(i.device)
+        """Hand a port that NetworkManager leaves alone to it (control_network: with ifupdown, a minimal Debian
+        install's network, ifupdown is uninstalled)."""
+        reason=network.unmanaged_reason(i.device); kind="Wi-Fi" if i.kind=="wifi" else "Ethernet"
         if reason=="ifupdown":
-            text=(f"{i.device} was set up when Debian was installed, in /etc/network/interfaces, so NetworkManager (which Settings uses) "
-                  "leaves it alone. Settings can hand it to NetworkManager: its lines in that file are turned into comments (a copy is kept as "
-                  "interfaces.before-tvwcs), and NetworkManager connects it again with DHCP. The wired connection drops for a few seconds"
-                  +(", and Wi-Fi keeps you online meanwhile." if any(w.connected for w in self.state.of_kind("wifi")) else ".")+" It asks for your password.")
+            text=(f"{i.device} is set up by ifupdown (/etc/network/interfaces), as a minimal Debian install does, and NetworkManager (which "
+                  "Settings uses) will not touch it. Settings can hand the network to NetworkManager: ifupdown is uninstalled, /etc/network "
+                  "is removed and NetworkManager is restarted, so it manages every Ethernet port and Wi-Fi adapter from then on.\n\n"
+                  "The network drops for a moment. Ethernet connects again by itself, but you have to choose your Wi-Fi network and enter "
+                  "its password again here, and any IP address, gateway or DNS servers set by hand have to be set again. It asks for your password.")
+            title,ok="Hand the network to NetworkManager?","Hand it over"
         else:
-            text=(f"NetworkManager is set to leave {i.device} alone. Settings can ask it to manage the port; it then connects it with DHCP. "
+            text=(f"NetworkManager is set to leave {i.device} alone. Settings can ask it to manage it. "
                   "If that does not last after a restart, a file in /etc/NetworkManager/conf.d lists it under unmanaged-devices.")
+            title,ok=f"Manage {i.device} here?","Manage it"
         def go():
-            try: rewritten=network.prepare_take_over(i.device,str(runtime_dir()/"tvwcs-network")) if reason=="ifupdown" else []
-            except OSError as exc: self.win.notice("Ethernet",f"Could not prepare the change: {exc}"); return
             self.set_status(f"Handing {i.device} to NetworkManager…"); lines=[]
             def done(code,tail):
                 self.set_status("")
-                if code: self.win.notice("Ethernet",("\n".join(lines[-6:]) or tail or "It did not work.").strip())
-                else: self.win.notice("Ethernet",f"NetworkManager manages {i.device} now. Its IP settings can be changed here.")
+                if code: self.win.notice(kind,("\n".join(lines[-6:]) or tail or "It did not work.").strip())
+                else: self.win.notice(kind,"NetworkManager manages the network now."+(" Choose your Wi-Fi network to connect again."
+                                      if any(w.kind=="wifi" for w in self.state.interfaces) and reason=="ifupdown" else ""))
                 self.refresh(quiet=True)
-            self.win.run_as_root(network.take_over_argv(i.device,rewritten),f"Managing {i.device}",lines.append,done)
-        self.win.confirm(f"Manage {i.device} here?",text,"Manage it",go,danger=False)
+            self.win.run_as_root(network.take_over_argv(i.device,reason),f"Handing {i.device} to NetworkManager",lines.append,done)
+        self.win.confirm(title,text,ok,go,danger=reason=="ifupdown")
 
     def ip_row(self, i):
         """IP address, default gateway and DNS servers of the interface's connection: from DHCP, or set by hand."""
