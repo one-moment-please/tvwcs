@@ -246,14 +246,8 @@ class LayoutTests(unittest.TestCase):
     AREA={"x":0,"y":30,"width":1920,"height":1050}   # y offset = a 30 px bar on top
     def test_quick_menu_only(self):
         l=compute_layout(self.AREA,20,460,False)
-        self.assertEqual((l.x,l.y,l.width,l.height),(20,50,480,1010))   # with the guide strip at its right, in the margin
+        self.assertEqual((l.x,l.y,l.width,l.height),(20,50,460,1010))
         self.assertEqual(l.guide_width,0)
-    def test_guide_strip_is_never_thinner_than_asked(self):
-        l=compute_layout(self.AREA,0,460,False,strip=14)
-        self.assertEqual((l.x,l.width),(0,474))
-        l=compute_layout(self.AREA,0,460,True,strip=14)
-        self.assertEqual(l.quick_width+14+l.guide_width,l.width)
-        self.assertEqual(compute_layout(self.AREA,20,460,True,strip=14).strip,20)   # the margin is wider: it is the gap
     def test_margin_is_equal_on_all_sides_with_guide(self):
         l=compute_layout(self.AREA,20,460,True)
         self.assertEqual(l.x-self.AREA["x"],20)                                            # left
@@ -269,7 +263,7 @@ class LayoutTests(unittest.TestCase):
         self.assertGreater(l.guide_width,l.quick_width)                                      # the guide still gets the middle
     def test_settings_panel_needs_the_guide(self):
         l=compute_layout(self.AREA,20,460,False,True)
-        self.assertFalse(l.guide_open); self.assertEqual(l.width,480)
+        self.assertFalse(l.guide_open); self.assertEqual(l.width,460)
     def test_three_panels_on_a_small_screen(self):
         l=compute_layout({"x":0,"y":0,"width":1280,"height":720},20,460,True,True)
         self.assertGreaterEqual(l.guide_width,300)
@@ -278,7 +272,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(l.x,1940)
     def test_desktop_quick_menu_fits_its_contents_in_the_bottom_left_corner(self):
         l=compute_layout(self.AREA,20,460,False,quick_height=400)
-        self.assertEqual((l.x,l.y,l.width,l.height),(20,30+1050-20-400,480,400))
+        self.assertEqual((l.x,l.y,l.width,l.height),(20,30+1050-20-400,460,400))
         self.assertEqual(compute_layout(self.AREA,20,460,False,quick_height=5000).height,1010)   # never taller than the screen
         l=compute_layout(self.AREA,20,460,True,quick_height=400)   # Applications open: the full height
         self.assertEqual((l.y,l.height),(50,1010))

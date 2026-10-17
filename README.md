@@ -18,7 +18,7 @@ It works with normal desktop apps. It is not a media center and needs no plugins
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications pane open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">✕ close at the top. Below: <b>Favorites</b>, <b>Open applications</b> (by workspace; ▴ unfolds the apps that share one, above it), then the search field. At the bottom: the clock, icons for network, volume, Bluetooth and the battery that each unfold a panel, and ⏻ power. The arrow strip along the right edge opens Applications.</td>
+    <td valign="top">✕ close at the top. Below: <b>Favorites</b>, <b>Open applications</b> (by workspace; ▴ unfolds the apps that share one, above it), then the search field. At the bottom: the clock, icons for network, volume, Bluetooth and the battery that each unfold a panel, then ⏻ power and, in the bottom-right corner, ⊞, which opens Applications.</td>
     <td valign="top"><b>Channels</b> lists apps you gave a number. <b>All applications</b> lists every app by category; OK/Enter folds a category. ☆ makes an app a favorite, ✎ edits its launch profiles.</td>
   </tr>
   <tr>
@@ -143,7 +143,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 - **Launch profiles (✎):** a profile is one way to start an app. It can have a channel number, a hotkey, a custom command, a description and a PIN. The editor opens inside the TVWCS window: each field is a row, with Save, Cancel and Delete at the bottom. A PIN-protected profile asks for its PIN first. The PIN is a lock for a shared TV, not real security.
 - **Status panels:** network, volume, Bluetooth and battery icons unfold a panel above the status row: the connection and its address with Wi-Fi on/off; mute and volume for output and input; the connected Bluetooth devices with Disconnect and Bluetooth on/off; the battery's time left or time to full. Each has a button for its Settings page.
 - **Power menu (⏻):** at the bottom right: Lock, Sleep, Reboot, Shut down; Log out when there is a login screen.
-- **Applications:** the thin strip of arrows along the Quick Menu's right edge opens Applications; the arrows turn round to close it again. If a power action needs your password, TVWCS asks for it on screen and never stores it.
+- **Applications:** ⊞ in the Quick Menu's bottom-right corner (or → on a row) opens Applications; ⊞ again closes it. If a power action needs your password, TVWCS asks for it on screen and never stores it.
 - **Other keys:** set keys for Applications, fullscreen, a gamepad or any app in **Settings › Remote and hotkeys**. A gamepad needs a key mapper such as AntiMicroX.
 
 From a terminal, `~/.local/share/tvwcs/bin/tvwcs` takes `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.

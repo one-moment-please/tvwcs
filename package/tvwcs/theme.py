@@ -87,10 +87,6 @@ button.menu-item { padding: 0 16px; }
 .status-panel scale trough { background: @TROUGH@; border: none; border-radius: 0; min-height: 8px; }
 .status-panel scale highlight { background: @ACCENT@; border: none; border-radius: 0; min-height: 8px; margin: 0; }
 .status-panel scale slider { background: @FG@; border: none; border-radius: 0; min-width: 12px; min-height: 20px; margin: -6px 0; box-shadow: none; }
-/* the guide strip: thin, the Quick Menu's height, in the gap beside it */
-button.guide-strip { min-width: 0; min-height: 0; padding: 0; background: transparent; color: @FAINT@; }
-window.pointer button.guide-strip:hover { background: @RAISED@; color: @FG@; }
-button.guide-strip:active { background: @ACCENT@; color: #ffffff; outline: none; }
 """
 
 # The two looks (Settings > Options > Appearance). The selection stays a solid accent block with white text in both.

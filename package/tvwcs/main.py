@@ -135,8 +135,6 @@ class CursorWatcher:
         if self.source: GLib.source_remove(self.source); self.source=0
         self.hider.stop()
 
-GUIDE_STRIP=14   # px (at desktop scale): the guide strip beside the Quick Menu is never thinner than this, even with no margin
-
 class StatusWatcher:
     """Keeps the bottom of the Quick Menu current (the clock, and the network, volume, Bluetooth and updates icons) and
     does TV mode's housekeeping: the bar stays hidden, and the Quick Menu comes back once no application is open.
@@ -315,7 +313,7 @@ class TVWCSApp(Gtk.Application):
             # at a desk the Quick Menu alone is only as tall as its contents, in the bottom-left corner
             try: height=self.window.quick_height(quick_width)
             except Exception as exc: print(f"Cannot measure the Quick Menu: {exc}",file=sys.stderr)
-        self.layout=compute_layout(area,round(s["margin"]*f),quick_width,guide,options,width,height,strip=round(GUIDE_STRIP*f))
+        self.layout=compute_layout(area,round(s["margin"]*f),quick_width,guide,options,width,height)
     def fit_quick_menu(self):
         """The Quick Menu's contents changed (search results, favorites): at a desk, resize it to fit them."""
         w=self.window

@@ -8,7 +8,7 @@
 - ⏻ has moved to the bottom right, beside the status icons. Its menu unfolds above it and now always has **Lock**, as well as Sleep, Reboot, Shut down and (with a login screen) Log out. The "Lock in the power menu" option is gone.
 - The network, volume, Bluetooth and battery icons unfold a panel above the status row: the connections, the one in use first (a wired port NetworkManager leaves to ifupdown included), with address and signal, and Wi-Fi on or off; mute, − and + for the output and the input; the connected Bluetooth devices with Disconnect, and Bluetooth on or off; the battery's estimated time left, or time until fully charged. Each panel has a button for its Settings page.
 - The ⚙ Settings button and its option are gone: Settings is channel 000, and each status panel opens its own page.
-- The ⊞ Applications button is now a thin strip along the whole right edge of the Quick Menu, in the gap before Applications, filled with triangles that point away from the Quick Menu when it opens Applications and back towards it when it closes them.
+- The ⊞ Applications button has moved to the Quick Menu's bottom-right corner, after ⏻. It stays highlighted while Applications is open, and pressing it again closes them.
 
 ## 3.5.0 — 2026-10-16
 

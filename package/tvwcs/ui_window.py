@@ -29,7 +29,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app,title=MAIN_TITLE)
         self.app=app; self.guide_open=False; self.options_open=False
-        self.guide_pane=None; self.options_pane=None; self.guide_scroll=None; self.guide_strip=None; self.quick_content=None
+        self.guide_pane=None; self.options_pane=None; self.guide_scroll=None; self.guide_button=None; self.quick_content=None
         self.apps_title=None; self.apps_subtitle=None
         self._focus_tip=None; self._focus_tip_source=0; self._channel_source=0; self._capture_cancel=None
         self._provider=None; self._expanded={"Media","Internet","Games"}; self._guide_scroll=0.0
@@ -60,7 +60,6 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         overlay=Gtk.Overlay(); overlay.add_css_class("tvwcs-root")
         self.panes=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=0)
         self.quick_pane=self._build_quick_pane(layout.quick_width); self.panes.append(self.quick_pane)
-        self.guide_strip=self._build_guide_strip(); self.panes.append(self.guide_strip)
         overlay.set_child(self.panes)
         self.modal_layer=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.modal_layer.add_css_class("modal-scrim")
         self.modal_reveal=Gtk.Revealer(); self.modal_reveal.set_transition_type(Gtk.RevealerTransitionType.CROSSFADE)
@@ -90,39 +89,16 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         layout=self.app.layout
         self.quick_pane.set_size_request(layout.quick_width,-1)
         if self.guide_pane is not None: self.guide_pane.set_visible(guide)
-        if self.guide_strip is not None:
-            self.guide_strip.set_size_request(layout.strip,-1)
-            self.guide_strip.set_tooltip_text("Close Applications" if guide else "Open Applications (→)")
-            self._strip_arrows.queue_draw()
-
-    def _build_guide_strip(self):
-        """The guide button: a thin strip the height of the Quick Menu, in the gap between it and Applications. Its
-        triangles point away from the Quick Menu while Applications is closed (it opens it) and back towards it while
-        Applications is open (it closes it). With a remote, → past the end of a row does the same."""
-        strip=Gtk.Button(); strip.add_css_class("guide-strip"); strip.set_focusable(False); strip.set_focus_on_click(False)
-        strip.set_vexpand(True); strip.set_hexpand(False)
-        area=Gtk.DrawingArea(); area.set_hexpand(True); area.set_vexpand(True); area.set_draw_func(self._draw_strip); strip.set_child(area)
-        strip.connect("clicked",lambda *_:self.app.show_mode("guide"))
-        self._strip_arrows=area; return strip
-    def _draw_strip(self,area,cr,width,height):
-        get=getattr(area,"get_color",None)   # GTK 4.10; before that the style context has it
-        c=get() if get is not None else area.get_style_context().get_color()
-        cr.set_source_rgba(c.red,c.green,c.blue,c.alpha)
-        w=max(3.0,min(width*0.55,S(10))); h=w*1.6; step=h*1.9
-        n=max(1,int((height-h)//step)+1); top=(height-(n-1)*step-h)/2; left=(width-w)/2
-        for i in range(n):
-            y=top+i*step
-            if self.guide_open: cr.move_to(left+w,y); cr.line_to(left,y+h/2); cr.line_to(left+w,y+h)   # ◀: back towards the Quick Menu
-            else: cr.move_to(left,y); cr.line_to(left+w,y+h/2); cr.line_to(left,y+h)                   # ▶: out to Applications
-            cr.close_path()
-        cr.fill()
+        if self.guide_button is not None:
+            (self.guide_button.add_css_class if guide else self.guide_button.remove_css_class)("active")
+            self.guide_button.set_tooltip_text("Close Applications" if guide else "Open Applications (→)")
 
     def _build_quick_pane(self,width):
         pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_size_request(width,-1); pane.set_hexpand(False)
         header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_end(S(20)); header.set_margin_bottom(S(10))
         title=Gtk.Label(label="TVWCS"); title.add_css_class("brand"); title.set_xalign(0); title.set_hexpand(True); header.append(title)
-        # Only ✕ close is up here (it can be hidden in Options): power is at the bottom, beside the status icons, and
-        # Applications opens from the strip along the Quick Menu's right edge.
+        # Only ✕ close is up here (it can be hidden in Options): power and Applications are at the bottom, after the
+        # status icons.
         buttons=[]
         if self.app.store.settings.get("quick_close_button",True):
             close_btn=icon_button("window-close-symbolic","✕","Close"); close_btn.add_css_class("close-button"); close_btn.add_css_class("square"); close_btn.connect("clicked",lambda *_:self.app.hide_window()); buttons.append(close_btn)
@@ -177,8 +153,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     STATUS_KEYS=("updates","network","volume","bluetooth","battery")
     def _build_status_bar(self):
         """The time and date, then icons for waiting updates, the network, the volume, Bluetooth and the battery (with
-        its charge, and whether it is charging; only on a computer with a battery), then ⏻. The clock and the updates
-        icon open their page of the Settings app; the others, and ⏻, unfold a panel above the row (toggle_status_panel).
+        its charge, and whether it is charging; only on a computer with a battery), then ⏻ and, in the corner, ⊞ Applications.
+        The clock and the updates icon open their page of the Settings app; the others, and ⏻, unfold a panel above the
+        row (toggle_status_panel).
         The icons are refreshed by main.StatusWatcher."""
         bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); bar.add_css_class("quick-status")
         clock=Gtk.Button(); clock.add_css_class("clock-button"); clock.set_hexpand(True); clock.set_tooltip_text("Date and time")
@@ -194,7 +171,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             bar.append(b); self._status_buttons[key]=b
         power=Gtk.Button(); power.set_child(glyph("system-shutdown-symbolic","⏻",22)); power.set_tooltip_text("Lock, sleep, reboot or shut down"); power.add_css_class("square"); power.add_css_class("status-icon"); power.set_valign(Gtk.Align.CENTER)
         power.connect("clicked",lambda *_:self.toggle_status_panel("power")); bar.append(power); self._status_buttons["power"]=power
-        self._status_group=NavGroup([clock,*self._status_buttons.values()])
+        guide=Gtk.Button(); guide.set_child(glyph("view-grid-symbolic","⊞",22)); guide.add_css_class("square"); guide.add_css_class("status-icon"); guide.set_valign(Gtk.Align.CENTER)
+        guide.connect("clicked",lambda *_:self.app.show_mode("guide")); bar.append(guide); self.guide_button=guide
+        self._status_group=NavGroup([clock,*self._status_buttons.values(),guide])
         self._status_shown=None; self.tick_clock(); self.show_status(self.app.status)
         return bar
     def tick_clock(self):
@@ -449,7 +428,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             content.append(self._window_row(entry.windows[0]) if len(entry.windows)==1 else self._workspace_row(entry,outputs))
         if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the i3 or sway window manager."))
         if not favorites and not entries:
-            content.append(muted_label("Nothing is open and there are no favorites yet. Press → (or the arrows along the right edge) to see your installed applications."))
+            content.append(muted_label("Nothing is open and there are no favorites yet. Press → (or ⊞ in the bottom-right corner) to see your installed applications."))
     def _keep_at_bottom(self,adj):
         """The Quick Menu's lists grow upwards from the search field: when they overflow, show their bottom. "changed"
         comes while GTK is sizing the list, when a new value would not move it yet, so it is set just after. Not while
@@ -615,7 +594,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     # ---------------------------------------------------------- Applications pane
     def _build_guide_pane(self):
         """The Applications pane: a title over the applications guide. Its focusable widgets register into pane "guide"."""
-        pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_hexpand(True)   # the guide strip is the gap before it
+        pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_hexpand(True); pane.set_margin_start(self.app.layout.margin)
         head=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(14)); head.set_margin_top(S(12)); head.set_margin_start(S(24)); head.set_margin_end(S(24)); head.set_margin_bottom(S(2))
         self.apps_title=Gtk.Label(label="Applications"); self.apps_title.add_css_class("pane-title"); self.apps_title.set_xalign(0); head.append(self.apps_title)
         self.apps_subtitle=Gtk.Label(); self.apps_subtitle.add_css_class("muted"); self.apps_subtitle.set_valign(Gtk.Align.END); self.apps_subtitle.set_margin_bottom(S(4)); self.apps_subtitle.set_xalign(0); head.append(self.apps_subtitle)
@@ -1082,7 +1061,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         """The first time TVWCS opens: where it is used (TV or desk), then how to add favorites."""
         def picked(use):
             self.app.set_use(use)
-            self.show_message("Press → (or the arrows along the right edge of this menu) to see every application. Press ☆ beside the ones "
+            self.show_message("Press → (or ⊞ in the bottom-right corner of this menu) to see every application. Press ☆ beside the ones "
                               "you use most to add them to this menu, and ✎ to give one a channel number or a hotkey. Everything else is in "
                               "Settings, channel 000.",
                               "Welcome to TVWCS",done)

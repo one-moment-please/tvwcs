@@ -56,7 +56,7 @@ The header is at the top; everything else sits at the bottom, nearest the search
   - **Bluetooth:** the connected devices, each with Disconnect, Bluetooth on or off, and Bluetooth settings.
   - **Battery:** the charge and about how long until it is empty (or charged), from the kernel's estimate or the rate it drains at, and Power settings.
   Details that need a command (network, Bluetooth, sound) are read in the background; the selection moves into the panel once they arrive. A panel folds away when the selection leaves it and its icon, with Back, or with its icon again.
-- **Guide strip:** a thin button the full height of the Quick Menu, in the gap between it and Applications (at least 14 px, even with no screen edge margin). Its triangles point away from the Quick Menu while Applications is closed and back towards it while it is open; clicking it opens or closes Applications. With a remote, → past the end of a row does the same.
+- **Applications button:** ⊞ in the Quick Menu's bottom-right corner, after ⏻, opens or closes Applications (highlighted while it is open). With a remote, → past the end of a row does the same.
 
 Each row has a menu button (⋯), also opened with ← on the row or a right-click. Its options unfold upwards, above the row, indented a little on both sides, close to their row and with a small gap to the row above, the first option nearest the row. ↑ from the row goes into them; they fold away when the selection leaves them and their row, with Back, or with ⋯ again:
 
