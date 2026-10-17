@@ -1448,8 +1448,8 @@ class NetworkPage(Page):
         self.section("WI-FI")
         wireless=s.of_kind("wifi")
         if not wireless: self.note("No Wi-Fi adapter was found."); return
-        if not s.managed:
-            for i in wireless: self.ethernet_row(i,False)
+        if not s.managed or wireless[0].state.startswith("unmanaged"):
+            for i in wireless: self.ethernet_row(i,s.managed)
             return
         self.row("Wi-Fi",_on_off(s.wifi_enabled),lambda:self.act(lambda:network.set_wifi(not s.wifi_enabled),
                  "Switching Wi-Fi "+("off…" if s.wifi_enabled else "on…"),"Wi-Fi"),icon="network-wireless-symbolic",fallback="📶",ident="wifi")
@@ -1486,27 +1486,35 @@ class NetworkPage(Page):
         if managed: self.ip_row(i)
 
     def take_over(self, i):
-        """Hand a port that NetworkManager leaves alone to it (control_network: Debian's installer set it up in
+        """Hand a port that NetworkManager leaves alone to it (ifupdown_handover: Debian's installer set it up in
         /etc/network/interfaces)."""
-        reason=network.unmanaged_reason(i.device)
-        if reason=="ifupdown":
+        reason=network.unmanaged_reason(i.device); wifi=i.kind=="wifi"; kind="Wi-Fi" if wifi else "Ethernet"
+        if reason=="ifupdown" and wifi:
+            text=(f"{i.device} was set up when Debian was installed, in /etc/network/interfaces, so NetworkManager (which Settings uses) "
+                  "leaves it alone, and Wi-Fi networks cannot be chosen here. Settings can hand it to NetworkManager: the Wi-Fi network and "
+                  "password from that file become a saved NetworkManager connection, and its lines in the file are turned into comments "
+                  "(a copy is kept as interfaces.before-tvwcs). Wi-Fi drops for a few seconds while it reconnects"
+                  +(", and the wired connection keeps you online meanwhile." if any(w.connected for w in self.state.of_kind("ethernet")) else ".")
+                  +" If NetworkManager cannot connect, everything is put back as it was. It asks for your password.")
+        elif reason=="ifupdown":
             text=(f"{i.device} was set up when Debian was installed, in /etc/network/interfaces, so NetworkManager (which Settings uses) "
                   "leaves it alone. Settings can hand it to NetworkManager: its lines in that file are turned into comments (a copy is kept as "
-                  "interfaces.before-tvwcs), and NetworkManager connects it again with DHCP. The wired connection drops for a few seconds"
-                  +(", and Wi-Fi keeps you online meanwhile." if any(w.connected for w in self.state.of_kind("wifi")) else ".")+" It asks for your password.")
+                  "interfaces.before-tvwcs), and NetworkManager connects it again (a fixed address is kept). The wired connection drops for a few seconds"
+                  +(", and Wi-Fi keeps you online meanwhile." if any(w.connected for w in self.state.of_kind("wifi")) else ".")
+                  +" If NetworkManager cannot connect, everything is put back as it was. It asks for your password.")
         else:
-            text=(f"NetworkManager is set to leave {i.device} alone. Settings can ask it to manage the port; it then connects it with DHCP. "
-                  "If that does not last after a restart, a file in /etc/NetworkManager/conf.d lists it under unmanaged-devices.")
+            text=(f"NetworkManager is set to leave {i.device} alone. Settings can ask it to manage the {'adapter' if wifi else 'port'}"
+                  +("." if wifi else "; it then connects it with DHCP.")+
+                  " If that does not last after a restart, a file in /etc/NetworkManager/conf.d lists it under unmanaged-devices.")
         def go():
-            try: rewritten=network.prepare_take_over(i.device,str(runtime_dir()/"tvwcs-network")) if reason=="ifupdown" else []
-            except OSError as exc: self.win.notice("Ethernet",f"Could not prepare the change: {exc}"); return
             self.set_status(f"Handing {i.device} to NetworkManager…"); lines=[]
             def done(code,tail):
                 self.set_status("")
-                if code: self.win.notice("Ethernet",("\n".join(lines[-6:]) or tail or "It did not work.").strip())
-                else: self.win.notice("Ethernet",f"NetworkManager manages {i.device} now. Its IP settings can be changed here.")
+                if code: self.win.notice(kind,("\n".join(lines[-6:]) or tail or "It did not work.").strip())
+                else: self.win.notice(kind,f"NetworkManager manages {i.device} now. "+("Wi-Fi networks can be chosen here."
+                                      if wifi else "Its IP settings can be changed here."))
                 self.refresh(quiet=True)
-            self.win.run_as_root(network.take_over_argv(i.device,rewritten),f"Managing {i.device}",lines.append,done)
+            self.win.run_as_root(network.take_over_argv(i.device),f"Managing {i.device}",lines.append,done)
         self.win.confirm(f"Manage {i.device} here?",text,"Manage it",go,danger=False)
 
     def ip_row(self, i):

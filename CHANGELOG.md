@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.5.1 — 2026-10-17
+
+- Settings > Network can manage Wi-Fi on a computer where Debian was installed over Wi-Fi. Debian's installer puts that Wi-Fi network in /etc/network/interfaces, so NetworkManager left the adapter alone and no network could be chosen or changed. Settings now shows the adapter as "Not managed" and offers to hand it to NetworkManager: the network name and password from that file become a saved NetworkManager connection, the file's lines for it become comments (a copy is kept as interfaces.before-tvwcs), and NetworkManager reconnects. If it cannot connect, everything is put back as it was, so the computer stays online.
+- Handing an Ethernet port over the same way now keeps a fixed address set in the installer, and is also undone if NetworkManager cannot connect it.
+
 ## 3.5.0 — 2026-10-16
 
 - Settings > Displays has a **Scale** that makes text and controls bigger. In sway each display has its own, from 100 % to 300 % in steps of 25 %. In i3 (X11) there is one scale for every display, in whole steps (100 %, 200 %, 300 %); turning on **Fractional scaling** also offers 125 %, 150 %, 175 % and so on. A fractional scale is drawn at the next whole step and shrunk by xrandr, as GNOME does it, so it is a little less sharp. Only scales that leave a display at least 540 pixels high are offered, and a new scale goes back after 15 seconds unless it is kept.
