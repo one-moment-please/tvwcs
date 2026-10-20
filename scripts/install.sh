@@ -350,7 +350,7 @@ fi
 
 # ------------------------------------------------------------------ everything, or a minimal install
 # A minimal install has the Quick Menu, the applications list and the Settings pages that need nothing more. The
-# optional features' packages (sound, Bluetooth, network, storage, the terminal, Flathub apps, the screen saver,
+# optional features' packages (sound, Bluetooth, storage, the terminal, Flathub apps, the screen saver,
 # hiding the pointer) are not installed, and the features whose software is missing start turned off; Settings >
 # Features turns them on, installing what they need. Asked on a first install only: later runs keep to the features.
 MINIMAL=""
@@ -359,7 +359,7 @@ case "${TVWCS_INSTALL:-}" in
     *) echo "install.sh: TVWCS_INSTALL must be full or minimal, not \"$TVWCS_INSTALL\"." >&2; exit 1 ;;
 esac
 if [ -z "$CHECK_ONLY" ] && [ -z "${TVWCS_INSTALL:-}" ] && [ -t 0 ] && [ ! -f "$CONFIG_HOME/tvwcs/config.json" ]; then
-    printf "\nWhat should be installed?\n  1) Everything TVWCS can use (sound, Bluetooth, network, storage, a terminal, Flathub apps, the screen saver)\n  2) A minimal install: the Quick Menu, the applications list and basic Settings (turn the rest on later in Settings > Features)\nChoose 1 or 2 [1]: "
+    printf "\nWhat should be installed?\n  1) Everything TVWCS can use (sound, Bluetooth, storage, a terminal, Flathub apps, the screen saver)\n  2) A minimal install: the Quick Menu, the applications list and basic Settings (turn the rest on later in Settings > Features)\nChoose 1 or 2 [1]: "
     read -r ANSWER || ANSWER=""
     case "$ANSWER" in 2*|[Mm]*) MINIMAL=1 ;; esac
 fi
@@ -480,7 +480,7 @@ command -v gio >/dev/null 2>&1 && command -v gsettings >/dev/null 2>&1 || need l
 libexec_has gvfsd-smb || need gvfs-backends "Settings: storage (network shares)" storage
 libexec_has xdg-desktop-portal-gtk || need "xdg-desktop-portal xdg-desktop-portal-gtk" "light or dark mode for Flatpak apps and browsers"
 command -v bluetoothctl >/dev/null 2>&1 || need "$(pkg bluetoothctl)" "Settings: Bluetooth" bluetooth
-command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)" network
+command -v nmcli >/dev/null 2>&1 || need "$(pkg nmcli)" "Settings: network (Ethernet and Wi-Fi)"
 python3 -c 'import gi; gi.require_version("Vte","3.91")' 2>/dev/null || need "$(pkg vte)" "Settings: the terminal page" terminal
 python3 -c 'import gi; gi.require_foreign("cairo")' 2>/dev/null || need "$(pkg cairo)" "the screen saver (drawing with cairo)" screensaver
 icon_theme_installed || need "$(pkg icons)" "icons for apps and buttons (Papirus, papirus-icon-theme, has more app icons)"

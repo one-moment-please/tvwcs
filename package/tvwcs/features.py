@@ -30,8 +30,6 @@ FEATURES=(
             ("pipewire","pipewire-pulse","wireplumber","pulseaudio-utils"),(("cmd","pactl"),),("sound",)),
     Feature("bluetooth","Bluetooth","Pairing and connecting Bluetooth remotes, headphones and game controllers.",
             ("bluez",),(("cmd","bluetoothctl"),),("bluetooth",)),
-    Feature("network","Network","Ethernet and Wi-Fi settings, with NetworkManager.",
-            ("network-manager",),(("cmd","nmcli"),),("network",),in_use=("NetworkManager",)),
     Feature("storage","Storage","Mounting drives and switching them off, and network shares.",
             ("udisks2","gvfs-backends"),(("cmd","udisksctl"),),("storage",)),
     Feature("terminal","Terminal","A terminal inside Settings.",("gir1.2-vte-3.91",),(("gi","Vte","3.91"),),("terminal",)),
