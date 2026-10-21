@@ -45,10 +45,9 @@ Navigation is spatial. → past the Quick Menu opens Applications; ← goes back
 The header is at the top; everything else sits at the bottom, nearest the search field, with any spare height above it. From top to bottom:
 
 - **Header:** the title and ✕ close (it can be hidden).
-- **Favorites:** pinned launch profiles. Hidden when there are none.
-- **Open applications, by workspace.** A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor"). Hidden when nothing is open. With neither favorites nor open apps, a note points to Applications (→) for the installed apps.
+- **Favorites and open applications, in one list without headings.** Favorites (pinned launch profiles) come first, in their order; a favorite that is open stands in its place as the open app, with ★. The other open applications follow, by workspace. A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor"). With neither favorites nor open apps, a note points to Applications (→) for the installed apps.
 - **Search results**, listed upwards from the search field: the best match is the one nearest it, and ↑ moves on to the next.
-- **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. On a TV the field starts three digits wide with a short hint beside it, and widens for a letter or a fourth digit. OK on the empty field opens the on-screen keyboard (or number keypad).
+- **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. On a TV the field starts three characters wide (**___**) with a short hint beside it, and widens for a letter or a fourth digit. OK on the empty field opens the on-screen keyboard (or number keypad).
 - **Status row:** clock, waiting updates, network, volume, Bluetooth, the battery with its charge (charging, plugged in or on battery; only on a computer with a battery), and ⏻ power. The clock and the updates icon open their Settings page. The others unfold a panel above the row, indented a little, like a row's options:
   - **⏻ Power:** Lock (nearest the button), Sleep, Reboot, Shut down, and Log out when there is a login screen.
   - **Network:** the connection in use (Wi-Fi network and signal, or the wired connection) with its address, Wi-Fi on or off, and Network settings.
@@ -58,13 +57,13 @@ The header is at the top; everything else sits at the bottom, nearest the search
   Details that need a command (network, Bluetooth, sound) are read in the background; the selection moves into the panel once they arrive. A panel folds away when the selection leaves it and its icon, with Back, or with its icon again.
 - **Applications button:** ⊞ in the Quick Menu's bottom-right corner, after ⏻, opens or closes Applications (highlighted while it is open). With a remote, → past the end of a row does the same.
 
-Each row has a menu button (⋯), also opened with ← on the row or a right-click. Its options unfold upwards, above the row, indented a little on both sides, close to their row and with a small gap to the row above, the first option nearest the row. ↑ from the row goes into them; they fold away when the selection leaves them and their row, with Back, or with ⋯ again:
+Each row has a menu button (⋯), also opened with ← on the row or a right-click. Its options unfold upwards, above the row, indented a little on both sides, close to their row and with a small gap to the row above. From the top: the app's own `.desktop` actions, opening it the other way, and Close nearest the row (the selection lands on the option just above Close). ↑ from the row goes into them; they fold away when the selection leaves them and their row, with Back, or with ⋯ again:
 
-- **App:** open it the other way (tiled here, or in its own workspace), its own `.desktop` actions, Close when it is open.
+- **App:** its own `.desktop` actions, open it the other way (alongside the apps on screen, or in its own workspace), Close when it is open.
 - **Workspace:** move it to another monitor, or close it and everything on it (asks first). Its ▴ button unfolds its individual apps upwards, above it.
 - **Favorite:** its launch mode and `.desktop` actions.
 
-Messages, errors and a "Starting <app>…" card are shown in the window. The first time TVWCS opens it asks whether it is used on a TV or at a desk.
+Messages and errors are shown in the window. While an app starts, a spinner takes the place of its icon in its button (a "Starting <app>…" card only when it was started with no button on screen, such as by its hotkey). The first time TVWCS opens it asks whether it is used on a TV or at a desk.
 
 In **TV mode** the i3/sway bar is hidden (the status row replaces it), and while no app is open the Quick Menu stays on screen and returns when the last app closes. Both can be turned off.
 

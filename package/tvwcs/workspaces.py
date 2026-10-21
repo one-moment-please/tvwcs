@@ -61,3 +61,21 @@ def build_entries(windows, workspaces, match):
     for win in parked:
         entries.append(WorkspaceEntry(win.get("workspace") or "",window_app_name(win,match),[win],win.get("output",""),urgent=bool(win.get("urgent"))))
     return entries
+
+def quick_list(favorites, entries, opened):
+    """The Quick Menu's one list: favorites in their order, then the other open applications.
+    `opened` is {desktop id: open window} for the favorites that are open. A plain favorite that is open stands in
+    its place as that open app (shown with ★), unless its window shares a workspace: the workspace's row has it.
+    A favorite with its own command or desktop action is always listed, since it may open a separate copy.
+    -> ([("favorite", profile) | ("entry", WorkspaceEntry)], the con_ids of open favorites)"""
+    out=[]; used=set(); starred=set()
+    def entry_of(con):
+        return next((e for e in entries if any(w["con_id"]==con for w in e.windows)),None)
+    for p in favorites:
+        w=opened.get(p.desktop_id)
+        if w is None or p.command.strip() or p.desktop_action: out.append(("favorite",p)); continue
+        starred.add(w["con_id"]); e=entry_of(w["con_id"])
+        if e is None: out.append(("favorite",p)); continue
+        if not e.shared and id(e) not in used: out.append(("entry",e)); used.add(id(e))
+    out+=[("entry",e) for e in entries if id(e) not in used]
+    return out,starred

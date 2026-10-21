@@ -525,37 +525,44 @@ class TVWCSApp(Gtk.Application):
     STARTING_GIVE_UP=60
     URGENT_WATCH=15    # seconds a launch made with TVWCS hidden is watched for an app that only flags its open window
     def _launched(self,profile,started=False,before=None,urgent=None,mode=None):
-        """After a launch: hide TVWCS once the app's first window appears. Until then, a "Starting Jellyfin…" card is
-        shown wherever the screen would otherwise stay empty (an app opening in a workspace of its own takes a few
-        seconds to draw anything), and TVWCS stays reachable with its hotkey. An app that was already running in a way
-        TVWCS could not match often opens no new window and only flags its open one as urgent: that window is shown."""
+        """After a launch: hide TVWCS once the app's first window appears. Until then the app's button shows a spinner
+        wherever the screen would otherwise stay empty (an app opening in a workspace of its own takes a few seconds to
+        draw anything), and TVWCS stays reachable with its hotkey. Started with no button of it on screen (a hotkey), a
+        "Starting Jellyfin…" card shows instead. An app that was already running in a way TVWCS could not match often
+        opens no new window and only flags its open one as urgent: that window is shown."""
         self.store.record_last_profile(profile.id)
         w=self.window
         if not started or before is None or w is None or not self.wm.available: self.hide_window(launched=started); return
         urgent=set(urgent or ())
         blank=mode==LAUNCH_NEW_WORKSPACE or not self.wm.screen_has_windows()
-        card=w.is_visible() or blank
-        if card:
-            if w.is_visible(): self.wm.move_tvwcs_to_current_workspace(); self.apply_geometry()   # follow to the new workspace
+        waiting=w.is_visible() or blank
+        card=False
+        if waiting:
+            if w.is_visible(): self.wm.move_tvwcs_to_current_workspace(); self.apply_geometry(); w.present()   # follow to the new workspace, keeping the focus
             else: self.show_mode("toggle")
+            self.grace_until=time.monotonic()+tv_mode.LAUNCH_GRACE   # Back hides TVWCS over the empty screen meanwhile
+            card=not w.set_launching(profile.id,True)
         else: self.hide_window(launched=True)
         state={"done":False,"t":0.0}
         def finish(show=None):
             if state["done"]: return
-            state["done"]=True
+            state["done"]=True; w.set_launching(profile.id,False)
             if card and w._modal_groups: w.close_modal()
             if show is not None and not self.wm.focus(show,mode or LAUNCH_PLAIN): show=None
-            if card: self.hide_window(launched=show is None)
+            if waiting and w.is_visible(): self.hide_window(launched=show is None)
         def check():
             if state["done"]: return GLib.SOURCE_REMOVE
-            if card and (not w.is_visible() or not w._modal_groups): state["done"]=True; return GLib.SOURCE_REMOVE   # closed some other way
+            if waiting and (not w.is_visible() or (card and not w._modal_groups)):   # closed some other way
+                state["done"]=True; w.set_launching(profile.id,False); return GLib.SOURCE_REMOVE
             state["t"]+=0.4
             windows=self.wm.windows()
             if any(int(x["con_id"]) not in before for x in windows): finish(); return GLib.SOURCE_REMOVE
             flagged=[int(x["con_id"]) for x in windows if x.get("urgent") and int(x["con_id"]) in before and int(x["con_id"]) not in urgent]
             if flagged: finish(flagged[0]); return GLib.SOURCE_REMOVE
-            if state["t"]>=(self.STARTING_GIVE_UP if card else self.URGENT_WATCH): finish(); return GLib.SOURCE_REMOVE
-            if card and abs(state["t"]-self.STARTING_SLOW)<0.2: w.starting_slow(profile.name)
+            if state["t"]>=(self.STARTING_GIVE_UP if waiting else self.URGENT_WATCH): finish(); return GLib.SOURCE_REMOVE
+            if waiting and abs(state["t"]-self.STARTING_SLOW)<0.2:
+                if card: w.starting_slow(profile.name)
+                else: w.launching_slow(profile.id,profile.name)
             return GLib.SOURCE_CONTINUE
         if card: w.show_starting(profile.name,finish)
         GLib.timeout_add(400,check)
@@ -563,6 +570,7 @@ class TVWCSApp(Gtk.Application):
         """Start a profile (or show its open window). `mode`: the Quick Menu's one-time "open alongside" (LAUNCH_SAME)
         or "open in a new workspace" (LAUNCH_NEW_WORKSPACE), instead of the mode's usual way."""
         if profile is None: return
+        if self.window is not None and profile.id in self.window.launching: return   # starting already: its button spins
         app=self.catalogue.by_id().get(profile.desktop_id)
         # A plain profile returns to an existing window when it can; custom commands and desktop actions
         # run as written because they may stand for a separate session of the app.
@@ -611,8 +619,12 @@ class TVWCSApp(Gtk.Application):
             try:
                 info=Gio.DesktopAppInfo.new(application.desktop_id)
                 if info is None: raise RuntimeError("Desktop launcher is no longer available.")
-                self.wm.prepare_for_launch(mode or self.launch_mode(profile)); info.launch_action(action_id,None); self.hide_window(launched=True)
-            except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}")
+                before={int(w["con_id"]) for w in self.wm.windows()}; urgent=self.wm.urgent_ids(); launch=mode or self.launch_mode(profile)
+                self.wm.prepare_for_launch(launch); info.launch_action(action_id,None)
+            except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}"); return
+            # watched like any launch: an app that is already open (Settings' pages) often only flags its window, which is then shown
+            if profile is not None: self._launched(profile,started=True,before=before,urgent=urgent,mode=launch)
+            else: self.hide_window(launched=True)
         # An action starts the application, so the main profile's PIN applies to it too.
         self._with_pins([profile] if profile and profile.pin_hash else [],go)
     def restart(self,launcher=None):
