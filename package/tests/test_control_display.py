@@ -158,7 +158,7 @@ class ScaleTests(unittest.TestCase):
     def test_choices(self):
         outs=outputs()   # the smallest display that is on is 1080 high
         self.assertEqual(disp.scale_choices(outs,False),[1.0,2.0])
-        self.assertEqual(disp.scale_choices(outs,True),[1.0,1.25,1.5,1.75,2.0])
+        self.assertEqual(disp.scale_choices(outs,True),[0.75,1.0,1.25,1.5,1.75,2.0])
         self.assertEqual(disp.scale_choices(outs,False,1.5),[1.0,1.5,2.0])
         self.assertEqual(disp.scale_text(1.25),"125 %"); self.assertEqual(disp.parse_xft_dpi("Xft.dpi:\t192\nXft.hinting:\t1"),192.0)
     def test_fractional_choice_is_kept_beside_the_displays(self):
@@ -194,7 +194,7 @@ class ScaleTests(unittest.TestCase):
         outs=outputs(SCALED)   # one 1920x1080 display
         self.assertEqual(disp.parse_max_size(SCALED),(16384,16384))
         self.assertEqual(disp.scale_choices(outs,True,None,(1920,1080)),[1.0,2.0])           # Xvfb: no room to shrink from
-        self.assertEqual(disp.scale_choices(outs,True,None,(8192,8192)),[1.0,1.25,1.5,1.75,2.0])
+        self.assertEqual(disp.scale_choices(outs,True,None,(8192,8192)),[0.75,1.0,1.25,1.5,1.75,2.0])
     def test_xrandr_problems_in_words(self):
         from tvwcs.control_cmd import Result
         err="X Error of failed request:  BadValue (integer parameter out of range for operation)\n  Major opcode of failed request:  140 (RANDR)\n  Current serial number in output stream:  21\n"
@@ -232,5 +232,21 @@ class SavedTests(unittest.TestCase):
         x=disp.DisplayState(True,"xrandr","",outputs())
         old={"backend":"xrandr","outputs":disp.to_saved(x,disp.edited(x.outputs,"HDMI-1",mode=(1280,720,False)))["xrandr"]["outputs"]}
         self.assertEqual(by(disp.from_saved(x,old),"HDMI-1").width,1280)
+
+class TearingTests(unittest.TestCase):
+    def test_tearfree_property_per_output(self):
+        text="Screen 0: minimum 8 x 8\nHDMI-1 connected primary 1920x1080+0+0\n\tTearFree: on\n\t\tsupported: off, on, auto\nDP-1 disconnected\n\tTearFree: off\neDP-1 connected 1366x768+1920+0\n\tTearFree: auto\n"
+        self.assertEqual(disp.parse_tearfree(text),{"HDMI-1":"on","eDP-1":"auto"})
+    def test_nvidia_metamode(self):
+        mode,on=disp.parse_metamode("id=50, switchable=no, source=nv-control :: DPY-1: nvidia-auto-select @1920x1080 +0+0 {ViewPortIn=1920x1080}\n")
+        self.assertEqual((mode,on),("DPY-1: nvidia-auto-select @1920x1080 +0+0 {ViewPortIn=1920x1080}",False))
+        self.assertEqual(disp.with_pipeline(mode,True),"DPY-1: nvidia-auto-select @1920x1080 +0+0 {ViewPortIn=1920x1080, ForceCompositionPipeline=On, ForceFullCompositionPipeline=On}")
+        self.assertTrue(disp.parse_metamode(disp.with_pipeline(mode,True))[1])
+        self.assertEqual(disp.with_pipeline(disp.with_pipeline(mode,True),False),mode)
+    def test_the_choice_is_kept(self):
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as d:
+            path=os.path.join(d,"displays.json"); self.assertIsNone(disp.saved_tearing(path))
+            disp.save_tearing(True,path); self.assertTrue(disp.saved_tearing(path))
 
 if __name__=="__main__": unittest.main()

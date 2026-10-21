@@ -14,13 +14,13 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
-from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, is_4k, scale_key, tv_mode as in_tv_mode
+from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, default_of, display_name, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, is_4k, scale_key, tv_mode as in_tv_mode
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import appearance, cursor, features, power, privilege, quick_status, screensaver, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
-from tvwcs.ui_editors import ApplicationProfiles, ProfileEditor
+from tvwcs.ui_editors import ProfileEditor
 from tvwcs.ui_window import TVWCSWindow
 from tvwcs.widgets import app_icon, has_icon, screen_height, set_scale
 from tvwcs.window_manager import I3WindowManager
@@ -265,6 +265,9 @@ class TVWCSApp(Gtk.Application):
         from tvwcs import control_display
         problem=control_display.restore()
         if problem: print(f"Could not apply the saved display settings: {problem}",file=sys.stderr)
+        if not os.environ.get("SWAYSOCK"):
+            problem=control_display.restore_tearing()
+            if problem: print(f"Could not set tear-free drawing: {problem}",file=sys.stderr)
     def _on_stop_signal(self): self.quit(); return GLib.SOURCE_REMOVE
     def do_activate(self):
         first=self.window is None
@@ -401,9 +404,13 @@ class TVWCSApp(Gtk.Application):
     # ---------------------------------------------------------- open windows and workspaces
     def workspace_entries(self): return build_entries(self.wm.windows(),self.wm.workspaces(),self.match_application_window)
     def default_profile(self,application):
-        profiles=self.store.for_app(application.desktop_id)
-        plain=[p for p in profiles if not p.command and not p.desktop_action]
-        return next((p for p in plain if p.name==application.name),(plain or profiles or [None])[0])
+        return default_of(self.store.for_app(application.desktop_id),application.name)
+    def profile_name(self,profile,application=None):
+        """The name lists show: the application's, then the profile's own unless it is the default one."""
+        app=application or self.catalogue.by_id().get(profile.desktop_id)
+        if app is None: return profile.name
+        main=self.default_profile(app)
+        return display_name(profile,app.name,main is not None and main.id==profile.id)
     def match_application_window(self,window): return match_window(window,self.catalogue.applications)
     def window_icon(self,window,size=32,badge=None):
         app=self.match_application_window(window)
@@ -412,6 +419,23 @@ class TVWCSApp(Gtk.Application):
             for candidate in (window.get("class"),window.get("instance")):
                 if candidate and has_icon(candidate.lower()): spec=candidate.lower(); break
         return app_icon(spec,(app.name if app else None) or window.get("class") or window.get("title"),size,badge)
+    def alongside_names(self):
+        """The apps on the workspace on screen now (TVWCS itself left out), for the Quick Menu's "Open alongside …"."""
+        names=[]
+        for w in self.wm.windows():
+            if not w.get("workspace_visible"): continue
+            app=self.match_application_window(w); name=(app.name if app else None) or w.get("class") or w.get("title") or ""
+            if name and name not in names: names.append(name)
+        return names
+    def open_favorites(self,windows=None):
+        """{desktop id: the open window} for the favorites that are open now: the Quick Menu shows those once, as the
+        open application (with ★), not twice. Matched by the application each window belongs to (its class), so a
+        browser whose title changes with every page still matches."""
+        found={}
+        for w in self.wm.windows() if windows is None else windows:
+            app=self.match_application_window(w)
+            if app is not None: found.setdefault(app.desktop_id,w)
+        return found
     def window_mode(self,window):
         """How selecting an open app shows it: in TV mode alone in a workspace of its own, in desktop mode where it is."""
         return LAUNCH_NEW_WORKSPACE if self.tv else LAUNCH_PLAIN
@@ -474,7 +498,10 @@ class TVWCSApp(Gtk.Application):
         """The profile editor, in the TVWCS window. A new profile is not stored until Save."""
         if profile is None and application is None: return
         ProfileEditor(self.window,profile,application or self.catalogue.by_id().get(profile.desktop_id)).open()
-    def edit_application_profiles(self,desktop_id): ApplicationProfiles(self.window,desktop_id).show()
+    def edit_application_profiles(self,desktop_id):
+        """✎ on an application: its default profile's editor (4.0 has no list of profiles: each is a row of its own)."""
+        app=self.catalogue.by_id().get(desktop_id); main=self.default_profile(app) if app else None
+        if main is not None: self.edit_profile(main,app)
     def activate_result(self,result):
         if result["kind"]=="profile": self.launch_profile(result["profile"])
         elif result["kind"]=="window": self.focus_window(result["window"]["con_id"])
@@ -600,8 +627,14 @@ class TVWCSApp(Gtk.Application):
             try: proc.stdin.write((password+"\n").encode()); proc.stdin.close()
             except OSError: pass   # it ended without reading it; its exit says why
         def finished(_pid,status):
-            try: err=proc.stderr.read().decode(errors="replace").strip()[-300:]; proc.stderr.close()
+            # Only what is there now: a program that forks (i3lock) leaves its child holding the pipe open, and a read to
+            # the end would block the main loop until the screen is unlocked
+            try:
+                os.set_blocking(proc.stderr.fileno(),False); data=proc.stderr.read() or b""
+                err=data.decode(errors="replace").strip()[-300:]
             except (OSError,ValueError): err=""
+            try: proc.stderr.close()
+            except OSError: pass
             proc.returncode=code=os.waitstatus_to_exitcode(status)   # GLib reaped it; tell Popen
             done(code,err)
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT,proc.pid,finished)

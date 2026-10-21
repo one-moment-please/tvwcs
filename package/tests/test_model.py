@@ -129,11 +129,21 @@ class SettingsAndProfileTests(unittest.TestCase):
             path=Path(d)/"c.json"; store=ConfigStore(path)
             store.set_app_description("a.desktop","My own words"); self.assertEqual(ConfigStore(path).app_descriptions,{"a.desktop":"My own words"})
             store.set_app_description("a.desktop","   "); self.assertEqual(ConfigStore(path).app_descriptions,{})
+    def test_an_application_description_moves_to_its_default_profile(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"; store=ConfigStore(path)
+            store.set_profile(LaunchProfile("p","b.desktop","B")); store.set_profile(LaunchProfile("q","b.desktop","B 2"))
+            store.set_app_description("b.desktop","Before 4.0")
+            app=Application("b.desktop","B","Generic","Comment",None,("Internet",),"/x","b")
+            store.ensure_defaults([app]); again=ConfigStore(path)
+            self.assertEqual((again.get("p").description,again.get("q").description,again.app_descriptions),("Before 4.0","",{}))
     def test_row_description_defaults_and_overrides(self):
         app=Application("b.desktop","B","Generic","The .desktop comment",None,("Internet",),"/x","b",(("Private","Private Window"),))
         main=LaunchProfile("1","b.desktop","B"); sec=LaunchProfile("2","b.desktop","P",command="b --kiosk",desktop_action="Private")
         self.assertEqual(row_description(main,app,True),"The .desktop comment")                      # main: the .desktop description
-        self.assertEqual(row_description(main,app,True,"Override"),"Override")                        # ... unless overridden
+        self.assertEqual(row_description(main,app,True,"Override"),"Override")                        # ... or the one from before 4.0
+        main.description="Its own"; self.assertEqual(row_description(main,app,True,"Override"),"Its own")   # 4.0: each profile has its own
+        main.description=""
         self.assertEqual(row_description(sec,app,False),"Private Window  ·  b --kiosk")             # secondary: its launch options
         sec.description="Just for me"; self.assertEqual(row_description(sec,app,False),"Just for me")
     def test_startup_choices_order(self):

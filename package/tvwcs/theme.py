@@ -12,6 +12,7 @@ window.tvwcs-window, .tvwcs-root { background: @BG@; color: @FG@; font-family: "
 .muted { color: @MUTED@; font-size: 14px; }
 .section-title { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: @ACCENT@; margin-top: 12px; margin-bottom: 2px; }
 .channel-number { font-weight: 700; color: @ACCENT@; }
+.favorite-mark { color: @ACCENT@; }
 .child-marker { color: @FAINT@; font-size: 22px; }
 button { min-height: 44px; min-width: 44px; padding: 0 14px; border: none; border-radius: 0; background: @RAISED@; background-image: none; color: @FG@; box-shadow: none; text-shadow: none; font-size: 15px; }
 window.pointer button:hover { background: @HOVER@; }

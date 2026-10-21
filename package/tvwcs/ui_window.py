@@ -16,8 +16,15 @@ from tvwcs.theme import render_css
 from tvwcs import cursor
 from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, Marquee, muted_label, scroll_to_show, section_title, usable)
 
+NAME_SCROLL_DELAY=3000                   # ms a selected Quick Menu row waits before a name too long to fit scrolls by
 CHANNEL_DIGITS=3                         # typing this many digits of a channel number ...
 CHANNEL_DELAY=1000                       # ... and nothing else for this many ms launches that channel
+
+def pointer_only(*widgets):
+    """A click on these buttons does not move the remote's selection onto them: the mouse and the D-pad are
+    independent in the Quick Menu and Applications (a clicked ☆ does not get the selection's highlight)."""
+    for w in widgets:
+        if isinstance(w,Gtk.Button): w.set_focus_on_click(False)
 
 _TYPING_BLOCKED=Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.ALT_MASK|Gdk.ModifierType.SUPER_MASK|Gdk.ModifierType.META_MASK
 
@@ -171,8 +178,11 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         power=Gtk.Button(); power.set_child(glyph("system-shutdown-symbolic","⏻",22)); power.set_tooltip_text("Lock, sleep, reboot or shut down"); power.add_css_class("square"); power.add_css_class("status-icon"); power.set_valign(Gtk.Align.CENTER)
         power.connect("clicked",lambda *_:self.toggle_status_panel("power")); bar.append(power); self._status_buttons["power"]=power
         guide=Gtk.Button(); guide.set_child(glyph("view-grid-symbolic","⊞",22)); guide.add_css_class("square"); guide.add_css_class("status-icon"); guide.set_valign(Gtk.Align.CENTER)
-        guide.connect("clicked",lambda *_:self.app.show_mode("guide")); bar.append(guide); self.guide_button=guide
-        self._status_group=NavGroup([clock,*self._status_buttons.values(),guide])
+        # ⊞ is on screen when it is clicked: open or close Applications here and now (show_mode would first ask the
+        # window manager where TVWCS is, and an answer from before the click showed it again instead of closing it)
+        guide.connect("clicked",lambda *_:self.app.show_panels(not self.guide_open,False,focus="guide" if not self.guide_open else "quick"))
+        bar.append(guide); self.guide_button=guide
+        self._status_group=NavGroup([clock,*self._status_buttons.values(),guide]); pointer_only(*self._status_group)
         self._status_shown=None; self.tick_clock(); self.show_status(self.app.status)
         return bar
     def tick_clock(self):
@@ -245,7 +255,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         """Add a line to the open panel; its buttons (focusable) are one navigation row, known as `ident` across redraws."""
         self.status_panel.append(widget)
         if focusable:
-            g=NavGroup(list(focusable)); g.ident=ident; g.column=column; self._panel_groups.append(g)
+            pointer_only(*focusable); g=NavGroup(list(focusable)); g.ident=ident; g.column=column; self._panel_groups.append(g)
         return widget
     def _panel_text(self,text,css="muted"):
         l=Gtk.Label(label=text); l.set_xalign(0); l.set_wrap(True); l.add_css_class(css); return self._panel_line(l)
@@ -312,11 +322,34 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                 if state.message: self._panel_text(state.message)
                 if state.managed and state.of_kind("wifi"):
                     on=state.wifi_enabled
+                    if on: self._panel_button("scan","view-refresh-symbolic","⟳","Find Wi-Fi networks",self._panel_wifi_scan)
                     self._panel_button("wifi","network-wireless-symbolic" if not on else "network-wireless-offline-symbolic","⌔",
                                        "Turn Wi-Fi off" if on else "Turn Wi-Fi on",lambda:self._panel_do(lambda:control_network.set_wifi(not on),self._panel_network))
-                    self._panel_prefer="wifi"
+                    self._panel_prefer="scan" if on else "wifi"
             self._panel_settings("network","Network settings")
         self._panel_read(control_network.read_details,build)
+
+    def _panel_wifi_scan(self):
+        """The Wi-Fi networks in range, strongest first: choose one to connect (a password is asked when it needs one)."""
+        self._fill_panel(lambda:(self._panel_text("Looking for Wi-Fi networks…"),self._panel_settings("network","Network settings")))
+        self._panel_placeholder=True
+        def build(state):
+            networks=[n for n in (state.networks if state else []) if n.ssid and not n.in_use]
+            seen=set(); networks=[n for n in sorted(networks,key=lambda n:-n.signal) if not (n.ssid in seen or seen.add(n.ssid))]
+            self._panel_text("Wi-Fi networks" if networks else "No other Wi-Fi networks were found","panel-title")
+            for n in networks[:12]:
+                label=f"{n.ssid}  ·  {n.signal}%"+("  🔒" if n.secured and not n.saved_uuid else "")
+                self._panel_button(f"net:{n.ssid}","network-wireless-symbolic","⌔",label,lambda n=n:self._join_wifi(n))
+                if self._panel_prefer is None: self._panel_prefer=f"net:{n.ssid}"
+            self._panel_button("back","go-previous-symbolic","←","Back",self._panel_network)
+            self._panel_settings("network","Network settings")
+        self._panel_read(lambda:control_network.read_state(scan=True),build)
+    def _join_wifi(self,n,error=""):
+        if n.saved_uuid: self._panel_do(lambda:control_network.activate(n.saved_uuid),self._panel_network); return
+        if not n.secured: self._panel_do(lambda:control_network.join_wifi(n.ssid),self._panel_network); return
+        def got(password):
+            if password: self._panel_do(lambda:control_network.join_wifi(n.ssid,password),self._panel_network)
+        self.ask_text(f"Password for {n.ssid}",got,"",f"{n.security} network. NetworkManager saves the password for next time.",secret=True,ok_label="Connect",error=error)
 
     def _panel_bluetooth(self):
         """The devices that are connected, each with Disconnect; Bluetooth on or off; Bluetooth settings."""
@@ -336,11 +369,30 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                         line.append(off); self._panel_line(line,f"device:{d.address}",off)
                         if self._panel_prefer is None: self._panel_prefer=f"device:{d.address}"
                 on=state.powered
+                if on: self._panel_button("scan","view-refresh-symbolic","⟳","Find Bluetooth devices",self._panel_bluetooth_scan)
                 self._panel_button("power","bluetooth-disabled-symbolic" if on else "bluetooth-active-symbolic","ᛒ",
                                    "Turn Bluetooth off" if on else "Turn Bluetooth on",lambda:self._panel_do(lambda:control_bluetooth.set_powered(not on),self._panel_bluetooth))
                 if self._panel_prefer is None: self._panel_prefer="power"
             self._panel_settings("bluetooth","Bluetooth settings")
         self._panel_read(control_bluetooth.read_state,build)
+
+    def _panel_bluetooth_scan(self):
+        """Look for devices for a few seconds, then list the ones not connected: choose one to pair (or connect)."""
+        self._fill_panel(lambda:(self._panel_text("Looking for Bluetooth devices… Put the device in pairing mode."),self._panel_settings("bluetooth","Bluetooth settings")))
+        self._panel_placeholder=True
+        def read():
+            control_bluetooth.scan(8); return control_bluetooth.read_state()
+        def build(state):
+            found=[d for d in (state.devices if state and state.available else []) if not d.connected]
+            self._panel_text("Bluetooth devices" if found else "No devices were found","panel-title")
+            for d in found[:12]:
+                icon,fallback,_kind=d.kind
+                self._panel_button(f"dev:{d.address}",icon,fallback,("Connect " if d.paired else "Pair ")+d.name,
+                                   lambda d=d:self._panel_do(lambda:control_bluetooth.connect(d.address) if d.paired else control_bluetooth.pair(d.address),self._panel_bluetooth))
+                if self._panel_prefer is None: self._panel_prefer=f"dev:{d.address}"
+            self._panel_button("back","go-previous-symbolic","←","Back",self._panel_bluetooth)
+            self._panel_settings("bluetooth","Bluetooth settings")
+        self._panel_read(read,build)
 
     def _panel_battery(self):
         """The charge, and about how long until the battery is empty (or charged)."""
@@ -385,16 +437,17 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         mute.connect("clicked",lambda *_:toggle_mute())
         less=Gtk.Button(label="−"); less.add_css_class("square"); less.set_tooltip_text(f"{kind} volume down")
         more=Gtk.Button(label="+"); more.add_css_class("square"); more.set_tooltip_text(f"{kind} volume up")
-        slider=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,100,1); slider.set_draw_value(False); slider.set_hexpand(True); slider.set_focusable(False)
+        boost=bool(self.app.store.settings.get("audio_boost"))
+        slider=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,control_sound.top(boost),1); slider.set_draw_value(False); slider.set_hexpand(True); slider.set_focusable(False)
         percent=Gtk.Label(); percent.set_width_chars(5); percent.set_xalign(1); percent.add_css_class("status-count")
         def show(value):
-            percent.set_text(f"{value}%"); slider.set_value(min(100,value))
+            percent.set_text(f"{value}%"); slider.set_value(min(control_sound.top(boost),value))
         def apply(value):
-            device.volume=max(0,min(control_sound.LOUDEST,int(value))); show(device.volume)
+            device.volume=max(0,min(control_sound.top(boost),int(value))); show(device.volume)
             self._volume_target[device.name]=device.volume
             if device.name not in self._volume_busy: self._send_volume(device)
-        less.connect("clicked",lambda *_:apply(control_sound.stepped(device.volume,-1)))
-        more.connect("clicked",lambda *_:apply(control_sound.stepped(device.volume,1)))
+        less.connect("clicked",lambda *_:apply(control_sound.stepped(device.volume,-1,boost)))
+        more.connect("clicked",lambda *_:apply(control_sound.stepped(device.volume,1,boost)))
         slider.connect("change-value",lambda _s,_scroll,value:(apply(round(value)),False)[1])
         show(device.volume)
         for w in (mute,less,slider,more,percent): line.append(w)
@@ -405,7 +458,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         answers are merged into the last one."""
         self._volume_busy.add(device.name); target=self._volume_target[device.name]
         def run():
-            try: control_sound.set_volume(device,target)
+            try: control_sound.set_volume(device,target,bool(self.app.store.settings.get("audio_boost")))
             except Exception: pass
             GLib.idle_add(lambda:(done(),GLib.SOURCE_REMOVE)[1])
         def done():
@@ -417,10 +470,13 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _build_quick_content(self,content):
         """Favorites, then the open applications below them (nearest the search field). A section with nothing in it
         is left out; with neither, a note says where the installed applications are."""
-        favorites=self.app.store.favorites()
+        entries=self.app.workspace_entries(); outputs=self.app.wm.outputs()
+        # a favorite that is open shows once, as the open application (with ★)
+        opened=self.app.open_favorites([w for e in entries for w in e.windows])
+        favorites=[p for p in self.app.store.favorites() if p.command.strip() or p.desktop_action or p.desktop_id not in opened]
+        self._starred={opened[p.desktop_id]["con_id"] for p in self.app.store.favorites() if p.desktop_id in opened and p not in favorites}
         if favorites: content.append(section_title("FAVORITES"))
         for profile in favorites: content.append(self._favorite_row(profile))
-        entries=self.app.workspace_entries(); outputs=self.app.wm.outputs()
         if entries: content.append(section_title("OPEN APPLICATIONS"))
         for entry in entries:
             content.append(self._window_row(entry.windows[0]) if len(entry.windows)==1 else self._workspace_row(entry,outputs))
@@ -443,7 +499,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); inner.append(app_icon(app.icon if app else None,p.name,32))
         if p.channel is not None:
             ch=Gtk.Label(label=f"{p.channel:03d}"); ch.add_css_class("channel-number"); inner.append(ch)
-        name=Gtk.Label(label=p.name); name.set_xalign(0); name.set_hexpand(True); name.set_ellipsize(3); inner.append(name)
+        inner.append(Marquee(self.app.profile_name(p,app),delay=NAME_SCROLL_DELAY).follow(main))
         if p.pin_hash: inner.append(self._lock_mark())
         main.set_child(inner)
         main.connect("clicked",lambda _b,profile=p:self.app.launch_profile(profile))
@@ -456,7 +512,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         app=self.app.match_application_window(w)
         main=Gtk.Button(); main.add_css_class("launch-row"); main.set_hexpand(True)
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); inner.append(self.app.window_icon(w,32,badge))
-        label=Gtk.Label(label=title); label.set_xalign(0); label.set_hexpand(True); label.set_ellipsize(3); inner.append(label); main.set_child(inner)
+        inner.append(Marquee(title,delay=NAME_SCROLL_DELAY).follow(main))
+        if w["con_id"] in getattr(self,"_starred",()):
+            star=Gtk.Label(label="★"); star.add_css_class("favorite-mark"); star.set_tooltip_text("A favorite"); inner.append(star)
+        main.set_child(inner)
         main.connect("clicked",lambda _b,con=w["con_id"]:self.app.focus_window(con))
         box,group=self._options_row(main,lambda win=w,a=app:self._window_items(win,a))
         if nested: box.set_margin_start(S(28))
@@ -469,7 +528,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); icons=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(2))
         for w in entry.windows[:3]: icons.append(self.app.window_icon(w,24,extract_badge(w["title"],w.get("urgent",False))[1]))
         inner.append(icons)
-        label=Gtk.Label(label=entry.label); label.set_xalign(0); label.set_hexpand(True); label.set_ellipsize(3); inner.append(label)
+        inner.append(Marquee(entry.label,delay=NAME_SCROLL_DELAY).follow(main))
         count=Gtk.Label(label=f"{len(entry.windows)} apps"); count.add_css_class("muted"); inner.append(count); main.set_child(inner)
         main.connect("clicked",lambda _b,name=entry.name:self.app.open_workspace(name))
         # the individual apps sit above the workspace, so they are registered first: navigation goes top to bottom
@@ -493,7 +552,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             expander.set_tooltip_text("Hide the individual apps" if shown else "Show the individual apps, to open just one")
         def flip(*_):
             self._close_open(); children.set_visible(not children.get_visible()); show_expander(); self.app.fit_quick_menu()
-        expander.connect("clicked",flip)
+        expander.connect("clicked",flip); pointer_only(expander)
         show_expander(); group.line.insert_child_after(expander,group[0]); group.insert(1,expander)   # group[0] is ⋯, even when hidden
         group.lead=expander   # ← on the name moves onto it; ← on it opens the row's menu
         self._groups["quick"].append(group)
@@ -512,7 +571,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         hide=False
         toggle=Gtk.Button(); toggle.add_css_class("options-toggle"); toggle.add_css_class("square"); toggle.set_visible(not hide)
         toggle.set_child(glyph("view-more-symbolic","⋯")); toggle.set_tooltip_text("Options")
-        group=NavGroup([toggle,main],entry=main); group.toggle=toggle if not hide else None; group.line=row
+        group=NavGroup([toggle,main],entry=main); group.toggle=toggle if not hide else None; group.line=row; pointer_only(toggle,main)
         def collapse():
             group.options=[]
             if panel.get_visible(): panel.set_visible(False); clear_box(panel); self.app.fit_quick_menu()
@@ -526,7 +585,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             for icon,fallback,label,action,danger in reversed(made):   # upwards: the first option is the lowest
                 b=self.dialog_button(icon,fallback,label); b.add_css_class("menu-item")
                 if danger: b.add_css_class("danger")
-                b.connect("clicked",lambda _b,a=action:run(a)); panel.append(b); buttons.append(b)
+                b.connect("clicked",lambda _b,a=action:run(a)); panel.append(b); buttons.append(b); pointer_only(b)
             options=[]
             for b in buttons:
                 g=NavGroup([b]); g.option_item=True; options.append(g)
@@ -556,11 +615,17 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         """The application's own shortcuts (its .desktop actions), such as a browser's New private window."""
         if not app: return []
         return [("view-list-bullet-symbolic","≡",name,lambda a=app,aid=action_id:self.app.launch_action(a,aid),False) for action_id,name in app.desktop_actions]
+    def _one_time_item(self,run):
+        """This once, the other way: in desktop mode in a new workspace; in TV mode alongside the apps on screen now
+        (none when nothing is). run(mode) opens it."""
+        if not self.app.tv: return [("view-fullscreen-symbolic","▣","Open in new workspace",lambda:run(LAUNCH_NEW_WORKSPACE),False)]
+        names=self.app.alongside_names()
+        if not names: return []
+        shown=", ".join(names[:2])+(f" and {len(names)-2} more" if len(names)>2 else "")
+        return [("view-dual-symbolic","◫",f"Open alongside {shown}",lambda:run(LAUNCH_SAME),False)]
     def _profile_items(self,p,app):
-        """A favorite's (or search result's) menu: where it opens (kept), its shortcuts, and Close when it is open."""
-        new=p.launch_mode==LAUNCH_NEW_WORKSPACE
-        items=[("view-dual-symbolic","◫","Open it tiled from now on",lambda:self._toggle_mode(p.id),False) if new else
-               ("view-fullscreen-symbolic","▣","Open it full screen from now on",lambda:self._toggle_mode(p.id),False)]
+        """A favorite's (or search result's) menu: open it the other way this once, its shortcuts, and Close when it is open."""
+        items=self._one_time_item(lambda mode:self.app.launch_profile(p,mode=mode))
         items+=self._action_items(app)
         if not p.command.strip() and not p.desktop_action:
             w=self.app.wm.find_matching(p,app)
@@ -568,15 +633,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         return items
     def _window_items(self,w,app):
         """An open application's menu: open it the other way this time, its shortcuts, Close."""
-        alt=LAUNCH_SAME if self.app.window_mode(w)==LAUNCH_NEW_WORKSPACE else LAUNCH_NEW_WORKSPACE
-        items=[("view-dual-symbolic","◫","Show it tiled here, next to the other apps",lambda:self.app.focus_window(w["con_id"],alt),False) if alt==LAUNCH_SAME else
-               ("view-fullscreen-symbolic","▣","Show it full screen, in a workspace of its own",lambda:self.app.focus_window(w["con_id"],alt),False)]
+        items=[] if self.app.tv and w.get("workspace_visible") else self._one_time_item(lambda mode:self.app.focus_window(w["con_id"],mode))
         items+=self._action_items(app)
         items.append(("window-close-symbolic","✕","Close this application",lambda:self._close_open_window(w["con_id"]),True))
         return items
-    def _toggle_mode(self,profile_id):
-        mode=self.app.store.toggle_launch_mode(profile_id)
-        if mode: self.show_message("Opens in a workspace of its own, full screen." if mode==LAUNCH_NEW_WORKSPACE else "Opens tiled, beside the other apps.","Saved")
 
     def _popup(self,anchor,child):
         pop=Gtk.Popover(); pop.set_parent(anchor); pop.set_child(child); self._popovers+=1
@@ -649,15 +709,14 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12))
         inner.append(app_icon(app.icon if app else None,p.name,32) if (primary or lineup) else child_marker(32))
         ch=Gtk.Label(label=f"{p.channel:03d}" if p.channel is not None else ""); ch.set_width_chars(4); ch.set_xalign(0); ch.add_css_class("channel-number"); inner.append(ch)
-        name=Gtk.Label(label=p.name); name.set_xalign(0); name.set_ellipsize(3); inner.append(name)
-        # A main profile shows its application's description, a secondary one its launch options; either can be overridden in the editors.
+        name=Gtk.Label(label=self.app.profile_name(p,app)); name.set_xalign(0); name.set_ellipsize(3); inner.append(name)
+        # Each profile has its own description; without one the main profile shows its application's, another its launch options.
         description=row_description(p,app,primary,self.app.store.app_descriptions.get(p.desktop_id,""))
         if description:
             name.set_max_width_chars(32)
             if p.pin_hash: inner.append(self._lock_mark())
             # cut with … when it does not fit: it scrolls by while the row is selected, and the pointer shows all of it
-            d=Marquee(description,"description"); inner.append(d); self._descriptions.append((main,d))
-            focus=Gtk.EventControllerFocus(); focus.connect("enter",lambda *_a,m=d:m.run(True)); focus.connect("leave",lambda *_a,m=d:m.run(False)); main.add_controller(focus)
+            d=Marquee(description,"description").follow(main); inner.append(d); self._descriptions.append((main,d))
             main.set_has_tooltip(True); main.connect("query-tooltip",self._description_tip,d)
         else:
             name.set_hexpand(True)
@@ -666,9 +725,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         fav=Gtk.Button(); fav.add_css_class("square"); self._style_star(fav,p.favorite); self._stars.setdefault(p.id,[]).append(fav)
         fav.connect("clicked",lambda _b,profile=p:self.app.toggle_favorite(profile)); row.append(fav)
         edit=Gtk.Button(); edit.add_css_class("square"); edit.set_child(glyph("document-edit-symbolic","✎"))
-        edit.set_tooltip_text("Manage application profiles" if primary else "Edit launch profile")
-        if primary: edit.connect("clicked",lambda _b,profile=p:self.app.edit_application_profiles(profile.desktop_id))
-        else: edit.connect("clicked",lambda _b,profile=p:self.app.edit_profile(profile,None))
+        edit.set_tooltip_text("Edit"); edit.connect("clicked",lambda _b,profile=p:self.app.edit_profile(profile,None))
         row.append(edit); self._register("guide",main,fav,edit)
         # Right-clicking the application (or ← while it is selected) opens its options too — Edit and ☆/★ —
         # which also works when the ⋯ buttons are hidden in Settings.
@@ -678,9 +735,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             star=Gtk.Button(label="Remove favorite" if p.favorite else "Add to favorites")
             star.connect("clicked",lambda _b:(pop_holder and pop_holder[0].popdown(),self.app.toggle_favorite(p)))
             box.append(star)
-            manage=Gtk.Button(label="Manage profiles" if primary else "Edit launch profile")
-            manage.connect("clicked",lambda _b:(pop_holder and pop_holder[0].popdown(),
-                        self.app.edit_application_profiles(p.desktop_id) if primary else self.app.edit_profile(p,None)))
+            manage=Gtk.Button(label="Edit")
+            manage.connect("clicked",lambda _b:(pop_holder and pop_holder[0].popdown(),self.app.edit_profile(p,None)))
             box.append(manage)
             pop_holder.append(self._popup(main,box)); return True
         click=Gtk.GestureClick(); click.set_button(3); click.connect("pressed",lambda *_a:open_options()); main.add_controller(click)
@@ -746,7 +802,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             else:
                 p=result["profile"]; app=self.app.catalogue.by_id().get(p.desktop_id); row.append(app_icon(app.icon if app else None,p.name,28))
                 items=lambda p=p,a=app:self._profile_items(p,a)
-            label=Gtk.Label(label=result["label"]); label.set_xalign(0); label.set_hexpand(True); label.set_ellipsize(3); row.append(label)
+            row.append(Marquee(result["label"] if result["kind"]=="window" else self.app.profile_name(p,app),delay=NAME_SCROLL_DELAY).follow(main))
             detail=Gtk.Label(label=result["detail"]); detail.add_css_class("muted"); detail.set_ellipsize(3); row.append(detail); main.set_child(row)
             if i==self._selected_result: main.add_css_class("tvwcs-selected")
             main.connect("clicked",lambda _b,r=result:self.app.activate_result(r))
@@ -785,6 +841,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     # ---------------------------------------------------------- remote / keyboard navigation
     def _register(self,pane,*widgets,entry=None):
+        pointer_only(*widgets)
         group=NavGroup([w for w in widgets if w is not None],entry)
         if group: self._groups[pane].append(group); return group
         return None

@@ -575,31 +575,37 @@ class SoundPage(Page):
         shown,unplugged=sound.split_unplugged(state.outputs,current.name if current else "")
         if current is None: self.note(self.no_output_text(state))
         else:
-            self.volume_row(current,"out")
-            for d in shown: self.device_row(d,d.name==current.name,"audio-speakers-symbolic","🔈")
-        for o in state.other_outputs:
-            if o.available: self.card_output_row(o)
-        self.unplugged_rows("out",[lambda d=d:self.device_row(d,False,"audio-speakers-symbolic","🔈") for d in unplugged]
-                            +[lambda o=o:self.card_output_row(o) for o in state.other_outputs if not o.available])
+            self.volume_row(current,"out"); self.device_row(current,True,"audio-speakers-symbolic","🔈")
+        others=[d for d in shown if current is None or d.name!=current.name]+unplugged
+        self.unplugged_rows("out",[lambda d=d:self.device_row(d,False,"audio-speakers-symbolic","🔈") for d in others]
+                            +[lambda o=o:self.card_output_row(o) for o in state.other_outputs])
         self.section("INPUT")
         current=state.input()
         shown,unplugged=sound.split_unplugged(state.inputs,current.name if current else "")
         if current is None: self.note("No microphone or other input is connected.")
         else:
-            self.volume_row(current,"in")
-            for d in shown: self.device_row(d,d.name==current.name,"audio-input-microphone-symbolic","🎤")
-        self.unplugged_rows("in",[lambda d=d:self.device_row(d,False,"audio-input-microphone-symbolic","🎤") for d in unplugged])
+            self.volume_row(current,"in"); self.device_row(current,True,"audio-input-microphone-symbolic","🎤")
+        others=[d for d in shown if current is None or d.name!=current.name]+unplugged
+        self.unplugged_rows("in",[lambda d=d:self.device_row(d,False,"audio-input-microphone-symbolic","🎤") for d in others])
         self.note("Choosing a device uses it from now on; sound that is already playing moves to it too.")
+        self.section("VOLUME")
+        boost=bool(ConfigStore().settings["audio_boost"])
+        self.row("Allow over-amplification",_on_off(boost),self.toggle_boost,ident="sound:boost",value_css="state-on" if boost else "setting-value",
+                 detail="Up to 150 %. Louder, but the sound can distort. Off, volumes stop at 100 %")
+
+    def toggle_boost(self):
+        store=ConfigStore(); store.settings["audio_boost"]=not store.settings["audio_boost"]; store.save(); tell_tvwcs("reload"); self.redraw()
 
     def unplugged_rows(self, kind, draws):
-        """Outputs or inputs with nothing plugged in, folded under one row that opens and closes them: they can still be
-        tried, but seldom are."""
+        """The inactive outputs or inputs (nothing plugged in, or another profile of the card), folded under one row,
+        "3 inactive outputs", that opens and closes them: they can still be tried, but seldom are."""
         if not draws: return
         opened=getattr(self,"opened",set()); self.opened=opened; is_open=kind in opened
         def toggle():
             opened.symmetric_difference_update({kind}); self.redraw()
-        self.row("Not plugged in",f"{len(draws)} · "+("Hide" if is_open else "Show"),toggle,
-                 detail="Nothing seems connected here, but they can be tried",icon="pan-down-symbolic" if is_open else "pan-end-symbolic",
+        what=("output" if kind=="out" else "input")+("s" if len(draws)!=1 else "")
+        self.row(f"{len(draws)} inactive {what}","Hide" if is_open else "Show",toggle,
+                 detail="Not in use now, but they can be tried",icon="pan-down-symbolic" if is_open else "pan-end-symbolic",
                  fallback="▾" if is_open else "▸",ident=f"unplugged:{kind}")
         if is_open:
             for draw in draws: draw()
@@ -640,7 +646,8 @@ class SoundPage(Page):
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_margin_top(S(2)); line.set_margin_bottom(S(4))
         minus=self.button("list-remove-symbolic","−","Quieter",lambda:step(-1)); plus=self.button("list-add-symbolic","+","Louder",lambda:step(1))
         mute=Gtk.Button()
-        scale=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,sound.MAX_VOLUME,1); scale.set_draw_value(False); scale.set_hexpand(True)
+        boost=bool(ConfigStore().settings["audio_boost"])
+        scale=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,sound.top(boost),1); scale.set_draw_value(False); scale.set_hexpand(True)
         scale.set_focusable(False); scale.set_valign(Gtk.Align.CENTER)
         value=Gtk.Label(); value.add_css_class("volume-value"); value.set_xalign(1)
         guard=[False]; pending=[0]
@@ -656,9 +663,9 @@ class SoundPage(Page):
             self.win.notice("Sound",f"Could not {what} {d.label}: {result.message}"); self.refresh(quiet=True)
         def apply_volume():
             pending[0]=0; level=d.volume
-            in_background(lambda:sound.set_volume(d,level),lambda r:applied(r,"change the volume of")); return GLib.SOURCE_REMOVE
+            in_background(lambda:sound.set_volume(d,level,boost),lambda r:applied(r,"change the volume of")); return GLib.SOURCE_REMOVE
         def step(direction):
-            d.volume=sound.stepped(d.volume,direction); show()
+            d.volume=sound.stepped(d.volume,direction,boost); show()
             if pending[0]: GLib.source_remove(pending[0])
             pending[0]=GLib.timeout_add(120,apply_volume)   # holding the key sends one change, not twenty
         def dragged(*_):
@@ -687,6 +694,7 @@ class DisplaysPage(Page):
         if s.available:
             names=self.monitor_names()
             for o in s.outputs: o.label=o.label or names.get(o.name,"")
+            if s.backend=="xrandr": s.tearing=display.read_tearing()
         return s
     def monitor_names(self):
         """Connector -> the display's own name, from GDK (it reads the displays' EDID on X11)."""
@@ -707,8 +715,9 @@ class DisplaysPage(Page):
         x11=s.backend=="xrandr"
         if x11 and on:
             self.section("SCALE")
-            self.row("Scale",display.scale_text(display.session_scale(outs)),self.choose_session_scale,
-                     detail="Makes text and controls bigger on every display",ident="scale:all")
+            now=display.session_scale(outs)
+            self.scale_buttons("scale:all",display.scale_choices(outs,s.fractional,now,s.max_size),now,lambda v:self.change_all(display.scaled(outs,v),True),
+                               "Makes text and controls bigger on every display")
             self.row("Fractional scaling",_on_off(s.fractional),self.toggle_fractional,
                      detail="Also offers 125 %, 150 %, 175 % and more. Those are a little less sharp, and use more of the graphics card",
                      ident="scale:fractional",value_css="state-on" if s.fractional else "setting-value")
@@ -724,7 +733,8 @@ class DisplaysPage(Page):
             if o.rate or rates:
                 self.row("Refresh rate",display.rate_text(o.rate) if o.rate else "—",(lambda o=o:self.choose_rate(o)) if len(rates)>1 else None,ident=f"{o.name}:rate")
             if not x11:
-                self.row("Scale",display.scale_text(o.scale),lambda o=o:self.choose_scale(o),detail="Makes text and controls bigger",ident=f"{o.name}:scale")
+                self.scale_buttons(f"{o.name}:scale",display.scale_choices([o],True,o.scale),o.scale,lambda v,o=o:self.change(o,True,scale=v),
+                                   "Makes text and controls bigger")
             if len(on)>1:
                 if o is ref:
                     other=next((x for x in on if where.get(x.name,("",""))[1]==o.name),None)
@@ -735,6 +745,16 @@ class DisplaysPage(Page):
                 if s.can_set_primary:
                     self.row("Primary display","Yes" if o.primary else "No",(lambda o=o:self.change(o,False,primary=True)) if not o.primary else None,
                              detail="" if o.primary else "Make this the primary display",ident=f"{o.name}:primary")
+        t=getattr(s,"tearing",None)
+        if x11 and t is not None and (t.kind or t.nvidia_settings):
+            self.section("TEARING")
+            if t.kind:
+                name="Force full composition pipeline (NVIDIA)" if t.kind=="nvidia" else "TearFree (Xorg)"
+                self.row("Tear-free video",_on_off(t.on),lambda:self.toggle_tearing(t),detail=name+". Stops lines where two frames meet in videos and games",
+                         ident="tear:on",value_css="state-on" if t.on else "setting-value")
+            if t.nvidia_settings:
+                self.row("NVIDIA settings","",self.open_nvidia_settings,icon="preferences-desktop-display-symbolic",fallback="🖵",ident="tear:nvidia",
+                         detail="Opens NVIDIA's own settings. It may need a mouse to use")
         notes=[f"A new resolution, refresh rate, scale or display switched on or off goes back after {self.KEEP_SECONDS} seconds unless you keep it, "
                "in case a display cannot show it."]
         if x11: notes.append("Some open apps use a new scale only once they are started again, and window titles at the next log-in.")
@@ -760,6 +780,30 @@ class DisplaysPage(Page):
             name.set_margin_start(S(4)); name.set_margin_end(S(4)); box.append(name)
             fixed.put(box,round((o.x-minx)*k)+shift*S(8),round((o.y-miny)*k)+shift*S(8))
         return fixed
+
+    def toggle_tearing(self, t):
+        on=not t.on
+        def work():
+            problem=display.set_tearing(t,on)
+            if not problem: display.save_tearing(on)
+            return problem
+        self.act(work,"Changing tear-free video…","Displays")
+    def open_nvidia_settings(self):
+        def go():
+            try: subprocess.Popen(["nvidia-settings"],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            except OSError as exc: self.win.notice("NVIDIA settings",f"Could not open it: {exc}")
+        self.win.confirm("Open NVIDIA settings?","NVIDIA's settings app is made for a mouse and keyboard: a remote may not be able to use it.",
+                         "Open",go,danger=False)
+    def scale_buttons(self, ident, choices, current, pick, detail):
+        """Scale: one button per scale (75 % to 200 %), the one in use marked."""
+        head=Gtk.Label(label="Scale"); head.set_xalign(0); head.set_margin_top(S(6)); self.add(head)
+        line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); buttons=[]
+        for v in choices:
+            b=Gtk.Button(label=display.scale_text(v))
+            if current is not None and abs(v-current)<0.005: b.add_css_class("active")
+            else: b.connect("clicked",lambda _b,v=v:pick(v))
+            line.append(b); buttons.append(b)
+        self.add(line); self.register(*buttons,ident=ident); self.note(detail)
 
     # ---------------------------------------------------------- choosing
     def choose_mode(self, o):

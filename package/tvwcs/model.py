@@ -226,6 +226,9 @@ class ConfigStore:
                     p.name=app.name; changed=True
             if app.desktop_id not in known:
                 self.profiles.append(LaunchProfile(str(uuid.uuid4()),app.desktop_id,app.name)); known.add(app.desktop_id); changed=True
+            if app.desktop_id in self.app_descriptions:   # before 4.0 an application had one description: its default profile's now
+                main=default_of(self.for_app(app.desktop_id),app.name); text=self.app_descriptions.pop(app.desktop_id); changed=True
+                if main is not None and not main.description: main.description=text
         if self._give_settings_channel_zero(): changed=True
         if changed: self.save()
     def _give_settings_channel_zero(self):
@@ -430,10 +433,40 @@ def profile_detail(profile, app) -> str:
     return "  ·  ".join(parts)
 
 def row_description(profile, app, primary, app_override="") -> str:
-    """The description shown beside a profile's name. A main profile shows its application's description (the user's
-    override, else the .desktop file's); a secondary profile shows its own override, else its launch options."""
+    """The description shown beside a profile's name: each profile has its own (4.0). Without one, the default
+    profile shows its application's (the .desktop file's), another profile its launch options. `app_override` is the
+    one description per application from before 4.0, for a default profile that has none yet."""
+    if profile.description.strip(): return profile.description.strip()
     if primary: return app_override or ((app.comment or app.generic_name) if app else "") or ""
-    return profile.description.strip() or profile_detail(profile,app)
+    return profile_detail(profile,app)
+
+# ---------------------------------------------------------------- profile names
+DEFAULT_LABEL="Default"   # the default profile's name: never shown, never changed
+def default_of(profiles, app_name):
+    """An application's default profile among its `profiles`: the plain one (no command or desktop action) with the
+    application's name, else the first plain one, else the first."""
+    plain=[p for p in profiles if not p.command and not p.desktop_action]
+    return next((p for p in plain if p.name==app_name),(plain or list(profiles) or [None])[0])
+
+def profile_label(profile, app_name, primary) -> str:
+    """A profile's own name, without the application's: "Default" for the default profile; for a profile named
+    before 4.0 with the application's name in front ("Kodi profile 2"), what follows it."""
+    if primary: return DEFAULT_LABEL
+    name=profile.name.strip()
+    if app_name and name.casefold().startswith(app_name.casefold()+" "): return name[len(app_name)+1:].strip() or name
+    return name
+
+def display_name(profile, app_name, primary) -> str:
+    """The name shown in lists: the application's name, which is never changed, with the profile's name after it
+    (none for the default profile)."""
+    if not app_name: return profile.name
+    return app_name if primary else f"{app_name} {profile_label(profile,app_name,False)}"
+
+def next_label(labels) -> str:
+    """A new profile's name: the first number from 2 that no other profile of the application has."""
+    taken={str(l).strip().casefold() for l in labels}; n=2
+    while str(n) in taken: n+=1
+    return str(n)
 
 def startup_choices(profiles):
     """Applications to offer for 'open at login', most likely first: favorites, then channels, then everything else."""

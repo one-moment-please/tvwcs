@@ -107,18 +107,22 @@ class Marquee(Gtk.ScrolledWindow):
     """A one-line text that ends in … when it does not fit. While `run()` is on (its row is selected) the whole text
     scrolls past slowly, then starts over; `truncated` says whether it is cut, for a tooltip with all of it."""
     STEP_MS=30; PAUSE_MS=1400
-    def __init__(self, text, css=None):
+    def __init__(self, text, css=None, delay=None):
         super().__init__(); self.set_policy(Gtk.PolicyType.EXTERNAL,Gtk.PolicyType.NEVER); self.set_hexpand(True)
         self.set_can_focus(False); self.set_can_target(False); self.set_valign(Gtk.Align.CENTER)
         self.label=Gtk.Label(label=text); self.label.set_xalign(0); self.label.set_ellipsize(3)
         if css: self.label.add_css_class(css)
-        self.set_child(self.label); self.source=0; self.text=text
+        self.set_child(self.label); self.source=0; self.text=text; self.delay=delay or self.PAUSE_MS   # ms selected before it starts
     @property
     def truncated(self):
         return self.source!=0 or self.label.get_layout().is_ellipsized()
+    def follow(self, button):
+        """Scroll while `button` (its row) is selected."""
+        focus=Gtk.EventControllerFocus(); focus.connect("enter",lambda *_a:self.run(True)); focus.connect("leave",lambda *_a:self.run(False))
+        button.add_controller(focus); return self
     def run(self, on):
         if on and self.source==0 and self.label.get_layout().is_ellipsized():
-            self.label.set_ellipsize(0); self.source=GLib.timeout_add(self.PAUSE_MS,self._step)
+            self.label.set_ellipsize(0); self.source=GLib.timeout_add(self.delay,self._step)
         elif not on and self.source:
             GLib.source_remove(self.source); self.source=0; self.label.set_ellipsize(3); self.get_hadjustment().set_value(0)
     def _step(self):

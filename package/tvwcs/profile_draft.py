@@ -41,6 +41,3 @@ class ProfileDraft:
                              channel=int(raw) if raw else None,favorite=self.favorite,
                              launch_mode=LAUNCH_NEW_WORKSPACE if self.new_workspace else LAUNCH_SAME,desktop_action=self.action,
                              pin_hash=self.pin_hash,pin_scope=self.pin_scope,description=self.description[:MAX_DESCRIPTION],hotkey=self.hotkey)
-
-def default_name(application, existing_count):
-    return application.name if not existing_count else f"{application.name} profile {existing_count+1}"
