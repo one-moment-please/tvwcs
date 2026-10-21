@@ -1,5 +1,41 @@
 # Changelog
 
+## 4.0.0 — 2026-10-21
+
+**Two modes**
+- **TV mode** is now the **TVWCS** session at the login screen; any other session (your usual i3 or sway) is **desktop mode**. The "Used on a TV or a desktop" choice is gone. In TV mode every app opens full screen in a workspace of its own, the bar is off, the pointer hides, and the computer locks with TVWCS's lock screen. Desktop mode leaves your bar, pointer and lock screen alone.
+
+**Installer**
+- One installer, `install.sh` at the top of the repository, run with `wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. It downloads the release you choose, or offers the one it came in when run from an unpacked release.
+- It asks everything first (upgrade, another version or remove; i3, sway or both, with sway suggested on a new computer; the login screen; whether to add TVWCS to your usual session; the packages, grouped by what they are for) and changes nothing until you agree. A failure undoes what it had done.
+- Login screens that can't start sway reliably (such as LightDM) get a warning with a choice: TVWCS's login screen, i3 instead, SDDM, go on anyway, or cancel. TVWCS's login screen starts the TVWCS session by default (the sway one when both are set up).
+- **Remove** takes out every part of TVWCS, switching away from TVWCS's login screen first, and offers to mark the packages it installed for `apt autoremove`.
+- Upgrading from 3.x cleans up the old setup and says what changed and how to put your usual session back.
+
+**Quick Menu**
+- It sits in the bottom-left corner, only as tall as what it shows. Favorites, open apps and search are at the bottom; empty sections are hidden. An open favorite shows once, as an open app with ★; a favorite that is not installed is hidden.
+- TV mode has no header. The clock is smaller and the date short ("Sat, Oct 17"). The search field shows **# _ _ _** in TV mode.
+- A row's options open the app once the other way: **Open in new workspace** in desktop mode, **Open alongside …** in TV mode. The mode switch is gone from them.
+- Long names scroll by after 3 seconds on the selected row.
+- The Wi-Fi panel can find networks and connect (asking for a password), and the Bluetooth panel can find and pair devices.
+- Clicking with the mouse no longer moves the remote's selection.
+- The on-screen keyboard can be hidden (the default), full or a number pad wherever text is typed, and opens next time as it was left.
+- Fixed: ⏻ showed an empty box, and ⊞ needed two clicks (and the first scrolled Applications) to close Applications.
+
+**Applications and profiles**
+- ✎ opens the app's launch profile directly: channel, hotkey, Desktop Action, command, description and PIN. **Copy** makes another profile ("Firefox 2", to rename); the app's own name no longer changes. Descriptions belong to each profile.
+
+**Settings**
+- **Options** is now **Appearance**: interface size (with Automatic), theme, accent, background, closing TVWCS when it loses focus, and the screen edge margin, now set on a full-screen preview with a slider.
+- **Features** is gone. A page whose software is missing offers to install it.
+- **User** shows Administrator or Standard User, and holds logging in automatically, the login screen (update, switch, remove TVWCS's) and the app to open at login.
+- **Remote and hotkeys** only sets the Quick Menu key per device, lists the apps with their own hotkeys (removable with ✕), and **Reset all hotkeys** also removes app hotkeys. The Applications and Fullscreen keys are gone.
+- **Sound** shows only the output and input in use; the others fold under "N inactive outputs". **Allow over-amplification** lets volumes go up to 150 %.
+- **Displays**: scale is a row of buttons from 75 % to 200 % (100 % and 200 % in i3 unless Fractional scaling is on). In i3, **Tear-free video** turns on Xorg's TearFree or NVIDIA's full composition pipeline, and NVIDIA's settings can be opened.
+- **Power and sleep**: "Show it when the computer locks" is TV mode only. Once the screen has turned off, a lock keeps it off instead of bringing the screen saver back. The lock screen choice is gone: TV mode always uses TVWCS's.
+- **Apps** offers to install Flatpak and Flathub. **⚙ Settings** adds, turns off or removes repositories (Flathub is always kept), shows unverified apps, and uninstalls every Flatpak app.
+- Fixed: a long lock could stop TVWCS from responding until it ended.
+
 ## 3.6.1 — 2026-10-21
 
 - Settings > Sound folds outputs and inputs with nothing plugged in (an empty headphone jack, an HDMI port without a TV) under one "Not plugged in" row, closed until it is chosen. They can still be tried from there. The output or input in use is always shown.

@@ -473,7 +473,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         entries=self.app.workspace_entries(); outputs=self.app.wm.outputs()
         # a favorite that is open shows once, as the open application (with ★)
         opened=self.app.open_favorites([w for e in entries for w in e.windows])
-        favorites=[p for p in self.app.store.favorites() if p.command.strip() or p.desktop_action or p.desktop_id not in opened]
+        # an app that is uninstalled stays a favorite, hidden, and comes back if it is installed again
+        installed=self.app.catalogue.by_id()
+        favorites=[p for p in self.app.store.favorites() if p.desktop_id in installed and (p.command.strip() or p.desktop_action or p.desktop_id not in opened)]
         self._starred={opened[p.desktop_id]["con_id"] for p in self.app.store.favorites() if p.desktop_id in opened and p not in favorites}
         if favorites: content.append(section_title("FAVORITES"))
         for profile in favorites: content.append(self._favorite_row(profile))

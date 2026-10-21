@@ -1065,8 +1065,9 @@ class AppsPage(_Console, Page):
             self.note("Leave this running until it finishes."); self.add(self.console()); return
         if not s.flatpak:
             argv=flatpak.install_flatpak_argv()
-            self.row("Install Flatpak","",(lambda:self.run_steps("Installing Flatpak",[(argv,True)],"Flatpak is installed. Set up Flathub next.")) if argv else None,
-                     detail="Installs Flatpak with the package manager. Asks for your password.",icon="system-software-install-symbolic",fallback="⇩",ident="get-flatpak")
+            steps=[(argv,True)]+[(a,False) for a in flatpak.setup_argv()]
+            self.row("Install Flatpak and Flathub","",(lambda:self.run_steps("Installing Flatpak",steps,"Flatpak is installed and Flathub is set up.")) if argv else None,
+                     detail="Installs Flatpak with the package manager, then adds Flathub. Asks for your password.",icon="system-software-install-symbolic",fallback="⇩",ident="get-flatpak")
             self.note("Apps here come from Flathub through Flatpak, which keeps each app with what it needs, apart from the system."
                       +("" if argv else " No supported package manager was found to install Flatpak with."))
             self.last_run(); return
@@ -1099,7 +1100,8 @@ class AppsPage(_Console, Page):
         for icon,fallback,label,handler,current in (
                 ("system-search-symbolic","🔍",f"“{self.query}”" if self.view=="search" else "Search",self.ask_search,self.view=="search"),
                 ("view-grid-symbolic","▦",flatpak.CATEGORY_LABELS.get(self.view,"Categories")+"  ▾",self.choose_category,self.view in flatpak.CATEGORY_LABELS),
-                ("emblem-ok-symbolic","✓",f"Installed ({len(s.installed)})",lambda:self.show("installed"),self.view=="installed")):
+                ("emblem-ok-symbolic","✓",f"Installed ({len(s.installed)})",lambda:self.show("installed"),self.view=="installed"),
+                ("emblem-system-symbolic","⚙","Settings",self.flatpak_settings,False)):
             b=Gtk.Button(); b.add_css_class("app-tool")
             if current: b.add_css_class("current")
             line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); line.set_halign(Gtk.Align.CENTER)
@@ -1112,7 +1114,9 @@ class AppsPage(_Console, Page):
             known=s.catalog.by_id if s.catalog else {}
             return sorted((known.get(i.id) or flatpak.App(i.id,i.name,version=i.version) for i in s.installed),key=lambda a:a.name.casefold())
         if s.catalog is None: return []
-        return s.catalog.search(self.query) if view=="search" else s.catalog.category(view)
+        apps=s.catalog.search(self.query) if view=="search" else s.catalog.category(view)
+        if not ConfigStore().settings["flatpak_unverified"]: apps=[a for a in apps if a.verified]   # Settings > Apps > Show unverified apps
+        return apps
 
     def draw_apps(self, s, view):
         apps=self.listed(s,view)
@@ -1214,6 +1218,54 @@ class AppsPage(_Console, Page):
         self.win.close()   # out of the way of the app
     def setup(self):
         self.run_steps("Setting up Flathub",[(argv,False) for argv in flatpak.setup_argv()],"Flathub is set up.")
+
+    # ---------------------------------------------------------- the Apps settings (⚙)
+    def flatpak_settings(self):
+        s=self.state; unverified=ConfigStore().settings["flatpak_unverified"]
+        options=[("unverified",f"Show unverified apps: {_on_off(unverified)} (not recommended)"),("add","Add a repository")]
+        for r in s.remotes:
+            state="on" if r.enabled else "off"
+            options.append((f"remote:{r.name}:{r.installation}",f"{r.name} ({'for you' if r.installation=='user' else 'system'}): {state}"))
+        if not any(r.name==flatpak.REMOTE for r in s.remotes): options.append(("flathub","Add Flathub again"))
+        if s.installed: options.append(("uninstall","Uninstall every Flatpak app and runtime"))
+        def picked(key):
+            if key=="unverified": self.toggle_unverified()
+            elif key=="flathub": self.setup()
+            elif key=="add": self.add_remote()
+            elif key=="uninstall": self.uninstall_all()
+            elif key.startswith("remote:"):
+                _r,name,where=key.split(":",2); self.change_remote(next(r for r in s.remotes if r.name==name and r.installation==where))
+        self.win.choose_option("Apps settings",options,None,picked)
+    def toggle_unverified(self):
+        store=ConfigStore(); store.settings["flatpak_unverified"]=not store.settings["flatpak_unverified"]; store.save()
+        if store.settings["flatpak_unverified"]:
+            self.win.notice("Unverified apps","Apps that Flathub has not verified are shown too. Their publisher is not checked to be the app's own "
+                            "developer: install them only when you trust where they come from.")
+        self.redraw()
+    def add_remote(self, error=""):
+        def got(url):
+            url=url.strip()
+            if not url.startswith(("https://","http://")): self.add_remote("Type the repository's address, starting with https://."); return
+            self.run_steps("Adding a repository",[(flatpak.add_remote_argv(url),False)],f"{flatpak.remote_name(url)} is added.")
+        self.win.ask_text("Add a repository","The address of the repository's .flatpakrepo file, such as https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo.",
+                          got,"https://",error=error)
+    def change_remote(self, r):
+        options=[("toggle","Turn it off" if r.enabled else "Turn it on")]
+        if r.name!=flatpak.REMOTE: options.append(("delete","Remove it"))   # Flathub is always kept: it can be turned off
+        def picked(key):
+            if key=="toggle":
+                argv,root=flatpak.enable_remote_argv(r,not r.enabled)
+                self.run_steps(f"Turning {r.name} {'off' if r.enabled else 'on'}",[(argv,root)],f"{r.name} is {'off' if r.enabled else 'on'}.")
+            elif key=="delete":
+                argv,root=flatpak.delete_remote_argv(r)
+                self.win.confirm(f"Remove {r.name}?",f"Apps from {r.name} stop getting updates.","Remove",
+                                 lambda:self.run_steps(f"Removing {r.name}",[(argv,root)],f"{r.name} is removed."))
+        self.win.choose_option(r.name,options,None,picked)
+    def uninstall_all(self):
+        steps=flatpak.uninstall_all_steps(self.state.installed)
+        self.win.confirm("Uninstall every Flatpak app?",f"This uninstalls all {len(self.state.installed)} Flatpak apps and the runtimes they use, with their "
+                         "files. Their data in your home folder (~/.var/app) is kept."+(" It asks for your password for the system-wide ones." if len(steps)>1 else ""),
+                         "Uninstall all",lambda:self.run_steps("Uninstalling Flatpak apps",steps,"Every Flatpak app is uninstalled."))
 
     def run_steps(self, label, steps, success, app_id=None):
         """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""

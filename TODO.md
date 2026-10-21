@@ -108,7 +108,7 @@ are the hard part, and they work much better on sway than on i3. Overall effort 
 ### Installer and settings
 
 - A third "Used on" choice, "A tablet", in `USES` (`model.py:43`), `apply_use`, `choose_use` (install.sh) and
-  Settings > Options (`ui_control_pages.py:212`): tablet size preset, one app per workspace, always-visible options
+  Settings > Appearance (`ui_control_pages.py`, `AppearancePage`): tablet size preset, one app per workspace, always-visible options
   buttons, button labels, the gesture daemon.
 - Recommend sway for tablets (touch, rotation, Wayland keyboard protocols, layer-shell edge strip). The installer
   calls i3 "recommended"; make that depend on the chosen use.

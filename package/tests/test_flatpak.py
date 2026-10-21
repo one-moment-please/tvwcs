@@ -143,4 +143,15 @@ class FlatpakCommandTests(unittest.TestCase):
         self.assertEqual(fp.uninstall_argv(fp.Installed("a.b.C","C"))[1],False)
         self.assertEqual(fp.setup_argv()[0][:4],["flatpak","remote-add","--user","--if-not-exists"])
 
+class RepositoryTests(unittest.TestCase):
+    def test_every_repository_is_listed_with_its_state(self):
+        from tvwcs import control_flatpak as fp
+        text="flathub\tuser\thttps://dl.flathub.org/repo/\nbeta\tsystem,disabled\thttps://dl.flathub.org/beta-repo/\n"
+        self.assertEqual(fp.parse_remote_list(text),[fp.Remote("flathub","user",True,"https://dl.flathub.org/repo/"),
+                                                     fp.Remote("beta","system",False,"https://dl.flathub.org/beta-repo/")])
+        self.assertEqual(fp.remote_name("https://dl.flathub.org/beta-repo/Flathub-Beta.flatpakrepo"),"flathub-beta")
+        self.assertEqual(fp.enable_remote_argv(fp.Remote("beta","system",False),True),(["flatpak","remote-modify","--system","--enable","beta"],True))
+        steps=fp.uninstall_all_steps([fp.Installed("a","A","1","user")]); self.assertEqual(len(steps),1)
+        steps=fp.uninstall_all_steps([fp.Installed("a","A","1","system")]); self.assertEqual([root for _a,root in steps],[False,True])
+
 if __name__=="__main__": unittest.main()
