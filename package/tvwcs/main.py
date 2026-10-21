@@ -323,13 +323,29 @@ class TVWCSApp(Gtk.Application):
         if w is None or not w.is_visible() or w.guide_open: return
         before=self.layout; self._update_layout(False,False,area=self._area)
         if before is not None and (before.y,before.height)==(self.layout.y,self.layout.height): return
-        w.set_default_size(self.layout.width,self.layout.height); self.apply_geometry()
-    def apply_geometry(self):
+        # The window grows and shrinks upwards, its bottom row kept still. Left to GTK it would grow downwards from its
+        # old top (its bottom row off the screen) and only then jump up into place: a flicker.
+        w.set_default_size(self.layout.width,self.layout.height)
+        if before is None or self.layout.height>=before.height:
+            self.apply_geometry(mapped=True)   # taller: moved and resized now, before GTK draws the new contents
+            return
+        # shorter: GTK first draws the new contents at the bottom of the window as it is, then it is made smaller
+        pane=w.quick_pane; pane.set_valign(Gtk.Align.END); clock=w.get_frame_clock()
+        def painted(*_):
+            clock.disconnect(handler); self.apply_geometry(mapped=True)
+            GLib.timeout_add(500,lambda:(pane.set_valign(Gtk.Align.FILL),GLib.SOURCE_REMOVE)[1])
+        if clock is None: self.apply_geometry(mapped=True); pane.set_valign(Gtk.Align.FILL); return
+        handler=clock.connect("after-paint",painted)
+    def apply_geometry(self,mapped=False):
         """Ask i3 to float the window at the computed rectangle. Repeated shortly after mapping because
-        i3 can only match the window once it exists."""
+        i3 can only match the window once it exists (and GTK may still resize it after); a window already `mapped` is
+        also placed at once."""
         if not self.wm.available or self.layout is None: return
-        l=self.layout
-        def place(): self.wm.place_tvwcs(l.x,l.y,l.width,l.height); return GLib.SOURCE_REMOVE
+        def place():   # where it should be by then: a later fit may have changed it
+            l=self.layout
+            if l is not None: self.wm.place_tvwcs(l.x,l.y,l.width,l.height)
+            return GLib.SOURCE_REMOVE
+        if mapped: place()
         for delay in (40,160,420): GLib.timeout_add(delay,place)
     def hide_window(self,launched=False):
         """Hide TVWCS, then make fullscreen again whatever was fullscreen when it was shown. `launched`: an app was just

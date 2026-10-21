@@ -103,7 +103,9 @@ class PowerTests(unittest.TestCase):
         self.assertEqual(argv,["swayidle","-w","timeout","600","'/opt/tv wcs/bin/tvwcs' idle screen_off","resume","'/opt/tv wcs/bin/tvwcs' idle resume",
                                "timeout","1800","'/opt/tv wcs/bin/tvwcs' idle sleep"])
         self.assertIsNone(power.swayidle_argv({"screensaver":0,"screen_off":None,"lock":0,"sleep":0},"tvwcs"))
-        self.assertIsNone(power.swayidle_argv({"screensaver":300,"screen_off":None,"lock":0,"sleep":0},"tvwcs"))   # not on sway yet
+        self.assertIsNone(power.swayidle_argv({"screensaver":300,"screen_off":None,"lock":0,"sleep":0},"tvwcs",saver=False))   # no gtk4-layer-shell
+        self.assertEqual(power.swayidle_argv({"screensaver":300,"screen_off":None,"lock":0,"sleep":0},"tvwcs"),
+                         ["swayidle","-w","timeout","300","'tvwcs' idle screensaver"])
 
 if __name__=="__main__": unittest.main()
 

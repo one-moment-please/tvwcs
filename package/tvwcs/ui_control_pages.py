@@ -300,7 +300,16 @@ class HotkeysPage(_ConfigPage):
 
     def change_hotkey(self, store, device, name):
         label=f"{DEVICE_LABELS[device]}: {ACTION_LABELS[name]}"
-        self.win.assign_hotkey(store,("slot",device,name),label,lambda spec:self.change(lambda s:s.set_slot_hotkey(device,name,spec)))
+        def chosen(spec):
+            if spec or not store.settings["hotkeys"][device][name]: self.change(lambda s:s.set_slot_hotkey(device,name,spec)); return
+            # Clear: without this key the Quick Menu may only open from another device, so ask first
+            others=[DEVICE_LABELS[d] for d in DEVICES if d!=device and any(store.settings["hotkeys"][d].values())]
+            self.win.confirm("Remove this Quick Menu hotkey?",
+                             f"{describe(store.settings['hotkeys'][device][name])} will no longer open the Quick Menu from the {DEVICE_LABELS[device].lower()}. "
+                             +(f"It still opens with the {' or '.join(o.lower() for o in others)} hotkey." if others else
+                               "No other Quick Menu hotkey is set, so only the command tvwcs toggle would open it."),
+                             "Remove",lambda:self.change(lambda s:s.set_slot_hotkey(device,name,"")))
+        self.win.assign_hotkey(store,("slot",device,name),label,chosen)
     def change_app_hotkey(self, store, pid, name):
         self.win.assign_hotkey(store,("profile",pid),name,lambda spec:self.change(lambda s:s.set_profile_hotkey(pid,spec)))
     def reset_hotkeys(self):
@@ -427,17 +436,21 @@ class PowerPage(Page):
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
         st=ConfigStore().settings
-        saver=features.BY_KEY["screensaver"]; tv=tv_mode()
-        if s.session=="sway": pass   # the screen saver is a plain fullscreen window, which sway handles badly: hidden there for now
-        elif not features.installed(saver):
-            self.section("SCREEN SAVER")
+        saver=features.screensaver(); tv=tv_mode()
+        self.section("SCREEN SAVER")
+        if not features.installed(saver):
+            missing=features.missing_packages(saver) or list(saver.packages)
             self.row("Install the screen saver","",lambda:install_feature(self,saver),icon="video-display-symbolic",fallback="▭",ident="saver:feature",
-                     detail=f"Installs {', '.join(saver.packages)}")
+                     detail=f"Installs {', '.join(missing)}")
+            if s.session=="sway": self.note("On sway the screen saver is drawn over every window, with gtk4-layer-shell, so a video "
+                                            "playing fullscreen stays fullscreen underneath it.")
         else:
-            self.section("SCREEN SAVER")
             logo=st["screensaver_logo"]
             self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
-            if tv:   # a desktop session's lock screen is its own
+            if tv and s.session=="sway":
+                self.note("When the computer locks, sway's lock screen (swaylock) shows TVWCS's lock picture, not the screen saver: "
+                          "nothing can be drawn over swaylock. The screen saver runs before the lock, after its own time above.")
+            elif tv:   # a desktop session's lock screen is its own
                 lock_saver=features.BY_KEY["lock_saver"]; ready=features.installed(lock_saver)
                 on_lock=bool(st["screensaver_on_lock"]) and ready
                 why=("Any key or button shows the lock screen; after a minute without input, the screen saver comes back. "
@@ -447,7 +460,7 @@ class PowerPage(Page):
                          icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
             self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
                      icon="media-playback-start-symbolic",fallback="▶")
-            self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
+            self.note("TVWCS's logo drifts across a black screen and changes colour each time it bounces off an edge. "
                       "A picture of your own can be any PNG, JPEG or SVG.")
         self.section("LOCKING")
         self.note("In a TVWCS session, TVWCS's lock screen locks the computer: it says the TV is locked and asks for your password. "
@@ -485,7 +498,7 @@ class PowerPage(Page):
     def idle_rows(self, s, times, option, heading):
         """The four times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
         self.section(heading); tag="" if option=="idle" else "bat"
-        if features.installed(features.BY_KEY["screensaver"]) and s.session!="sway":   # not on sway yet (see power.swayidle_argv)
+        if features.installed(features.screensaver()):
             self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
                      icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
         screen=times["screen_off"]
@@ -521,9 +534,8 @@ class PowerPage(Page):
     def preview_saver(self):
         from tvwcs.lockscreen import launcher
         from tvwcs import screensaver
-        if screensaver.cairo_missing(): self.win.notice("Screen saver",screensaver.MISSING_CAIRO); return
-        try: subprocess.Popen([launcher(),"screensaver","--preview"],start_new_session=True,stdin=subprocess.DEVNULL)
-        except OSError as exc: self.win.notice("Screen saver",f"Could not start it: {exc}")
+        problem=screensaver.start(launcher(),preview=True)
+        if problem: self.win.notice("Screen saver",problem)
     def stop_xss_lock(self):
         path=self.state.xss_lock
         self.win.confirm("Stop locking when the screen turns off",
@@ -1042,16 +1054,28 @@ def _shorten(text, limit):
     return (cut[:end] if end>limit//2 else cut.rsplit(" ",1)[0]+" …").rstrip()
 
 class AppsPage(_Console, Page):
-    """A store of Flathub's apps: a grid of tiles with their icons, by category or found by a search typed on the
-    on-screen keyboard, and the installed apps. Selecting a tile shows the app, with Install, or Open and Remove."""
+    """A store of Flathub's apps, with tabs along the top: Search (a search bar to type in, with a keyboard button for
+    the on-screen keyboard), Categories (two rows of category buttons, Featured first, over a grid of tiles), Installed,
+    and Settings (where apps come from and what is shown, explained on the page). Selecting a tile shows the app, with
+    Install, or Open and Remove."""
     key="apps"; title="Apps"; icon="system-software-install-symbolic"; fallback="▦"
-    COLUMNS=4; STEP=24
+    COLUMNS=4; STEP=24; SEARCH_DELAY_MS=600
+    TABS=(("search","system-search-symbolic","🔍","Search"),("categories","view-grid-symbolic","▦","Categories"),
+          ("installed","emblem-ok-symbolic","✓","Installed"),("settings","emblem-system-symbolic","⚙","Settings"))
     def __init__(self, win):
-        super().__init__(win); self.log=None; self.view="featured"; self.query=""; self.limit=self.STEP
+        super().__init__(win); self.log=None; self.tab="categories"; self.category="featured"; self.query=""; self.limit=self.STEP
         self.running=None; self.outcome=None; self.tiles_from=0; self.refresh_focus=None
+        self.entry=None; self._search_timer=0; self._filling=False
+    @property
+    def view(self):
+        """What the tiles show: "search", "installed" or a category's key."""
+        return self.category if self.tab=="categories" else self.tab
     def read(self): return flatpak.read_state()
     def redraw(self):
+        typing=self.entry is not None and self.win._in(self.win.get_focus(),self.entry)
         super().redraw()
+        if typing and self.entry.get_root() is not None:   # still typing: no text selected, the cursor at the end
+            self.entry.grab_focus_without_selecting(); self.entry.set_position(-1)
         if self.refresh_focus and not self.busy and not self.win.modal_open:
             self.focus_tiles(self.refresh_focus); self.refresh_focus=None
     def summary(self):
@@ -1086,29 +1110,88 @@ class AppsPage(_Console, Page):
                          icon="folder-download-symbolic",fallback="⇩",ident="setup")
                 self.note("Flathub is where most Linux apps are published, from Kodi and VLC to Steam and web browsers.")
             if s.installed: self.draw_apps(s,"installed")
-        else: self.draw_apps(s,self.view)
-        if s.catalog is not None and self.view!="installed":
-            age=updates.age_text(s.catalog.updated)
-            self.row("Download the list of apps again","",self.setup,detail=f"Downloaded {age}" if age else "",icon="view-refresh-symbolic",fallback="⟳",ident="setup")
+        elif self.tab=="settings": self.draw_settings(s)
+        elif self.tab=="search":
+            self.search_bar()
+            if self.query: self.draw_apps(s,"search")
+            else: self.note("Type an app's name, or what it does, such as “video player”. With a remote, choose ⌨ to type on the on-screen keyboard.")
+        elif self.tab=="categories":
+            self.category_buttons(); self.draw_apps(s,self.category)
+        else: self.draw_apps(s,"installed")
         self.last_run()
 
     def last_run(self):
         if self.log is not None and self.log.get_buffer().get_char_count(): self.section("LAST RUN"); self.add(self.console())
 
+    # ---------------------------------------------------------- the tabs, and what is under them
     def toolbar(self, s):
-        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bar.set_homogeneous(True); bar.set_margin_bottom(S(4))
+        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bar.set_homogeneous(True); bar.set_margin_bottom(S(8))
         made=[]
-        for icon,fallback,label,handler,current in (
-                ("system-search-symbolic","🔍",f"“{self.query}”" if self.view=="search" else "Search",self.ask_search,self.view=="search"),
-                ("view-grid-symbolic","▦",flatpak.CATEGORY_LABELS.get(self.view,"Categories")+"  ▾",self.choose_category,self.view in flatpak.CATEGORY_LABELS),
-                ("emblem-ok-symbolic","✓",f"Installed ({len(s.installed)})",lambda:self.show("installed"),self.view=="installed"),
-                ("emblem-system-symbolic","⚙","Settings",self.flatpak_settings,False)):
+        for key,icon,fallback,label in self.TABS:
+            if key=="installed": label=f"{label} ({len(s.installed)})"
             b=Gtk.Button(); b.add_css_class("app-tool")
-            if current: b.add_css_class("current")
+            if key==self.tab: b.add_css_class("current")
             line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); line.set_halign(Gtk.Align.CENTER)
             line.append(glyph(icon,fallback,20)); l=Gtk.Label(label=label); l.set_ellipsize(Pango.EllipsizeMode.END); line.append(l)
-            b.set_child(line); b.connect("clicked",lambda _b,h=handler:h()); bar.append(b); made.append(b)
-        self.add(bar); g=self.register(*made,ident="tool"); g.column=True
+            b.set_child(line); b.connect("clicked",lambda _b,k=key:self.pick_tab(k)); bar.append(b); made.append(b)
+        self.add(bar); g=self.register(*made,ident="tool"); g.entry=made[[k for k,*_ in self.TABS].index(self.tab)]   # ↑ lands on the open tab
+
+    def pick_tab(self, key):
+        """A tab's button stays selected; ↓ goes into what it shows. Search puts the selection in its search bar."""
+        if key==self.tab and key!="search": return
+        self.tab=key; self.limit=self.STEP; self.redraw()
+        if key=="search": GLib.idle_add(lambda:(self.focus_search(),GLib.SOURCE_REMOVE)[1])
+
+    def search_bar(self):
+        """The keyboard button (the on-screen keyboard, for a remote) and the search bar, which searches as you type.
+        The bar is kept from one drawing to the next, so typing in it is never interrupted."""
+        if self.entry is None:
+            self.entry=Gtk.Entry(); self.entry.set_hexpand(True); self.entry.add_css_class("search-bar")
+            self.entry.set_placeholder_text("Search Flathub")
+            self.entry.connect("changed",lambda *_:self._typed()); self.entry.connect("activate",lambda *_:self._search_now())
+        parent=self.entry.get_parent()
+        if parent is not None: parent.remove(self.entry)
+        if " ".join(self.entry.get_text().split())!=self.query: self._fill(self.query)
+        line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_margin_bottom(S(4))
+        keyboard=self.button("input-keyboard-symbolic","⌨","Type with the on-screen keyboard",self.ask_search); keyboard.add_css_class("square")
+        line.append(keyboard); line.append(self.entry); self.add(line)
+        g=self.register(keyboard,self.entry,ident="search"); g.entry=keyboard if tv_mode() else self.entry
+    def focus_search(self):
+        w=self._ids.get("search" if tv_mode() else "search#1")
+        if w is self.entry and w is not None: w.grab_focus_without_selecting(); w.set_position(-1)
+        elif w is not None: w.grab_focus()
+    def _fill(self, text):
+        self._filling=True; self.entry.set_text(text); self._filling=False
+    def _typed(self):
+        if self._filling: return
+        if self._search_timer: GLib.source_remove(self._search_timer)
+        self._search_timer=GLib.timeout_add(self.SEARCH_DELAY_MS,self._search_now)
+    def _search_now(self):
+        if self._search_timer: GLib.source_remove(self._search_timer); self._search_timer=0
+        text=" ".join(self.entry.get_text().split())
+        if text!=self.query: self.query=text; self.limit=self.STEP; self.redraw()
+        return GLib.SOURCE_REMOVE
+    def ask_search(self):
+        def search(text):
+            self.query=" ".join(text.split()); self.limit=self.STEP
+            if self.entry is not None: self._fill(self.query)
+            self.redraw(); GLib.idle_add(lambda:(self.focus_tiles(),GLib.SOURCE_REMOVE)[1])
+        self.win.ask_text("Search Flathub","Type an app's name, or what it does.",search,initial=self.query,ok_label="Search")
+
+    def category_buttons(self):
+        """Every category, as two rows of buttons; the one shown is marked."""
+        cats=flatpak.CATEGORIES; half=(len(cats)+1)//2
+        for start in (0,half):
+            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_homogeneous(True); line.set_margin_bottom(S(6)); made=[]
+            for key,label,_c in cats[start:start+half]:
+                b=Gtk.Button(label=label); b.add_css_class("app-tool")
+                if key==self.category: b.add_css_class("current")
+                b.connect("clicked",lambda _b,k=key:self.pick_category(k)); line.append(b); made.append(b)
+            for _ in range(len(made),half): line.append(Gtk.Box())   # the second row's buttons keep the first row's width
+            self.add(line); g=self.register(*made); g.column=True
+            for (key,_l,_c),b in zip(cats[start:start+half],made): self._ids[f"cat:{key}"]=b
+    def pick_category(self, key):
+        if key!=self.category: self.category=key; self.limit=self.STEP; self.redraw()
 
     def listed(self, s, view):
         if view=="installed":
@@ -1116,7 +1199,7 @@ class AppsPage(_Console, Page):
             return sorted((known.get(i.id) or flatpak.App(i.id,i.name,version=i.version) for i in s.installed),key=lambda a:a.name.casefold())
         if s.catalog is None: return []
         apps=s.catalog.search(self.query) if view=="search" else s.catalog.category(view)
-        if not ConfigStore().settings["flatpak_unverified"]: apps=[a for a in apps if a.verified]   # Settings > Apps > Show unverified apps
+        if not ConfigStore().settings["flatpak_unverified"]: apps=[a for a in apps if a.verified]   # Apps > Settings > Unverified apps
         return apps
 
     def draw_apps(self, s, view):
@@ -1161,22 +1244,11 @@ class AppsPage(_Console, Page):
         if installed: badge=Gtk.Label(label="Installed"); badge.add_css_class("state-on"); box.append(badge)
         b.set_child(box); b.set_tooltip_text(a.name); b.connect("clicked",lambda *_:self.details(a)); return b
 
-    # ---------------------------------------------------------- choosing what is shown
-    def show(self, view):
-        self.view=view; self.limit=self.STEP; self.redraw(); GLib.idle_add(lambda:(self.focus_tiles(),GLib.SOURCE_REMOVE)[1])
     def focus_tiles(self, ident=None):
         target=self._ids.get(ident) if ident else None
         if target is not None and usable(target): target.grab_focus(); return
         if self.tiles_from: self.win._focus_first(self.groups[self.tiles_from:])
         else: self.win._focus_first(self.groups)
-    def ask_search(self):
-        def search(text):
-            if not text.strip(): return
-            self.query=" ".join(text.split()); self.show("search")
-        self.win.ask_text("Search Flathub","Type an app's name, or what it does.",search,initial=self.query,ok_label="Search")
-    def choose_category(self):
-        s=self.state; options=[(k,f"{label} ({len(s.catalog.category(k))})" if s.catalog else label) for k,label,_c in flatpak.CATEGORIES]
-        self.win.choose_option("Categories",options,self.view,self.show)
     def more(self, apps):
         first=apps[self.limit] if len(apps)>self.limit else None
         self.limit+=self.STEP; self.redraw()
@@ -1220,55 +1292,83 @@ class AppsPage(_Console, Page):
     def setup(self):
         self.run_steps("Setting up Flathub",[(argv,False) for argv in flatpak.setup_argv()],"Flathub is set up.")
 
-    # ---------------------------------------------------------- the Apps settings (⚙)
-    def flatpak_settings(self):
-        s=self.state; unverified=ConfigStore().settings["flatpak_unverified"]
-        options=[("unverified",f"Show unverified apps: {_on_off(unverified)} (not recommended)"),("add","Add a repository")]
+    # ---------------------------------------------------------- the Settings tab
+    def draw_settings(self, s):
+        """The Apps settings, on the page: how apps are installed now, then each choice with what it does."""
+        unverified=ConfigStore().settings["flatpak_unverified"]
+        flathub=[r for r in s.remotes if r.name==flatpak.REMOTE]
+        where={"user":"for you","system":"for everyone on this computer"}
+        self.section("HOW APPS ARE INSTALLED")
+        on=[where[r.installation] for r in flathub if r.enabled]
+        self.note(("Flathub is set up "+" and ".join(on)+". " if on else "Flathub is not set up, or it is turned off. ")
+                  +"Apps installed here are installed for you only, in your home folder, so no password is needed and other users "
+                  "of this computer do not get them. Apps installed for everyone (by an administrator, with the system's software "
+                  f"tools) are listed under Installed too, and removing them asks for your password. {len(s.installed)} app"
+                  f"{'s are' if len(s.installed)!=1 else ' is'} installed. Updates to them come with the rest of the system's, on Software updates.")
+
+        self.section("REPOSITORIES")
+        self.note("A repository is a place Flatpak downloads apps from. Flathub is the main one, and the only one these tabs browse; "
+                  "apps from another repository can still be installed by their own instructions, and are updated from it. "
+                  "Turning a repository off keeps its apps, but they get no more updates.")
         for r in s.remotes:
-            state="on" if r.enabled else "off"
-            options.append((f"remote:{r.name}:{r.installation}",f"{r.name} ({'for you' if r.installation=='user' else 'system'}): {state}"))
-        if not any(r.name==flatpak.REMOTE for r in s.remotes): options.append(("flathub","Add Flathub again"))
-        if s.installed: options.append(("uninstall","Uninstall every Flatpak app and runtime"))
-        def picked(key):
-            if key=="unverified": self.toggle_unverified()
-            elif key=="flathub": self.setup()
-            elif key=="add": self.add_remote()
-            elif key=="uninstall": self.uninstall_all()
-            elif key.startswith("remote:"):
-                _r,name,where=key.split(":",2); self.change_remote(next(r for r in s.remotes if r.name==name and r.installation==where))
-        self.win.choose_option("Apps settings",options,None,picked)
+            forget=None
+            if r.name!=flatpak.REMOTE:   # Flathub is always kept: it can be turned off
+                forget=self.button("user-trash-symbolic","✕",f"Remove {r.name}",lambda r=r:self.delete_remote(r),danger=True)
+            self.row(r.name,"On" if r.enabled else "Off",lambda r=r:self.toggle_remote(r),icon="folder-remote-symbolic",fallback="⇄",
+                     detail=" · ".join(x for x in ("For you" if r.installation=="user" else "For everyone (system)",r.url) if x)+". Select to turn it "+("off" if r.enabled else "on"),
+                     ident=f"remote:{r.name}:{r.installation}",extras=[forget],value_css="state-on" if r.enabled else "setting-value")
+        if not s.remotes: self.note("No repositories are set up.")
+        if not flathub:
+            self.row("Add Flathub again","",self.setup,icon="list-add-symbolic",fallback="+",ident="set:flathub",detail="Adds Flathub for you and downloads its list of apps")
+        self.row("Add a repository","",self.add_remote,icon="list-add-symbolic",fallback="+",ident="set:add",
+                 detail="From the address of its .flatpakrepo file, such as Flathub Beta's")
+
+        self.section("WHICH APPS ARE SHOWN")
+        self.row("Show unverified apps",_on_off(unverified),self.toggle_unverified,ident="set:unverified",value_css="state-on" if unverified else "setting-value",
+                 detail="Off is recommended")
+        self.note("Off: only apps whose publisher Flathub has verified to be the app's own developer are shown. "
+                  "On: also apps packaged by someone else, often a volunteer. Most work well, but their publisher is not checked, "
+                  "so install them only when you trust where they come from.")
+
+        self.section("THE LIST OF APPS")
+        age=updates.age_text(s.catalog.updated) if s.catalog else ""
+        self.row("Download the list of apps again","",self.setup,detail=f"Downloaded {age}" if age else "Not downloaded yet",
+                 icon="view-refresh-symbolic",fallback="⟳",ident="set:list")
+        self.note("Search and Categories use a copy of Flathub's list of apps kept on this computer. Download it again to see apps "
+                  "added since, and new versions.")
+
+        if s.installed:
+            self.section("REMOVE ALL APPS")
+            self.row("Uninstall every Flatpak app and runtime","",self.uninstall_all,icon="user-trash-symbolic",fallback="✕",ident="set:uninstall",
+                     detail=f"{len(s.installed)} app{'s' if len(s.installed)!=1 else ''}")
+            self.note("Removes every Flatpak app and the runtimes they share, for a fresh start. Each app's own settings and files "
+                      "in your home folder (~/.var/app) are kept.")
+
     def toggle_unverified(self):
         store=ConfigStore(); store.settings["flatpak_unverified"]=not store.settings["flatpak_unverified"]; store.save()
-        if store.settings["flatpak_unverified"]:
-            self.win.notice("Unverified apps","Apps that Flathub has not verified are shown too. Their publisher is not checked to be the app's own "
-                            "developer: install them only when you trust where they come from.")
         self.redraw()
     def add_remote(self, error=""):
         def got(url):
             url=url.strip()
             if not url.startswith(("https://","http://")): self.add_remote("Type the repository's address, starting with https://."); return
-            self.run_steps("Adding a repository",[(flatpak.add_remote_argv(url),False)],f"{flatpak.remote_name(url)} is added.")
+            self.run_steps("Adding a repository",[(flatpak.add_remote_argv(url),False)],f"{flatpak.remote_name(url)} is added.",focus="set:add")
         self.win.ask_text("Add a repository","The address of the repository's .flatpakrepo file, such as https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo.",
                           got,"https://",error=error)
-    def change_remote(self, r):
-        options=[("toggle","Turn it off" if r.enabled else "Turn it on")]
-        if r.name!=flatpak.REMOTE: options.append(("delete","Remove it"))   # Flathub is always kept: it can be turned off
-        def picked(key):
-            if key=="toggle":
-                argv,root=flatpak.enable_remote_argv(r,not r.enabled)
-                self.run_steps(f"Turning {r.name} {'off' if r.enabled else 'on'}",[(argv,root)],f"{r.name} is {'off' if r.enabled else 'on'}.")
-            elif key=="delete":
-                argv,root=flatpak.delete_remote_argv(r)
-                self.win.confirm(f"Remove {r.name}?",f"Apps from {r.name} stop getting updates.","Remove",
-                                 lambda:self.run_steps(f"Removing {r.name}",[(argv,root)],f"{r.name} is removed."))
-        self.win.choose_option(r.name,options,None,picked)
+    def toggle_remote(self, r):
+        argv,root=flatpak.enable_remote_argv(r,not r.enabled)
+        self.run_steps(f"Turning {r.name} {'off' if r.enabled else 'on'}",[(argv,root)],f"{r.name} is {'off' if r.enabled else 'on'}.",
+                       focus=f"remote:{r.name}:{r.installation}")
+    def delete_remote(self, r):
+        argv,root=flatpak.delete_remote_argv(r)
+        self.win.confirm(f"Remove {r.name}?",f"Apps from {r.name} stop getting updates.","Remove",
+                         lambda:self.run_steps(f"Removing {r.name}",[(argv,root)],f"{r.name} is removed.",focus="set:add"))
     def uninstall_all(self):
         steps=flatpak.uninstall_all_steps(self.state.installed)
         self.win.confirm("Uninstall every Flatpak app?",f"This uninstalls all {len(self.state.installed)} Flatpak apps and the runtimes they use, with their "
                          "files. Their data in your home folder (~/.var/app) is kept."+(" It asks for your password for the system-wide ones." if len(steps)>1 else ""),
                          "Uninstall all",lambda:self.run_steps("Uninstalling Flatpak apps",steps,"Every Flatpak app is uninstalled."))
 
-    def run_steps(self, label, steps, success, app_id=None):
+    def run_steps(self, label, steps, success, app_id=None, focus=None):
         """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
         self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
         self.win._focus_first(self.groups)
@@ -1276,7 +1376,7 @@ class AppsPage(_Console, Page):
             self.running=None; self.set_status("")
             if problem: self._append(f"\n✗ Stopped: {problem}")
             else: self.outcome=success; self._append(f"\n✓ {success}")
-            target=f"app:{app_id}" if app_id else "tiles"
+            target=focus or (f"app:{app_id}" if app_id else "tiles")
             self.redraw(); self.focus_tiles(target); self.refresh_focus=target   # and again once the page has been read again
             if problem: self.win.notice(label,problem)
             self.refresh(quiet=True)
@@ -1621,7 +1721,7 @@ class StoragePage(Page):
                   "under it. Unmount it, or switch the drive off with ⏏, before unplugging it.")
         self.section("NETWORK SHARES")
         if not features.installed(features.BY_KEY["samba"]):
-            self.row("Install network shares","",lambda:install_feature(self,features.BY_KEY["samba"]),icon="folder-remote-symbolic",fallback="⇄",
+            self.row("Install network shares (Samba)","",lambda:install_feature(self,features.BY_KEY["samba"]),icon="folder-remote-symbolic",fallback="⇄",
                      ident="share:feature",detail="To connect to Windows, Samba, NFS or SSH shares. Installs "+", ".join(features.BY_KEY["samba"].packages))
             return
         missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
@@ -1633,6 +1733,9 @@ class StoragePage(Page):
                  detail="A folder shared by another computer or a NAS, such as smb://nas/videos")
         self.note("Shares from Windows or Samba start with smb://, NFS with nfs://, SSH with sftp://. Their files appear in "
                   f"/run/user/{os.getuid()}/gvfs/ and in file managers. Passwords are not stored by TVWCS.")
+        samba=features.BY_KEY["samba"]
+        self.row("Uninstall network shares (Samba)","",lambda:uninstall_feature(self,samba),icon="user-trash-symbolic",fallback="✕",ident="share:remove",
+                 detail="Removes "+", ".join(samba.packages)+". The shares listed here are kept for when it is installed again")
 
     def drive_rows(self, d, s):
         kind="Inside the computer" if not d.removable else ("USB drive" if d.transport=="usb" else "Removable drive")
@@ -1884,6 +1987,27 @@ def install_feature(page, f, after=None):
         page.win.run_as_root(features.install_argv(missing),f"Installing {f.label}",lines.append,done)
     page.win.confirm(f"Install {f.label}?",f"{f.what} It needs {', '.join(missing)}, which will be installed now. It asks for your password.",
                      "Install",go,danger=False)
+
+def uninstall_feature(page, f):
+    """Remove a feature's packages (features.py), asking first and naming everything apt would take with them."""
+    if not shutil.which("apt-get"):
+        page.win.notice(f.label,f"Remove {', '.join(f.packages)} (the Debian names) with your package manager."); return
+    def ask(going):
+        going=going or list(f.packages)
+        others=[p for p in going if p not in f.packages]
+        lines=[]
+        def done(code, tail):
+            page.set_status("")
+            if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be removed.").strip()); return
+            tell_tvwcs("reload"); page.refresh(quiet=True)
+        def go():
+            page.set_status(f"Removing {', '.join(going)}…")
+            page.win.run_as_root(features.remove_argv(list(f.packages)),f"Removing {f.label}",lines.append,done)
+        page.win.confirm(f"Uninstall {f.label}?",f"This removes {', '.join(f.packages)}"
+                         +(f", and with it {', '.join(others)}, which need{'s' if len(others)==1 else ''} it" if others else "")
+                         +". It can be installed again here. It asks for your password.","Uninstall",go)
+    page.set_status("Checking what would be removed…")
+    in_background(lambda:features.removals(list(f.packages)),lambda going:(page.set_status(""),ask(going)),lambda _exc:(page.set_status(""),ask([])))
 
 # ====================================================================== User
 class UserPage(Page):
