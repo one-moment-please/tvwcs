@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.6.1 — 2026-10-21
+
+- Settings > Sound folds outputs and inputs with nothing plugged in (an empty headphone jack, an HDMI port without a TV) under one "Not plugged in" row, closed until it is chosen. They can still be tried from there. The output or input in use is always shown.
+- On sway, Settings > Power and sleep no longer offers the screen saver, and swayidle no longer starts it: it was an ordinary fullscreen window there, which took fullscreen away from a video and moved focus. It comes back once it is drawn as an overlay (TODO.md).
+
 ## 3.6.0 — 2026-10-21
 
 **Quick Menu**

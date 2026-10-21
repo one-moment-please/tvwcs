@@ -416,10 +416,12 @@ def use_tvwcs_locker(path, tvwcs_locker):
 
 # ---------------------------------------------------------------------- sway: swayidle
 def swayidle_argv(settings, launcher):
-    """swayidle with one timeout per action; each calls `tvwcs idle <action>` back, which checks sound and inhibitors."""
+    """swayidle with one timeout per action; each calls `tvwcs idle <action>` back, which checks sound and inhibitors.
+    The screen saver is left out: it is a plain fullscreen window, which takes fullscreen away from what had it on sway
+    (a layer-shell overlay would be needed), so Settings hides it there for now."""
     argv=["swayidle","-w"]
     for a in ACTIONS:
-        if settings.get(a):
+        if settings.get(a) and a!="screensaver":
             argv+=["timeout",str(settings[a]),f"'{launcher}' idle {a}"]
             if a=="screen_off": argv+=["resume",f"'{launcher}' idle resume"]
     return argv if len(argv)>2 else None

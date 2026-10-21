@@ -1,6 +1,6 @@
 """TVWCS's screen saver (Settings > Power and sleep > Screen saver): a logo drifting across a black screen, bouncing off
 the edges and changing colour at each bounce, like a DVD player left alone. `tvwcs screensaver` shows it until a key,
-the remote, a click or a mouse movement; TVWCS starts it after the "Screen saver after" time (on sway, swayidle does).
+the remote, a click or a mouse movement; TVWCS starts it after the "Screen saver after" time (not on sway yet: see power.swayidle_argv).
 
 The logo is the DVD Video logo, TVWCS's own in the same style, or a picture the user chose. The movement has no GTK
 dependency (step, logo_size) and is unit-tested; the window is GTK and is only imported when it runs."""
