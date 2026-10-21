@@ -2,8 +2,8 @@
 No GTK dependency.
 
 There are three sets of hotkeys, one per input device: keyboard, remote and gamepad. Each set has a key for the
-Quick Menu ("menu") and one for the Applications pane ("guide"); the remote also has one that toggles fullscreen on
-the focused app ("fullscreen"). Any of them may be unset (""). A gamepad sends no key presses by itself: map its
+Quick Menu ("menu"); it may be unset (""). (Before 4.0 there were Applications and Fullscreen keys too: they are
+dropped.) A gamepad sends no key presses by itself: map its
 buttons to keys with a tool such as AntiMicroX, then capture those keys here. Any launch profile can have a hotkey of
 its own too (see model.LaunchProfile.hotkey); it is bound here as `tvwcs launch <profile id>`.
 
@@ -14,17 +14,15 @@ from __future__ import annotations
 import re, shlex
 
 DEVICES=("keyboard","remote","gamepad")
-ACTIONS=("menu","guide")   # what every device's set has
-DEVICE_ACTIONS={"keyboard":ACTIONS,"remote":ACTIONS+("fullscreen",),"gamepad":ACTIONS}
+ACTIONS=("menu",)   # what every device's set has
+DEVICE_ACTIONS={"keyboard":ACTIONS,"remote":ACTIONS,"gamepad":ACTIONS}
 DEVICE_LABELS={"keyboard":"Keyboard","remote":"Remote","gamepad":"Gamepad"}
 ACTION_LABELS={"menu":"Quick Menu","guide":"Applications","fullscreen":"Fullscreen"}
 DEFAULT_HOTKEYS={
-    "keyboard":{"menu":"Mod4","guide":""},          # tap Super for the Quick Menu
-    "remote":{"menu":"F2","guide":"","fullscreen":""},
-    "gamepad":{"menu":"","guide":""},
+    "keyboard":{"menu":"Mod4"},          # tap Super for the Quick Menu
+    "remote":{"menu":"F2"},
+    "gamepad":{"menu":""},
 }
-# Toggles fullscreen on the focused window, but never on TVWCS's own windows (see model.is_tvwcs_title).
-FULLSCREEN_COMMAND='[con_id="__focused__" title="^(?!TVWCS$|TVWCS · )"] fullscreen toggle'
 _SAFE_ID=re.compile(r"[A-Za-z0-9_-]+")
 MODIFIER_ORDER=("Mod4","Mod1","Control","Shift")
 MODIFIER_NAMES={"Mod4":"Super","Mod1":"Alt","Control":"Ctrl","Shift":"Shift"}
@@ -133,8 +131,7 @@ def render_i3(hotkeys, command, keycodes=None, app_keys=(), tv=False) -> str:
         bound.add(key)   # i3 has no end-of-line comments: a trailing "# ..." would become arguments to the command
         lines.append(f"# {comment} ({describe(spec)})"); lines.append(f"{key} {action}")
     for device,action,spec in assigned(hotkeys):
-        if action=="fullscreen": add(spec,f"{DEVICE_LABELS[device]}: Fullscreen",FULLSCREEN_COMMAND)
-        else: add(spec,f"{DEVICE_LABELS[device]}: {ACTION_LABELS[action]}",f"exec --no-startup-id {q} {'toggle' if action=='menu' else 'guide'}")
+        add(spec,f"{DEVICE_LABELS[device]}: {ACTION_LABELS[action]}",f"exec --no-startup-id {q} toggle")
     for spec,profile_id,name in app_keys:
         if spec and valid_spec(spec) and _SAFE_ID.fullmatch(profile_id or ""):   # an id from a hand-edited config must not break the line
             add(spec,f"Application: {' '.join(str(name).split())}",f"exec --no-startup-id {q} launch {profile_id}")

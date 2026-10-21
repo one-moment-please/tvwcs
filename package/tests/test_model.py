@@ -1,6 +1,6 @@
 import copy, json, tempfile, unittest
 from pathlib import Path
-from tvwcs.model import (ACCENT_NAMES, DEFAULT_SETTINGS, MARGIN_CHOICES, ConfigStore, accent_name, apply_use, apps_open, key_hints, set_apps_open, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
+from tvwcs.model import (ACCENT_NAMES, DEFAULT_SETTINGS, MARGIN_RANGE, ConfigStore, accent_name, key_hints, scale_key, tv_mode, LaunchProfile, LAUNCH_SAME, LAUNCH_NEW_WORKSPACE, compute_layout, extract_badge, is_tvwcs_title, profile_detail, row_description, search_items, startup_choices, PIN_LAUNCH, PIN_LAUNCH_AND_SHOW)
 from tvwcs.applications import Application
 
 class ModelTests(unittest.TestCase):
@@ -31,13 +31,13 @@ class ModelTests(unittest.TestCase):
             path.write_text(json.dumps({"version":1,"profiles":[{"id":"x","desktop_id":"a.desktop","name":"A","tile":False,"favorite":True,"channel":7}]}))
             store=ConfigStore(path); p=store.get("x")
             self.assertEqual((p.launch_mode,p.favorite,p.channel),(LAUNCH_SAME,True,7))
-            self.assertEqual(store.settings["margin"],20)
+            self.assertEqual(store.settings["margin"],0)
     def test_settings_validated(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"config.json"
             path.write_text(json.dumps({"settings":{"margin":9999,"quick_width":500,"accent":"red","lock_command":" i3lock "},"profiles":[]}))
             s=ConfigStore(path).settings
-            self.assertEqual((s["margin"],s["quick_width"],s["accent"],s["lock_command"]),(20,500,"#0078d7","i3lock"))
+            self.assertEqual((s["margin"],s["quick_width"],s["accent"],s["lock_command"]),(0,500,"#0078d7","i3lock"))
     def test_desktop_action_persists(self):
         with tempfile.TemporaryDirectory() as d:
             store=ConfigStore(Path(d)/"config.json")
@@ -57,66 +57,48 @@ class SettingsAndProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"
             s=ConfigStore(path).settings
-            self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"],s["hotkeys"],s["startup"]["mode"]),("desktop",False,False,{"keyboard":{"menu":"Mod4","guide":""},"remote":{"menu":"F2","guide":"","fullscreen":""},"gamepad":{"menu":"","guide":""}},"none"))
-            self.assertFalse(s["always_new_workspace"])
-            path.write_text(json.dumps({"settings":{"scale":"huge","close_on_click_outside":True,"open_in_new_workspace":"yes","hotkeys":{"keyboard":{"menu":"Mod1","guide":"bad key"},"gamepad":{"menu":"F7"}},"startup":{"mode":"app","profile_id":"p1"}}}))
+            self.assertEqual((s["scale"],s["close_on_click_outside"],s["hotkeys"],s["startup"]["mode"],s["margin"],s["keyboard"]),
+                             ("",True,{"keyboard":{"menu":"Mod4"},"remote":{"menu":"F2"},"gamepad":{"menu":""}},"none",0,"hidden"))
+            path.write_text(json.dumps({"settings":{"scale":"huge","close_on_click_outside":False,"keyboard":"tiny","hotkeys":{"keyboard":{"menu":"Mod1","guide":"F3"},"gamepad":{"menu":"F7"}},"startup":{"mode":"app","profile_id":"p1"}}}))
             s=ConfigStore(path).settings
-            self.assertEqual((s["scale"],s["close_on_click_outside"],s["open_in_new_workspace"]),("desktop",True,False))
-            self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1","guide":""},"remote":{"menu":"F2","guide":"","fullscreen":""},"gamepad":{"menu":"F7","guide":""}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
+            self.assertEqual((s["scale"],s["close_on_click_outside"],s["keyboard"]),("",False,"hidden"))
+            self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1"},"remote":{"menu":"F2"},"gamepad":{"menu":"F7"}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
     def test_open_at_login_is_one_choice(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"
             self.assertEqual(ConfigStore(path).settings["startup"],{"mode":"none","profile_id":"","last_profile_id":""})
-            path.write_text(json.dumps({"settings":{"startup":{"show_menu":True}}}))   # written before 2.11
-            self.assertEqual(ConfigStore(path).settings["startup"]["mode"],"menu")
+            path.write_text(json.dumps({"settings":{"startup":{"mode":"menu"}}}))   # the Quick Menu at login is gone in 4.0
+            self.assertEqual(ConfigStore(path).settings["startup"]["mode"],"none")
             path.write_text(json.dumps({"settings":{"startup":{"mode":"last","show_menu":True}}}))
             self.assertEqual(ConfigStore(path).settings["startup"]["mode"],"last")
-            store=ConfigStore(path); store.settings["startup"]["mode"]="menu"; store.save()
-            self.assertEqual(ConfigStore(path).settings["startup"]["mode"],"menu")
+            store=ConfigStore(path); store.save()
             self.assertNotIn("show_menu",json.loads(path.read_text())["settings"]["startup"])
-    def test_use_on_a_tv_or_a_desktop(self):
+    def test_the_mode_is_the_session(self):
+        self.assertTrue(tv_mode({"TVWCS_SESSION":"sway"})); self.assertFalse(tv_mode({}))
+        self.assertFalse(tv_mode({"TVWCS_SESSION":"i3","TVWCS_MODE":"desktop"})); self.assertTrue(tv_mode({"TVWCS_MODE":"tv"}))
+        self.assertEqual((scale_key({"scale":""},True),scale_key({"scale":""},False),scale_key({"scale":"tenfoot_4k"},False)),("tenfoot","desktop","tenfoot_4k"))
+    def test_settings_removed_in_4_0_are_dropped(self):
         with tempfile.TemporaryDirectory() as d:
-            path=Path(d)/"c.json"; store=ConfigStore(path); self.assertEqual(store.settings["use"],"")
-            apply_use(store.settings,"tv"); store.save(); s=ConfigStore(path).settings
-            self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("tv","tenfoot",True,True))
-            s["scale"]="tenfoot_4k"; apply_use(s,"tv"); self.assertEqual(s["scale"],"tenfoot_4k")   # a 4K TV keeps its size
-            apply_use(s,"desktop")
-            self.assertEqual((s["use"],s["scale"],s["always_new_workspace"],s["open_in_new_workspace"]),("desktop","desktop",False,False))
-            self.assertRaises(ValueError,apply_use,s,"phone")
-            path.write_text(json.dumps({"settings":{"use":"phone"}})); self.assertEqual(ConfigStore(path).settings["use"],"")
-    def test_a_tv_turns_button_hints_on(self):
-        s=copy.deepcopy(DEFAULT_SETTINGS); self.assertFalse(s["button_hints"])
-        apply_use(s,"desktop"); self.assertFalse(s["button_hints"])
-        apply_use(s,"tv"); self.assertTrue(s["button_hints"])
-        apply_use(s,"desktop"); self.assertTrue(s["button_hints"])   # switched back, the user's hints stay as they are
-    def test_where_apps_open_is_one_choice_over_two_keys(self):
-        s=copy.deepcopy(DEFAULT_SETTINGS); self.assertEqual(apps_open(s),"profile")
-        for choice,keys in (("fullscreen",(True,True)),("side",(False,False)),("profile",(False,False))):
-            set_apps_open(s,choice); self.assertEqual((s["always_new_workspace"],s["open_in_new_workspace"]),keys); self.assertEqual(apps_open(s),choice)
-        self.assertRaises(ValueError,set_apps_open,s,"tiled")
-        # the keys win over the remembered choice: a hand-edited file, or the old switches set one by one
-        s.update(always_new_workspace=True,open_in_new_workspace=False,apps_open="side"); self.assertEqual(apps_open(s),"fullscreen")
-        s.update(always_new_workspace=False,open_in_new_workspace=True); self.assertEqual(apps_open(s),"profile")
-        apply_use(s,"tv"); self.assertEqual(apps_open(s),"fullscreen"); apply_use(s,"desktop"); self.assertEqual(apps_open(s),"side")
-        with tempfile.TemporaryDirectory() as d:
-            path=Path(d)/"c.json"; store=ConfigStore(path); set_apps_open(store.settings,"profile"); store.save()
-            self.assertEqual(apps_open(ConfigStore(path).settings),"profile")
-            path.write_text(json.dumps({"settings":{"apps_open":"anywhere","reduce_motion":True,"tvwcs_lock_screen":False}}))
-            s=ConfigStore(path).settings; self.assertEqual((s["apps_open"],s["reduce_motion"],s["tvwcs_lock_screen"]),("profile",True,False))
+            path=Path(d)/"c.json"
+            path.write_text(json.dumps({"settings":{"use":"tv","scale":"tenfoot","apps_open":"side","reduce_motion":True,"tvwcs_lock_screen":False,
+                                                    "button_hints":True,"quick_close_button":False,"password_keyboard":"digits"}}))
+            store=ConfigStore(path); store.save(); saved=json.loads(path.read_text())["settings"]
+            for key in ("use","apps_open","reduce_motion","tvwcs_lock_screen","button_hints","quick_close_button","password_keyboard"): self.assertNotIn(key,saved)
+            self.assertEqual(saved["scale"],"")   # the size the old "Used on: A TV" chose: automatic now, by the mode
     def test_accent_names_and_key_hints(self):
         self.assertEqual(accent_name("#E81123"),"Red"); self.assertEqual(accent_name("#123456"),"#123456")
-        self.assertIn(DEFAULT_SETTINGS["accent"],ACCENT_NAMES); self.assertIn(DEFAULT_SETTINGS["margin"],MARGIN_CHOICES)
-        self.assertIn("Back  Go back",key_hints("tv")); self.assertIn("Esc  Go back",key_hints("desktop")); self.assertIn("Esc",key_hints(""))
+        self.assertIn(DEFAULT_SETTINGS["accent"],ACCENT_NAMES); self.assertTrue(MARGIN_RANGE[0]<=DEFAULT_SETTINGS["margin"]<=MARGIN_RANGE[1])
+        self.assertIn("Back  Go back",key_hints(True)); self.assertIn("Esc  Go back",key_hints(False))
     def test_a_key_used_twice_keeps_only_its_first_use(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"remote":{"menu":"F5","guide":"F5"},"gamepad":{"menu":"Mod4"}}}}))
             hk=ConfigStore(path).settings["hotkeys"]
-            self.assertEqual((hk["remote"],hk["gamepad"]["menu"]),({"menu":"F5","guide":"","fullscreen":""},""))   # Mod4 is already the keyboard's
+            self.assertEqual((hk["remote"],hk["gamepad"]["menu"]),({"menu":"F5"},""))   # Mod4 is already the keyboard's
     def test_old_single_hotkey_set_becomes_the_remote_set(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"; path.write_text(json.dumps({"settings":{"hotkeys":{"menu":"F9","guide":"Shift+F9"}}}))
             hk=ConfigStore(path).settings["hotkeys"]
-            self.assertEqual((hk["remote"],hk["keyboard"]["menu"]),({"menu":"F9","guide":"Shift+F9","fullscreen":""},"Mod4"))
+            self.assertEqual((hk["remote"],hk["keyboard"]["menu"]),({"menu":"F9"},"Mod4"))
     def test_defaults_are_not_shared_between_stores(self):
         with tempfile.TemporaryDirectory() as d:
             a=ConfigStore(Path(d)/"a.json"); a.settings["hotkeys"]["remote"]["menu"]="F9"
@@ -147,11 +129,21 @@ class SettingsAndProfileTests(unittest.TestCase):
             path=Path(d)/"c.json"; store=ConfigStore(path)
             store.set_app_description("a.desktop","My own words"); self.assertEqual(ConfigStore(path).app_descriptions,{"a.desktop":"My own words"})
             store.set_app_description("a.desktop","   "); self.assertEqual(ConfigStore(path).app_descriptions,{})
+    def test_an_application_description_moves_to_its_default_profile(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"; store=ConfigStore(path)
+            store.set_profile(LaunchProfile("p","b.desktop","B")); store.set_profile(LaunchProfile("q","b.desktop","B 2"))
+            store.set_app_description("b.desktop","Before 4.0")
+            app=Application("b.desktop","B","Generic","Comment",None,("Internet",),"/x","b")
+            store.ensure_defaults([app]); again=ConfigStore(path)
+            self.assertEqual((again.get("p").description,again.get("q").description,again.app_descriptions),("Before 4.0","",{}))
     def test_row_description_defaults_and_overrides(self):
         app=Application("b.desktop","B","Generic","The .desktop comment",None,("Internet",),"/x","b",(("Private","Private Window"),))
         main=LaunchProfile("1","b.desktop","B"); sec=LaunchProfile("2","b.desktop","P",command="b --kiosk",desktop_action="Private")
         self.assertEqual(row_description(main,app,True),"The .desktop comment")                      # main: the .desktop description
-        self.assertEqual(row_description(main,app,True,"Override"),"Override")                        # ... unless overridden
+        self.assertEqual(row_description(main,app,True,"Override"),"Override")                        # ... or the one from before 4.0
+        main.description="Its own"; self.assertEqual(row_description(main,app,True,"Override"),"Its own")   # 4.0: each profile has its own
+        main.description=""
         self.assertEqual(row_description(sec,app,False),"Private Window  ·  b --kiosk")             # secondary: its launch options
         sec.description="Just for me"; self.assertEqual(row_description(sec,app,False),"Just for me")
     def test_startup_choices_order(self):
@@ -336,7 +328,7 @@ class ChannelZeroTests(unittest.TestCase):
             path.write_text(json.dumps({"profiles":[],"settings":{"theme":"purple","wallpaper":"#123456","password_keyboard":"digits","screensaver_logo":"nope"}}))
             s=ConfigStore(path).settings
             self.assertEqual(s["theme"],"dark"); self.assertEqual(s["wallpaper"],DEFAULT_SETTINGS["wallpaper"])
-            self.assertEqual(s["password_keyboard"],"digits"); self.assertEqual(s["screensaver_logo"],"dvd")
+            self.assertEqual(s["keyboard"],"hidden"); self.assertEqual(s["screensaver_logo"],"tvwcs")
     def test_wallpaper_choices(self):
         from tvwcs.model import WALLPAPERS, DEFAULT_WALLPAPER
         self.assertEqual(len(WALLPAPERS),18); self.assertIn(DEFAULT_WALLPAPER,WALLPAPERS); self.assertEqual(DEFAULT_SETTINGS["theme"],"dark")

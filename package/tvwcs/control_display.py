@@ -22,8 +22,8 @@ from tvwcs.model import CONFIG_HOME
 SAVED=CONFIG_HOME/"tvwcs"/"displays.json"
 XSETTINGS_CONF=CONFIG_HOME/"tvwcs"/"xsettingsd.conf"
 XRESOURCES=Path.home()/".Xresources"
-SCALES=(1.0,2.0,3.0)
-FRACTIONAL_SCALES=(1.0,1.25,1.5,1.75,2.0,2.25,2.5,2.75,3.0)
+SCALES=(1.0,2.0)                                     # whole steps (X11 with fractional scaling off)
+FRACTIONAL_SCALES=(0.75,1.0,1.25,1.5,1.75,2.0)       # Settings' row of scale buttons: 75 % to 200 % in 25 % steps
 MIN_SCALED_HEIGHT=540     # a scale is offered while the display still shows at least this many (logical) pixels high
 RELATIONS=("right","left","below","above","mirror")
 RELATION_TEXT={"right":"Right of {}","left":"Left of {}","below":"Below {}","above":"Above {}","mirror":"Same picture as {}"}
@@ -82,6 +82,7 @@ class DisplayState:
     ui: float=1.0                # X11: Xft.dpi / 96
     fractional: bool=False       # X11: fractional scales are offered (Settings > Displays > Fractional scaling)
     max_size: tuple=(0,0)        # X11: the largest desktop the X server allows (a fractional scale needs a bigger one)
+    tearing: object=None         # X11: tear-free drawing (read_tearing), read by Settings
     @property
     def can_set_primary(self): return self.backend=="xrandr"   # sway has no primary display
 
@@ -562,3 +563,90 @@ def restore(path=SAVED):
         if state.backend=="xrandr" and state.ui!=1: xsettings(state.ui)   # Xft.dpi came from ~/.Xresources: GTK needs XSETTINGS too
         return ""
     return apply(state,new)
+
+# ---------------------------------------------------------------------- tearing (X11)
+# On X11 a video or a game can tear (a line where two frames meet). The Xorg drivers that can stop it have a TearFree
+# output property (modesetting, amdgpu, intel); NVIDIA's driver has its own "Force Full Composition Pipeline". Settings
+# shows whichever this computer has, and keeps the choice in displays.json so TVWCS sets it again when it starts.
+def parse_tearfree(text):
+    """`xrandr --props`: {output: "on" | "off" | "auto"} for the connected outputs that have a TearFree property."""
+    found={}; output=None
+    for line in text.splitlines():
+        m=re.match(r"^(\S+) connected",line)
+        if m: output=m.group(1); continue
+        if re.match(r"^\S",line): output=None; continue
+        m=re.match(r"^\s+TearFree:\s*(\w+)",line)
+        if m and output: found[output]=m.group(1).lower()
+    return found
+
+def parse_metamode(text):
+    """`nvidia-settings -q CurrentMetaMode -t`: the metamode, and whether it forces the full composition pipeline."""
+    mode=(text or "").strip().splitlines()[-1].strip() if (text or "").strip() else ""
+    if "::" in mode: mode=mode.split("::",1)[1].strip()
+    return mode,bool(re.search(r"ForceFullCompositionPipeline\s*=\s*On",mode,re.I))
+
+def with_pipeline(mode, on):
+    """The metamode with ForceFullCompositionPipeline (and ForceCompositionPipeline) on or off for every display in it."""
+    displays=[]; depth=0; cur=""
+    for ch in mode:   # displays are separated by commas outside the braces
+        depth+=ch=="{"; depth-=ch=="}"
+        if ch=="," and depth==0: displays.append(cur); cur=""
+        else: cur+=ch
+    displays.append(cur); parts=[]
+    for part in [p.strip() for p in displays if p.strip()]:
+        m=re.match(r"^(.*?)(\s*\{(.*)\})?$",part); head=m.group(1).strip(); opts=[o.strip() for o in (m.group(3) or "").split(",") if o.strip()]
+        opts=[o for o in opts if not re.match(r"Force(Full)?CompositionPipeline",o,re.I)]
+        if on: opts+=["ForceCompositionPipeline=On","ForceFullCompositionPipeline=On"]
+        parts.append(head+(" {"+", ".join(opts)+"}" if opts else ""))
+    return ", ".join(parts)
+
+@dataclass
+class Tearing:
+    kind: str = ""          # "tearfree" (an Xorg driver's), "nvidia", or "" (nothing to set)
+    on: bool = False
+    outputs: list = field(default_factory=list)
+    nvidia_settings: bool = False   # the nvidia-settings program is installed (Settings offers to open it)
+    metamode: str = ""
+
+def read_tearing():
+    t=Tearing(nvidia_settings=have("nvidia-settings"))
+    if have("nvidia-settings") and os.path.exists("/proc/driver/nvidia/version"):
+        r=run(["nvidia-settings","-q","CurrentMetaMode","-t"],timeout=10)
+        if r.ok and r.out.strip():
+            t.metamode,t.on=parse_metamode(r.out); t.kind="nvidia"; return t
+    if have("xrandr"):
+        props=parse_tearfree(run(["xrandr","--props"],timeout=10).out)
+        if props: t.kind="tearfree"; t.outputs=sorted(props); t.on=all(v=="on" for v in props.values())
+    return t
+
+def set_tearing(t, on):
+    """Turn tear-free drawing on or off now. -> "" or why not."""
+    if t.kind=="nvidia":
+        r=run(["nvidia-settings","--assign",f"CurrentMetaMode={with_pipeline(t.metamode,on)}"],timeout=20)
+        return "" if r.ok else (r.err or r.message or "nvidia-settings refused the change.").strip()[-300:]
+    if t.kind=="tearfree":
+        for o in t.outputs:
+            r=run(["xrandr","--output",o,"--set","TearFree","on" if on else "off"],timeout=10)
+            if not r.ok: return (r.err or r.message).strip()[-300:]
+        return ""
+    return "This display driver has no tear-free setting."
+
+def saved_tearing(path=None):
+    try: saved=json.loads(Path(path or SAVED).read_text(encoding="utf-8"))
+    except (OSError,ValueError): return None
+    value=_entries(saved).get("xrandr",{}).get("tear_free")
+    return value if isinstance(value,bool) else None
+
+def save_tearing(on, path=None):
+    path=Path(path or SAVED); path.parent.mkdir(parents=True,exist_ok=True)
+    try: saved=json.loads(path.read_text(encoding="utf-8"))
+    except (OSError,ValueError): saved=None
+    entries=_entries(saved); entries.setdefault("xrandr",{})["tear_free"]=bool(on)
+    tmp=path.with_suffix(".tmp"); tmp.write_text(json.dumps(entries,indent=2)+"\n",encoding="utf-8"); os.replace(tmp,path)
+
+def restore_tearing(path=None):
+    """At TVWCS's start on X11: set tear-free drawing as it was chosen in Settings (nothing when it never was)."""
+    want=saved_tearing(path)
+    if want is None: return ""
+    t=read_tearing()
+    return "" if not t.kind or t.on==want else set_tearing(t,want)

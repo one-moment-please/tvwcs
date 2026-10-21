@@ -112,19 +112,19 @@ The power menu has Lock, Sleep, Reboot and Shut down, and Log out when there is 
 
 Settings keeps idle times for the screen saver (`screensaver.py`, a logo bouncing round a black screen), screen off, lock and sleep (TVWCS watches idle time itself on i3; it runs `swayidle` on sway), and a second set for a laptop on battery, plus what to do when its battery is nearly empty (`power.py` reads `/sys/class/power_supply`). Nothing happens while sound plays or an app inhibits idle. The screen saver ends when the screen turns off.
 
-With "Show it when the computer locks", `tvwcs lock` runs xsecurelock (X11 only) with `tvwcs screensaver --xsecurelock` as its saver: that draws the same logo through Xlib into the window xsecurelock gives it, since GTK cannot draw in another program's window. xsecurelock shows its password box on a key and goes back to the saver after a minute.
+In TV mode with "Show it when the computer locks" (i3 only), `tvwcs lock` runs xsecurelock (X11 only) with `tvwcs screensaver --xsecurelock` as its saver: that draws the same logo through Xlib into the window xsecurelock gives it, since GTK cannot draw in another program's window. xsecurelock shows its password box on a key and goes back to the saver after a minute.
 
-The mouse pointer is hidden by TVWCS (`cursor.py`): `unclutter` on i3, `seat * hide_cursor` on sway, after the time in Options (by default on a TV only). On i3 a hidden pointer is moved to the bottom-right corner of the focused window so nothing stays highlighted under it. Only TVWCS's session is affected: its unclutter is stopped by the kernel when TVWCS exits (`PR_SET_PDEATHSIG`), and Debian's `unclutter-startup` (which would start unclutter in every X session) is left out when unclutter-xfixes is installed; `install.sh` offers to turn off an autostart that is already there.
+The mouse pointer is hidden by TVWCS (`cursor.py`): `unclutter` on i3, `seat * hide_cursor` on sway, in TV mode only. On i3 a hidden pointer is moved to the bottom-right corner of the focused window so nothing stays highlighted under it. Only TVWCS's session is affected: its unclutter is stopped by the kernel when TVWCS exits (`PR_SET_PDEATHSIG`), and Debian's `unclutter-startup` (which would start unclutter in every X session) is left out when unclutter-xfixes is installed; `install.sh` offers to turn off an autostart that is already there.
 
-The optional **TVWCS lock screen** (`lockscreen.py`) does not draw a lock itself. It paints one picture per monitor ("Locked — A password is needed. Type <user>'s password, then press Enter to unlock.") and runs i3lock, or swaylock on sway, with it. The power menu's Lock, the idle lock and `tvwcs lock` use it. When the i3 config starts xss-lock, its locker line is replaced too, and restored when the option is turned off.
+The **TVWCS lock screen** (`lockscreen.py`), used in TV mode only, does not draw a lock itself. It paints one picture per monitor ("Locked — A password is needed. Type <user>'s password, then press Enter to unlock.") and runs i3lock, or swaylock on sway, with it. The power menu's Lock, the idle lock and `tvwcs lock` use it. TVWCS's own i3 session config runs xss-lock with `tvwcs lock --nofork`. When the screen saver sees the screen turned off, it leaves a flag in `$XDG_RUNTIME_DIR`; the next lock then turns the screen off again instead of showing the saver, and a finished lock clears the flag. A desktop session's lock screen is never changed.
 
 ## Settings app
 
-A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Options, Features, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network, Storage. Each page is also a `.desktop` action, so it can be a channel or favorite.
+A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Appearance, User, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Apps, Software updates, System information, Terminal, Network, Storage. Each page is also a `.desktop` action, so it can be a channel or favorite.
 
 It drives standard tools rather than services: `pactl` (PipeWire/PulseAudio), `xrandr` or `swaymsg`, `bluetoothctl`, `nmcli` (read-only `ip` fallback), `timedatectl`, apt plus Flatpak, OpenSSH via `systemctl`, and VTE for the terminal. A page whose tool is missing says what to install. Changes TVWCS needs to know about are sent with `tvwcs reload`.
 
-**Features** (`features.py`): the parts that need extra software (sound, Bluetooth, network, storage, terminal, Flathub apps, screen saver, screen saver when locked, hiding the pointer) can be turned off. A page whose feature is off only offers to turn it on, and its Quick Menu icon is hidden. Turning one on installs its packages with apt; turning one off can uninstall them with `apt-get remove`, only after `apt-get -s remove` shows nothing else would go, and never packages TVWCS itself or another feature that is on needs.
+**Software a page needs** (`features.py`): a page whose software is missing (sound, Bluetooth, terminal, Flatpak, the screen saver, network shares) offers to install it with apt; there is no on/off switch, and its Quick Menu icon is hidden until it is installed.
 
 ## Supported systems
 
@@ -132,12 +132,16 @@ Debian and its family (apt), with systemd. Support for Arch, Fedora, Void, Alpin
 
 ## Installer
 
-`scripts/install.sh` (POSIX sh) copies the program to `~/.local/share/tvwcs`, adds the Settings launcher, and sets up the window manager. It first asks for the setup, saved in `~/.config/tvwcs/setup`:
+`install.sh` (POSIX sh, at the repository root) works on its own (`wget -qO- …/main/install.sh | bash`, then it downloads the chosen release) or from an unpacked release (it then offers that release, or another). It asks everything first and changes nothing until the list of what it will do is accepted; a failure undoes what it had done. It:
 
-- **dedicated:** adds `include ~/.local/share/tvwcs/tvwcs.conf` to the user's i3/sway config (or creates one from the standard template), and, with no display manager, offers automatic login on tty1 (a systemd getty drop-in plus marked lines in the shell's login file that run `startx` or `sway`).
-- **alongside:** writes `~/.config/tvwcs/<wm>-session.conf` (template plus the include line) and login screen entries `tvwcs-i3.desktop` / `tvwcs-sway.desktop` that run `/usr/local/bin/tvwcs-session <wm>`. The wrapper exports `TVWCS_SESSION` and `TVWCS_SESSION_CONFIG` so TVWCS knows which config is its own. It never sets up automatic login. Adding the include line to the usual config is optional (default no).
+- with TVWCS installed, offers upgrade, a different version (the prerelease, or one of the two releases before the latest) or remove;
+- asks i3, sway or both (sway suggested on a new computer);
+- installs TVWCS's own login screen when there is none, or offers it beside another one, warning when that one (such as LightDM) can't start sway reliably;
+- always writes TVWCS's own sessions (`tvwcs-i3.desktop` / `tvwcs-sway.desktop`, running `/usr/local/bin/tvwcs-session <wm>`, which exports `TVWCS_SESSION`): that is TV mode. Adding the include line to the usual i3/sway config, desktop mode, is asked, and a missing config can be created;
+- lists the packages it needs by what they are for, and records the ones it installed in `~/.config/tvwcs/installed-packages` so Remove can offer them to `apt autoremove`;
+- on an upgrade from 3.x, cleans up what earlier versions set up (`~/.config/tvwcs/setup` and the 3.x lock screen's xss-lock line in the usual i3 config) and says what changed; settings that are gone (the features list, the TV/desktop choice) are dropped from `config.json` when TVWCS starts.
 
-On a first install it asks for everything or a minimal install (`TVWCS_INSTALL`); a minimal one skips the features' packages and turns off the features whose software is missing (`python3 -m tvwcs.features minimal`). Later runs, and `--missing`, leave out the packages of features that are off. It also installs missing packages (including an icon theme and Open Sans), offers i3 or sway when neither is installed, offers the power sudo rule, asks TV or desktop, restarts a running TVWCS and migrates installs from `~/.config/i3/tvwcs` (2.6 and older). Every change to a user file is asked first and backed up as `<file>.tvwcs-backup`. Environment variables are listed at the top of the script.
+Without a terminal (the in-app updater) it only upgrades the program in place. Every change to a user file is backed up as `<file>.tvwcs-backup`. Options and environment variables are listed at the top of the script.
 
 ## Where things live
 
@@ -148,7 +152,7 @@ On a first install it asks for everything or a minimal install (`TVWCS_INSTALL`)
 | User data and settings | `~/.config/tvwcs/config.json` |
 | Hotkeys, written by TVWCS | `~/.config/tvwcs/hotkeys.conf` |
 | Kept display settings | `~/.config/tvwcs/displays.json` (i3's scale also in `~/.Xresources` and `~/.config/tvwcs/xsettingsd.conf`) |
-| TVWCS's own session configs (alongside) | `~/.config/tvwcs/<wm>-session.conf` |
+| TVWCS's own session configs (TV mode) | `~/.config/tvwcs/<wm>-session.conf` |
 | PID file and per-session files | `$XDG_RUNTIME_DIR` |
 
 User data is kept apart from the program so upgrades never touch it. TVWCS recognises its own windows by the exact title `TVWCS` or the prefix `TVWCS · `.

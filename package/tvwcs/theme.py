@@ -12,6 +12,7 @@ window.tvwcs-window, .tvwcs-root { background: @BG@; color: @FG@; font-family: "
 .muted { color: @MUTED@; font-size: 14px; }
 .section-title { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: @ACCENT@; margin-top: 12px; margin-bottom: 2px; }
 .channel-number { font-weight: 700; color: @ACCENT@; }
+.favorite-mark { color: @ACCENT@; }
 .child-marker { color: @FAINT@; font-size: 22px; }
 button { min-height: 44px; min-width: 44px; padding: 0 14px; border: none; border-radius: 0; background: @RAISED@; background-image: none; color: @FG@; box-shadow: none; text-shadow: none; font-size: 15px; }
 window.pointer button:hover { background: @HOVER@; }
@@ -52,7 +53,6 @@ entry:focus-within text, entry:focus-within image { color: #000000; }
 .modal-scrim { background: @SCRIM@; }
 .modal-card { background: @CARD@; padding: 22px; border: 2px solid @ACCENT@; border-radius: 0; }
 .error { color: @ERROR@; }
-popover.focus-tip > contents, popover.focus-tip contents { background: #f2f2f2; color: #000000; border: 1px solid @ACCENT@; padding: 6px 10px; font-size: 14px; }
 popover > contents, popover contents { background: @CARD@; color: @FG@; border: 2px solid @ACCENT@; border-radius: 0; box-shadow: none; padding: 6px; }
 scrollbar slider { background: #6e6e6e; border-radius: 0; min-width: 8px; min-height: 8px; }
 scrollbar trough { background: transparent; border-radius: 0; }
@@ -65,8 +65,8 @@ button.clock-button, button.status-icon { background: transparent; }
 button.clock-button { padding: 4px 8px; }
 window.pointer button.clock-button:hover, window.pointer button.status-icon:hover { background: @RAISED@; }
 button.clock-button:focus, button.clock-button:focus-visible, button.status-icon:focus, button.status-icon:focus-visible { background: @ACCENT@; outline: 3px solid #ffffff; outline-offset: -3px; }
-.clock-time { font-size: 30px; font-weight: 200; }
-.clock-date { color: @MUTED@; font-size: 13px; }
+.clock-time { font-size: 22px; font-weight: 300; }
+.clock-date { color: @MUTED@; font-size: 12px; }
 button:focus .clock-date { color: #ffffff; }
 button.status-wide { padding: 0 8px; }
 .status-count { font-size: 14px; font-weight: 700; }
@@ -74,6 +74,9 @@ button.status-off { color: @FAINT@; }
 /* the Quick Menu's channel hint and the "Starting …" card */
 .channel-hint { color: @MUTED@; font-size: 15px; }
 entry.channel-entry { font-size: 24px; }
+entry.tv-search { border-color: @RAISED@; }
+entry.tv-search > image { -gtk-icon-size: 0; min-width: 0; margin: 0; padding: 0; opacity: 0; }
+entry.tv-search text placeholder { color: @ACCENT@; opacity: 1; }
 .digit-box { min-width: 56px; min-height: 64px; font-size: 34px; font-weight: 300; background: @RAISED@; border: 2px solid @BORDER@; }
 .digit-box.current { border-color: @ACCENT@; }
 button.menu-item { padding: 0 16px; }
@@ -89,7 +92,7 @@ button.menu-item { padding: 0 16px; }
 .status-panel scale slider { background: @FG@; border: none; border-radius: 0; min-width: 12px; min-height: 20px; margin: -6px 0; box-shadow: none; }
 """
 
-# The two looks (Settings > Options > Appearance). The selection stays a solid accent block with white text in both.
+# The two looks (Settings > Appearance > Theme). The selection stays a solid accent block with white text in both.
 PALETTES={
     "dark":{"BG":"#000000","FG":"#ffffff","PANE":"#1b1b1b","RAISED":"#2d2d2d","HOVER":"#3f3f3f","HEADER":"#262626","CARD":"#262626",
             "STATUS":"#141414","MUTED":"#b5b5b5","FAINT":"#7d7d7d","BORDER":"#5a5a5a","LINE":"#333333","SCRIM":"rgba(0, 0, 0, 0.78)",

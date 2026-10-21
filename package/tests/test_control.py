@@ -127,6 +127,8 @@ class SoundTests(unittest.TestCase):
         self.assertEqual([sound.stepped(v,1) for v in (0,47,45,98,100)],[5,50,50,100,100])
         self.assertEqual([sound.stepped(v,-1) for v in (0,3,47,45,100)],[0,0,45,40,95])
         self.assertEqual([sound.stepped(110,-1),sound.stepped(110,1),sound.stepped(112,-1)],[105,110,110])   # above 100 %: down from there
+        self.assertEqual([sound.stepped(100,1,boost=True),sound.stepped(150,1,boost=True)],[105,150])   # over-amplification: up to 150 %
+        self.assertEqual(sound.top(),100); self.assertEqual(sound.top(True),150)
     def test_stream_indexes(self):
         self.assertEqual(sound.parse_short_streams("12\t52\t83\tPipeWire\ts16le\n15\t52\t90\n"),[12,15])
 

@@ -1,5 +1,6 @@
-"""TVWCS's lock screen (Settings > Power and sleep > Lock screen): i3lock, or swaylock on sway, showing a picture in
-TVWCS's style that says the computer is locked and how to unlock it.
+"""TVWCS's lock screen: i3lock, or swaylock on sway, showing a picture in TVWCS's style that says the computer is
+locked and how to unlock it. A TVWCS session (TV mode) always locks with it; a desktop session's own locker is left
+alone. With the screen saver shown when locked (X11), xsecurelock locks instead and runs TVWCS's screen saver.
 
 TVWCS does not draw the lock itself: a screen locker must grab the keyboard and keep the screen covered even if it
 crashes, which i3lock and swaylock are built for. TVWCS only paints the picture they show (`tvwcs lock` renders it with
@@ -28,9 +29,7 @@ def saver_lock(settings, env=None, which=shutil.which):
     locks, runs TVWCS's screen saver, and shows its password box when a key is pressed. X11 only: True when chosen
     and xsecurelock is installed."""
     env=os.environ if env is None else env
-    from tvwcs.features import enabled
-    return (bool((settings or {}).get("screensaver_on_lock")) and enabled(settings or {},"lock_saver") and not _sway(env)
-            and bool(which("xsecurelock")))
+    return bool((settings or {}).get("screensaver_on_lock")) and not _sway(env) and bool(which("xsecurelock"))
 
 AUTH_TIMEOUT=60   # seconds the password box waits for a key before the screen saver comes back
 def xsecurelock_env(settings, saver, accent=None):
@@ -50,10 +49,12 @@ def launcher():
     return "tvwcs"
 
 def command(settings, env=None, which=shutil.which):
-    """`tvwcs lock` when the TVWCS lock screen is chosen and its locker is installed, else None (the usual locker is used)."""
-    if saver_lock(settings,env,which): return [launcher(),"lock"]
-    if not (settings or {}).get("tvwcs_lock_screen") or not available(env,which): return None
-    return [launcher(),"lock"]
+    """`tvwcs lock` in TV mode (a TVWCS session) when its locker is installed, else None (the desktop's usual locker)."""
+    from tvwcs.model import tv_mode
+    env=os.environ if env is None else env
+    if not tv_mode(env): return None
+    if saver_lock(settings,env,which) or available(env,which): return [launcher(),"lock"]
+    return None
 
 def locker_argv(locker, images, color=BACKGROUND[1:], nofork=False):
     """The locker's command line. `images` is [(output name, png path)] for swaylock, or [("", one png for the whole
@@ -137,7 +138,7 @@ def lock(settings=None, env=None, nofork=False):
     env=os.environ if env is None else env; settings=settings or {}
     if saver_lock(settings,env):   # the screen saver while locked; xsecurelock stays in the foreground until unlocked
         from tvwcs import screensaver
-        saver=screensaver.saver_script(launcher(),env)
+        saver=screensaver.saver_script(launcher(),env); screensaver.clear_screen_off(env)
         if saver:
             os.execvpe("xsecurelock",["xsecurelock"],{**env,**xsecurelock_env(settings,saver)})
     locker=available(env)

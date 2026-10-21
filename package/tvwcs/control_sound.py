@@ -13,8 +13,9 @@ from dataclasses import dataclass, field
 from tvwcs.control_cmd import have, key_values, run
 
 VOLUME_STEP=5      # percent per press of − / +
-MAX_VOLUME=100     # pactl allows more (amplified, distorting); − and + stop at 100 %, or where it already is above that
-LOUDEST=150        # the most a volume is ever set to
+MAX_VOLUME=100     # pactl allows more (amplified, distorting): capped here unless Settings > Sound > Over-amplification is on
+LOUDEST=150        # the most a volume is ever set to, with over-amplification on
+def top(boost=False): return LOUDEST if boost else MAX_VOLUME
 
 @dataclass
 class Port:
@@ -188,14 +189,14 @@ def read_state():
     return SoundState(True,"",server_label(server),parse_devices(sinks.out,"sink"),inputs,default_sink,default_source,
                       other_outputs(parse_cards(cards.out)),count_alsa_cards())
 
-def stepped(volume, step):
-    """The next volume a − / + press lands on: a multiple of VOLUME_STEP, within 0..MAX_VOLUME. A volume already
-    above MAX_VOLUME (set by another program) goes down from where it is, not straight to MAX_VOLUME."""
+def stepped(volume, step, boost=False):
+    """The next volume a − / + press lands on: a multiple of VOLUME_STEP, within 0..100 % (150 % with
+    over-amplification, `boost`). A volume already above that (set by another program) goes down from where it is."""
     target=(volume//VOLUME_STEP+1)*VOLUME_STEP if step>0 else max(0,volume-1)//VOLUME_STEP*VOLUME_STEP
-    return max(0,min(max(MAX_VOLUME,volume),target))
+    return max(0,min(max(top(boost),volume),target))
 
-def set_volume(device, percent):
-    return run(["pactl",f"set-{device.kind}-volume",device.name,f"{max(0,min(LOUDEST,int(percent)))}%"],timeout=5)
+def set_volume(device, percent, boost=False):
+    return run(["pactl",f"set-{device.kind}-volume",device.name,f"{max(0,min(top(boost),int(percent)))}%"],timeout=5)
 
 def set_muted(device, muted):
     return run(["pactl",f"set-{device.kind}-mute",device.name,"1" if muted else "0"],timeout=5)

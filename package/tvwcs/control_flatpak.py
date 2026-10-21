@@ -4,7 +4,7 @@ The catalog is the Flathub appstream file that flatpak itself downloads (with th
 so nothing here talks to the network: `flatpak update --appstream` fetches a fresh one. Apps are installed for this
 user (`flatpak install --user`), which needs no password; an app someone installed system-wide is removed as root."""
 from __future__ import annotations
-import gzip, os, platform, xml.etree.ElementTree as ET
+import gzip, os, platform, re, xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -65,6 +65,41 @@ def parse_remotes(text):
         if "disabled" in options: continue
         found.setdefault(cols[0].strip(),set()).update(options & {"user","system"} or {"system"})
     return found
+
+@dataclass(frozen=True)
+class Remote:
+    name: str
+    installation: str = "user"   # "user" or "system"
+    enabled: bool = True
+    url: str = ""
+
+def parse_remote_list(text):
+    """`flatpak remotes --show-disabled --columns=name,options,url`: every repository, disabled ones too."""
+    found=[]
+    for line in text.splitlines():
+        cols=line.split("\t") if "\t" in line else line.split()
+        if not cols or not cols[0].strip() or cols[0].strip()=="Name": continue
+        options={o.strip() for o in (cols[1] if len(cols)>1 else "").split(",") if o.strip()}
+        found.append(Remote(cols[0].strip(),"user" if "user" in options else "system","disabled" not in options,cols[2].strip() if len(cols)>2 else ""))
+    return found
+
+def remote_name(url):
+    """A name for a repository added by its address: 'https://dl.example.org/repo/example.flatpakrepo' -> 'example'."""
+    base=url.rstrip("/").rsplit("/",1)[-1]
+    base=re.sub(r"\.flatpakrepo$","",base,flags=re.I)
+    name=re.sub(r"[^A-Za-z0-9_-]+","-",base).strip("-").lower()
+    return name or "repository"
+
+def add_remote_argv(url): return ["flatpak","remote-add","--user","--if-not-exists",remote_name(url),url]
+def enable_remote_argv(remote, on):
+    return ["flatpak","remote-modify",f"--{remote.installation}","--enable" if on else "--disable",remote.name],remote.installation=="system"
+def delete_remote_argv(remote):
+    return ["flatpak","remote-delete",f"--{remote.installation}","--force",remote.name],remote.installation=="system"
+def uninstall_all_steps(installed):
+    """Every Flatpak app and runtime: this user's, then (as root) the system's when it has any apps."""
+    steps=[(["flatpak","uninstall","--user","--all","-y","--noninteractive"],False)]
+    if any(i.installation=="system" for i in installed): steps.append((["flatpak","uninstall","--system","--all","-y","--noninteractive"],True))
+    return steps
 
 def parse_installed(text):
     """`flatpak list --app --columns=application,name,version,installation` (tab separated)."""
@@ -220,9 +255,10 @@ class AppsState:
     catalog: Catalog | None = None
     installed: list = field(default_factory=list)
     problem: str = ""
+    remotes: list = field(default_factory=list)    # every repository (Remote), for the Apps settings
     def is_installed(self, app_id): return next((i for i in self.installed if i.id==app_id),None)
     def __eq__(self, other):
-        return isinstance(other,AppsState) and (self.flatpak,self.remote,self.catalog,self.installed,self.problem)==(other.flatpak,other.remote,other.catalog,other.installed,other.problem)
+        return isinstance(other,AppsState) and (self.flatpak,self.remote,self.catalog,self.installed,self.problem,self.remotes)==(other.flatpak,other.remote,other.catalog,other.installed,other.problem,other.remotes)
 
 def read_state(env=None):
     if not have("flatpak"): return AppsState(False)
@@ -230,6 +266,8 @@ def read_state(env=None):
     r=run(["flatpak","remotes","--columns=name,options"],timeout=15)
     if r.ok: state.remote=parse_remotes(r.out).get(REMOTE,set())
     else: state.problem=r.message
+    r=run(["flatpak","remotes","--show-disabled","--columns=name,options,url"],timeout=15)
+    if r.ok: state.remotes=parse_remote_list(r.out)
     r=run(["flatpak","list","--app","--columns=application,name,version,installation"],timeout=30)
     if r.ok: state.installed=parse_installed(r.out)
     elif not state.problem: state.problem=r.message

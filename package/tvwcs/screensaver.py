@@ -161,7 +161,9 @@ def run_in_window(settings, window_id, stop=None):
     """`tvwcs screensaver --xsecurelock`: xsecurelock runs this as its saver while the computer is locked (Settings >
     Power and sleep > Show the screen saver when locked). It draws into the window xsecurelock made for each monitor
     (XSCREENSAVER_WINDOW) through Xlib, since GTK cannot draw in another program's window. xsecurelock stops it when a
-    key is pressed (and shows its password box), and when the screen turns off."""
+    key is pressed (and shows its password box, its lock screen), and starts it again after a minute without input
+there. Once the screen has turned off ("Turn off the screen after"), it is not shown again until the next lock: the
+password box timing out turns the screen off instead."""
     import ctypes, ctypes.util, math, time, cairo
     x11=ctypes.cdll.LoadLibrary(ctypes.util.find_library("X11") or "libX11.so.6")
     x11.XOpenDisplay.restype=ctypes.c_void_p; x11.XOpenDisplay.argtypes=[ctypes.c_char_p]
@@ -194,13 +196,40 @@ def run_in_window(settings, window_id, stop=None):
     image=x11.XCreateImage(dpy,x11.XDefaultVisual(dpy,x11.XDefaultScreen(dpy)),depth.value,2,0,ctypes.addressof(buffer),w+2*pad,h+2*pad,32,stride)   # 2: ZPixmap
     x=random.uniform(0,max(1,width-w)); y=random.uniform(0,max(1,height-h)); dx=random.choice((speed,-speed)); dy=random.choice((speed,-speed))
     colour=COLOURS[0]; stop=stop or (lambda:False)
+    # Once the screen has turned off while locked, the screen saver does not come back: when the password box times
+    # out (xsecurelock then starts this again), the screen goes straight back off.
+    if screen_went_off():
+        force_screen_off()
+        while not stop(): time.sleep(0.5)
+        return 0
+    checked=time.monotonic()
     while not stop():
+        if time.monotonic()-checked>=1:
+            checked=time.monotonic()
+            if screen_off():
+                mark_screen_off()
+                while not stop(): time.sleep(0.5)
+                return 0
         x,y,dx,dy,bounced=step(x,y,dx,dy,w,h,width,height)
         if bounced: colour=next_colour(colour)
         cr=cairo.Context(surface); cr.set_source_rgb(0,0,0); cr.paint(); cr.translate(pad,pad); paint_logo(cr,kind,w,h,colour,picture); surface.flush()
         x11.XPutImage(dpy,window_id,gc,image,0,0,round(x)-pad,round(y)-pad,w+2*pad,h+2*pad); x11.XFlush(dpy)
         time.sleep(FRAME_MS/1000)
     return 0
+
+OFF_NAME="tvwcs-lock-screen-off"   # in the runtime directory while locked: the screen has turned off since locking
+def mark_screen_off(env=None):
+    try: (runtime_dir(env)/OFF_NAME).touch()
+    except OSError: pass
+def screen_went_off(env=None): return (runtime_dir(env)/OFF_NAME).exists()
+def clear_screen_off(env=None):
+    """A new lock starts with the screen saver."""
+    try: (runtime_dir(env)/OFF_NAME).unlink(missing_ok=True)
+    except OSError: pass
+def force_screen_off():
+    import subprocess
+    try: subprocess.run(["xset","dpms","force","off"],timeout=5,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    except (OSError,subprocess.SubprocessError): pass
 
 def saver_script(launcher, env=None):
     """The program xsecurelock runs as its saver (XSECURELOCK_SAVER takes a program, not a command line): a small

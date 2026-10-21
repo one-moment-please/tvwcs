@@ -6,7 +6,6 @@ from pathlib import Path
 
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_LABELS, assigned, clean_hotkeys, valid_spec
 from tvwcs.pinlock import valid_hash
-from tvwcs.features import clean as clean_features
 from tvwcs.power import clean_critical, clean_idle
 
 CONFIG_HOME=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))
@@ -16,6 +15,7 @@ DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"
 LAUNCH_SAME="same"                  # tile alongside whatever is on the current workspace
 LAUNCH_NEW_WORKSPACE="new_workspace"  # always get a workspace of its own
 LAUNCH_MODES=(LAUNCH_SAME,LAUNCH_NEW_WORKSPACE)
+LAUNCH_PLAIN="plain"                # desktop mode: as i3 / sway places it (opened where it opens, focused where it is)
 
 # TVWCS's own windows are recognised by title. The prefix is deliberately unusual: a document called
 # "tvwcs notes" in a text editor must never be mistaken for one of them (it would vanish from Open applications).
@@ -24,8 +24,25 @@ DIALOG_PREFIX="TVWCS · "
 def is_tvwcs_title(title: str) -> bool:
     return title==MAIN_TITLE or (title or "").startswith(DIALOG_PREFIX)
 
+# TV mode and desktop mode. TVWCS runs in TV mode in a TVWCS session (the login screen's "TVWCS (i3)" / "TVWCS (sway)",
+# whose tvwcs-session wrapper exports TVWCS_SESSION), and in desktop mode in any other session (TVWCS included in the
+# usual i3 / sway config). In TV mode apps open full screen in workspaces of their own, the bar is hidden, the Quick Menu
+# stays open while nothing is, the mouse pointer hides when it rests and TVWCS's lock screen is used. In desktop mode
+# i3 / sway place apps as they always do and TVWCS changes nothing about the bar, the pointer or locking.
+# TVWCS_MODE=tv|desktop overrides it (for trying one mode in the other's session, and for the tests).
+def tv_mode(env=None) -> bool:
+    env=os.environ if env is None else env
+    forced=env.get("TVWCS_MODE")
+    if forced in ("tv","desktop"): return forced=="tv"
+    return bool(env.get("TVWCS_SESSION"))
+
 SCALE_PRESETS={"desktop":1.0,"tenfoot":1.6,"tenfoot_4k":3.0}
 SCALE_LABELS={"desktop":"Desktop","tenfoot":"TV Mode","tenfoot_4k":"4K TV Mode"}
+AUTO_SCALE={True:"tenfoot",False:"desktop"}   # the interface size when none is chosen ("scale": ""): by the mode
+def scale_key(settings, tv=None) -> str:
+    """The interface size in use: the one chosen, else TV Mode in TV mode and Desktop in desktop mode."""
+    key=settings.get("scale") or ""
+    return key if key in SCALE_PRESETS else AUTO_SCALE[tv_mode() if tv is None else tv]
 # The screen height each TV size is drawn for. On a smaller screen (a 720p TV) it shrinks to fit, never below Desktop.
 SCALE_DESIGN_HEIGHT={"tenfoot":1080,"tenfoot_4k":2160}
 def effective_scale(key, screen_height=0) -> float:
@@ -35,98 +52,64 @@ def effective_scale(key, screen_height=0) -> float:
     return scale
 UHD_SCALES=("tenfoot_4k",)   # only offered when a 4K (3840×2160) or larger display is connected
 
-def scale_choices(current, has_4k_display):
-    """The interface sizes to offer: 4K TV Mode needs a 4K display, unless it is the one already chosen."""
-    return [(k,v) for k,v in SCALE_LABELS.items() if has_4k_display or k not in UHD_SCALES or k==current]
+def scale_choices(current, has_4k_display, tv=None):
+    """The interface sizes to offer: Automatic (by the mode), then the sizes; 4K TV Mode needs a 4K display, unless it
+    is the one already chosen."""
+    auto=SCALE_LABELS[AUTO_SCALE[tv_mode() if tv is None else tv]]
+    return [("",f"Automatic ({auto} in this mode)")]+[(k,v) for k,v in SCALE_LABELS.items() if has_4k_display or k not in UHD_SCALES or k==current]
 
 def is_4k(width, height) -> bool:
     return max(width,height)>=3840 and min(width,height)>=2160
-STARTUP_MODES=("none","menu","last","app")
-STARTUP_LABELS={"none":"None","menu":"TVWCS Quick Menu","last":"Last application","app":"Chosen application"}
+STARTUP_MODES=("none","last","app")
+STARTUP_LABELS={"none":"None","last":"Last application","app":"Chosen application"}
 
-# How TVWCS is used, asked by install.sh and changeable in Settings > Options: it sets the interface size and where
-# apps open (TV: each in a workspace of its own, full screen; desktop: tiled beside what is open). "" = never chosen.
-USES={"tv":"TV","desktop":"Desktop"}
-def apply_use(settings, use):
-    if use not in USES: raise ValueError(f"Unknown use: {use}")
-    settings["use"]=use; tv=use=="tv"
-    if tv and settings["scale"]=="desktop": settings["scale"]="tenfoot"
-    if not tv: settings["scale"]="desktop"
-    set_apps_open(settings,"fullscreen" if tv else "side")
-    if tv: settings["button_hints"]=True   # icon-only buttons explain themselves: no hovering mouse on a sofa
-    settings["cursor_hide"]=None   # the pointer hides as suits the use: on a TV, not at a desk
-
-# "Where apps open" in Settings > Options: one choice over the two keys TVWCS reads (main.launch_mode / window_mode).
-# always_new_workspace overrides everything. With both off, apps_open says whether apps always tile ("side") or follow
-# each profile's own setting ("profile", what TVWCS did before 3.0, so it is the default for an older config file).
-APPS_OPEN={"fullscreen":"Full screen, one per workspace","side":"Side by side","profile":"As each app's profile says"}
-def apps_open(settings) -> str:
-    if settings.get("always_new_workspace"): return "fullscreen"
-    if settings.get("open_in_new_workspace"): return "profile"   # the old "open running apps in a new workspace" alone
-    return "side" if settings.get("apps_open")=="side" else "profile"
-def set_apps_open(settings, choice):
-    if choice not in APPS_OPEN: raise ValueError(f"Unknown choice: {choice}")
-    settings["always_new_workspace"]=settings["open_in_new_workspace"]=choice=="fullscreen"; settings["apps_open"]=choice
-
-# Settings > Options > Accent colour: the Metro colours of widgets.METRO_COLORS, by name (a hand-set colour keeps its hex).
+# Settings > Appearance > Accent colour: the Metro colours of widgets.METRO_COLORS, by name (a hand-set colour keeps its hex).
 ACCENT_NAMES={"#0078d7":"Blue","#e81123":"Red","#00b294":"Teal","#ff8c00":"Orange","#881798":"Purple","#107c10":"Green",
               "#ea005e":"Magenta","#6b69d6":"Iris","#00cc6a":"Mint","#c239b3":"Orchid"}
 def accent_name(colour) -> str: return ACCENT_NAMES.get((colour or "").lower(),colour or "")
-# Settings > Options > Screen edge margin, in px at desktop scale: many TVs crop the picture's edges (overscan).
-MARGIN_CHOICES=(0,10,20,40,60,80)
+# Settings > Appearance > Screen edge margin, in px at desktop scale: many TVs crop the picture's edges (overscan).
+MARGIN_RANGE=(0,120)
 # Channels run from 000 to 999. Channel 000 goes to TVWCS's own Settings app, once, on a new or updated install.
 CHANNEL_MIN,CHANNEL_MAX=0,999
 SETTINGS_DESKTOP_ID="com.tvwcs.ControlPanel.desktop"
-# Settings > Options > Appearance: TVWCS's light or dark look; applications that follow the desktop's colour scheme follow it.
+# Settings > Appearance > Theme: TVWCS's light or dark look; applications that follow the desktop's colour scheme follow it.
 THEMES={"dark":"Dark","light":"Light"}
-# Settings > Options > Background colour: what shows where no application is open, and behind the Quick Menu.
+# Settings > Appearance > Background colour: what shows where no application is open, and behind the Quick Menu.
 # Six greys from white to black, six bright colours and the same six darkened. Shown as swatches without names.
 WALLPAPER_GREYS=("#ffffff","#c8c8c8","#969696","#646464","#323232","#000000")
 WALLPAPER_COLOURS=("#e81123","#ff8c00","#ffd800","#107c10","#0078d7","#881798")
 WALLPAPER_DARK=("#740912","#804600","#806c00","#083e08","#003c6c","#440c4c")
 WALLPAPERS=WALLPAPER_GREYS+WALLPAPER_COLOURS+WALLPAPER_DARK
 DEFAULT_WALLPAPER="#323232"   # dark grey
-# The on-screen keyboard for passwords: the full keyboard, or a number pad for a password of digits only.
-PASSWORD_KEYBOARDS={"full":"Full keyboard","digits":"Number pad"}
+# The on-screen keyboard: hidden (a button shows it), the full keyboard, or a number pad. The one last used comes back.
+KEYBOARDS={"hidden":"Hidden","full":"Full keyboard","digits":"Number pad"}
 # Settings > Power and sleep > Screen saver: the bouncing logo.
 SCREENSAVER_LOGOS={"dvd":"The DVD Video logo","tvwcs":"The TVWCS logo","image":"A picture of your own"}
 
-def key_hints(use) -> str:
+def key_hints(tv) -> str:
     """The Settings app's footer: a remote's key is called Back, a keyboard's Esc."""
-    back="Back" if use=="tv" else "Esc"
-    return f"↑ ↓ ← →  Navigate    {'OK' if use=='tv' else 'Enter'}  Select\n{back}  Go back"
+    back="Back" if tv else "Esc"
+    return f"↑ ↓ ← →  Navigate    {'OK' if tv else 'Enter'}  Select\n{back}  Go back"
 
 DEFAULT_SETTINGS={
-    "margin":20,                    # px (at desktop scale) between the panels and the edges of the usable workspace
+    "margin":0,                     # px (at desktop scale) between the panels and the edges of the usable workspace
     "quick_width":460,              # px (at desktop scale) width of the Quick Menu; the Settings panel matches it
     "accent":"#0078d7",             # Metro accent colour
-    "lock_command":"",              # empty = auto-detect a screen locker
-    "use":"",                       # "tv" or "desktop" (see USES), "" until chosen
-    "scale":"desktop",              # key of SCALE_PRESETS
-    "close_on_click_outside":False, # hide TVWCS when another window takes focus
-    "open_in_new_workspace":False,  # selecting an open app gives it its own workspace instead of tiling it here
-    "always_new_workspace":False,   # every app, launched or already open, opens in a workspace of its own
-    "hide_options_buttons":False,   # fold the ☰ options buttons away; right-click (or ←) still opens each row's options
-    "button_hints":False,           # show an icon-only button's tooltip after it has been selected for a few seconds
-    "quick_close_button":True,      # the Quick Menu's ✕ button (Esc and Back close it too)
+    "lock_command":"",              # empty = auto-detect a screen locker (desktop mode; TV mode uses TVWCS's lock screen)
+    "scale":"",                     # key of SCALE_PRESETS, or "" for the mode's own size (scale_key)
+    "close_on_click_outside":True,  # close TVWCS when it loses focus (another window takes it)
     "update_prereleases":False,     # TVWCS's updater also offers prereleases (releases not yet tested and marked latest)
     "clock_24h":False,              # the Quick Menu's clock shows 14:05 instead of 2:05 PM
-    "tv_hide_bar":True,             # TV mode: hide the i3 / sway bar (the Quick Menu shows the time and status instead)
-    "tv_keep_menu_open":True,       # TV mode: keep the Quick Menu on screen while no application is open
-    "apps_open":"profile",          # Where apps open (APPS_OPEN); always_new_workspace above still wins
-    "reduce_motion":False,          # no animated transitions (slow TV boxes)
     "theme":"dark",                 # THEMES: TVWCS's look, passed on to applications that follow the desktop's colour scheme
     "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
-    "password_keyboard":"full",     # PASSWORD_KEYBOARDS: what a password dialog opens with: the one last used (it can switch to the other)
-    "screensaver_logo":"dvd",       # SCREENSAVER_LOGOS
+    "keyboard":"hidden",            # KEYBOARDS: the on-screen keyboard as it was last left (hidden, full or the number pad)
+    "screensaver_logo":"tvwcs",     # SCREENSAVER_LOGOS
     "screensaver_image":"",         # the picture for "image"
+    "screensaver_on_lock":True,     # the screen saver shows while the computer is locked, and the lock screen on a key
     "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
-    "features":{},                  # the features turned off ({key: False}; see features.py), as a minimal install starts
-    "cursor_hide":None,             # hide the mouse pointer when it rests (None: on in TV mode, off at a desk; see cursor.py)
-    "cursor_hide_seconds":3,        # ... after this many seconds without moving
-    "screensaver_on_lock":False,    # locking shows the screen saver until a key is pressed (xsecurelock, X11 only; see lockscreen.py)
-    "tvwcs_lock_screen":False,      # Lock uses TVWCS's own lock screen (i3lock / swaylock with its message), else the system's locker
+    "audio_boost":False,            # Settings > Sound: volumes may go over 100% (else they stop there)
+    "flatpak_unverified":False,     # Settings > Apps: also list Flathub apps whose developer is not verified
     "idle":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
     "idle_battery":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
     "battery_critical":{"action":"shutdown","percent":5},   # what to do when the battery is nearly empty (power.CRITICAL_ACTIONS)
@@ -160,7 +143,7 @@ def _clean_text(value) -> str:
 def _clean_settings(raw) -> dict:
     s=copy.deepcopy(DEFAULT_SETTINGS)
     if not isinstance(raw,dict): return s
-    for key,lo,hi in (("margin",0,200),("quick_width",320,900)):
+    for key,lo,hi in (("margin",*MARGIN_RANGE),("quick_width",320,900)):
         try:
             v=int(raw.get(key,s[key]))
             if lo<=v<=hi: s[key]=v
@@ -169,23 +152,18 @@ def _clean_settings(raw) -> dict:
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
     if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    if raw.get("use") in USES: s["use"]=raw["use"]
-    if raw.get("apps_open") in APPS_OPEN: s["apps_open"]=raw["apps_open"]
+    # Before 4.0, "Used on" (use) set the size along with it: a size that only followed it now follows the mode
+    if raw.get("use") in ("tv","desktop") and raw.get("scale")==AUTO_SCALE[raw["use"]=="tv"]: s["scale"]=""
     if raw.get("theme") in THEMES: s["theme"]=raw["theme"]
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
-    if raw.get("password_keyboard") in PASSWORD_KEYBOARDS: s["password_keyboard"]=raw["password_keyboard"]
+    if raw.get("keyboard") in KEYBOARDS: s["keyboard"]=raw["keyboard"]
     if raw.get("screensaver_logo") in SCREENSAVER_LOGOS: s["screensaver_logo"]=raw["screensaver_logo"]
     if isinstance(raw.get("screensaver_image"),str): s["screensaver_image"]=raw["screensaver_image"].strip()
     shares=raw.get("network_shares")
     if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
-    for key in ("close_on_click_outside","open_in_new_workspace","always_new_workspace","hide_options_buttons","button_hints",
-                "quick_close_button","update_prereleases",
-                "clock_24h","tv_hide_bar","tv_keep_menu_open","tvwcs_lock_screen","screensaver_on_lock","reduce_motion","channel_zero_done"):
+    for key in ("close_on_click_outside","update_prereleases","clock_24h","screensaver_on_lock","channel_zero_done",
+                "audio_boost","flatpak_unverified"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
-    s["features"]=clean_features(raw.get("features"))
-    if isinstance(raw.get("cursor_hide"),bool): s["cursor_hide"]=raw["cursor_hide"]
-    sec=raw.get("cursor_hide_seconds")
-    if isinstance(sec,int) and not isinstance(sec,bool) and 1<=sec<=60: s["cursor_hide_seconds"]=sec
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))
     s["battery_critical"]=clean_critical(raw.get("battery_critical"))
@@ -194,7 +172,6 @@ def _clean_settings(raw) -> dict:
         if st.get("mode") in STARTUP_MODES: s["startup"]["mode"]=st["mode"]
         for key in ("profile_id","last_profile_id"):
             if isinstance(st.get(key),str): s["startup"][key]=st[key]
-        if st.get("show_menu") is True and s["startup"]["mode"]=="none": s["startup"]["mode"]="menu"   # before 2.11 the menu was a separate switch
     return s
 
 # Names TVWCS's own Settings entry had before its .desktop file was renamed (profiles made then still carry them).
@@ -249,6 +226,9 @@ class ConfigStore:
                     p.name=app.name; changed=True
             if app.desktop_id not in known:
                 self.profiles.append(LaunchProfile(str(uuid.uuid4()),app.desktop_id,app.name)); known.add(app.desktop_id); changed=True
+            if app.desktop_id in self.app_descriptions:   # before 4.0 an application had one description: its default profile's now
+                main=default_of(self.for_app(app.desktop_id),app.name); text=self.app_descriptions.pop(app.desktop_id); changed=True
+                if main is not None and not main.description: main.description=text
         if self._give_settings_channel_zero(): changed=True
         if changed: self.save()
     def _give_settings_channel_zero(self):
@@ -453,10 +433,40 @@ def profile_detail(profile, app) -> str:
     return "  ·  ".join(parts)
 
 def row_description(profile, app, primary, app_override="") -> str:
-    """The description shown beside a profile's name. A main profile shows its application's description (the user's
-    override, else the .desktop file's); a secondary profile shows its own override, else its launch options."""
+    """The description shown beside a profile's name: each profile has its own (4.0). Without one, the default
+    profile shows its application's (the .desktop file's), another profile its launch options. `app_override` is the
+    one description per application from before 4.0, for a default profile that has none yet."""
+    if profile.description.strip(): return profile.description.strip()
     if primary: return app_override or ((app.comment or app.generic_name) if app else "") or ""
-    return profile.description.strip() or profile_detail(profile,app)
+    return profile_detail(profile,app)
+
+# ---------------------------------------------------------------- profile names
+DEFAULT_LABEL="Default"   # the default profile's name: never shown, never changed
+def default_of(profiles, app_name):
+    """An application's default profile among its `profiles`: the plain one (no command or desktop action) with the
+    application's name, else the first plain one, else the first."""
+    plain=[p for p in profiles if not p.command and not p.desktop_action]
+    return next((p for p in plain if p.name==app_name),(plain or list(profiles) or [None])[0])
+
+def profile_label(profile, app_name, primary) -> str:
+    """A profile's own name, without the application's: "Default" for the default profile; for a profile named
+    before 4.0 with the application's name in front ("Kodi profile 2"), what follows it."""
+    if primary: return DEFAULT_LABEL
+    name=profile.name.strip()
+    if app_name and name.casefold().startswith(app_name.casefold()+" "): return name[len(app_name)+1:].strip() or name
+    return name
+
+def display_name(profile, app_name, primary) -> str:
+    """The name shown in lists: the application's name, which is never changed, with the profile's name after it
+    (none for the default profile)."""
+    if not app_name: return profile.name
+    return app_name if primary else f"{app_name} {profile_label(profile,app_name,False)}"
+
+def next_label(labels) -> str:
+    """A new profile's name: the first number from 2 that no other profile of the application has."""
+    taken={str(l).strip().casefold() for l in labels}; n=2
+    while str(n) in taken: n+=1
+    return str(n)
 
 def startup_choices(profiles):
     """Applications to offer for 'open at login', most likely first: favorites, then channels, then everything else."""

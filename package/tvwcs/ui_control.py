@@ -18,7 +18,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs import privilege
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
-from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints
+from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints, scale_key, tv_mode
 from tvwcs.theme import render_css
 from tvwcs import cursor
 from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, icon_button, screen_height, scroll_into_view, scroll_to_show, set_scale, usable
@@ -26,9 +26,10 @@ from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, gl
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
 PASSWORD_TRIES=3
-PAGE_FADE_MS=150   # pages cross-fade (unless Options > Reduce motion), so it is clear what changed
+PAGE_FADE_MS=150   # pages cross-fade, so it is clear what changed
 
 CONTROL_CSS="""
+button.big-button { min-height: 64px; font-size: 22px; }
 .tab-column { background: @PANE@; }
 button.tab-button { min-height: 48px; padding: 0 18px; font-size: 18px; font-weight: 300; background: transparent; }
 window.pointer button.tab-button:hover { background: @RAISED@; }
@@ -147,17 +148,17 @@ class ControlWindow(Gtk.ApplicationWindow):
 
     def settings_changed(self, settings):
         """Options saved a change: draw this window with its accent, size, key names and motion too."""
-        app=self.app; scale=effective_scale(settings.get("scale"),screen_height()); resized=scale!=app.scale
-        app.accent=settings.get("accent",app.accent); app.use=settings.get("use",""); app.reduce_motion=bool(settings.get("reduce_motion"))
-        app.theme=settings.get("theme","dark"); app.password_keyboard=settings.get("password_keyboard","full")
+        app=self.app; scale=effective_scale(scale_key(settings),screen_height()); resized=scale!=app.scale
+        app.accent=settings.get("accent",app.accent)
+        app.theme=settings.get("theme","dark"); app.keyboard=settings.get("keyboard","hidden")
         if resized and self._running():   # rebuilding would lose the run's output: the new size waits for the next time
             self._load_css(); self._apply_settings()
             self.notice("Interface size","TVWCS uses the new size now. Settings uses it the next time it opens, once what is running here has finished."); return
         app.scale=scale; self._load_css(); self._apply_settings()
         if resized: GLib.idle_add(lambda:(self._rebuild(),GLib.SOURCE_REMOVE)[1])   # after the dialog that chose it has gone
     def _apply_settings(self):
-        self.footer.set_text(key_hints(self.app.use))
-        self.stack.set_transition_type(Gtk.StackTransitionType.NONE if self.app.reduce_motion else Gtk.StackTransitionType.CROSSFADE)
+        self.footer.set_text(key_hints(tv_mode()))
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
     def _running(self):
         return any(getattr(p,"running",None) for p in self.pages) or any(
             getattr(p,"process",None) is not None and p.process.proc is not None and p.process.proc.poll() is None for p in self.pages)
@@ -238,7 +239,9 @@ class ControlWindow(Gtk.ApplicationWindow):
             label.set_visible(not narrow); b.set_tooltip_text(label.get_text() if narrow else None)
             (b.add_css_class if narrow else b.remove_css_class)("icon-tab")
 
-    def page_by_key(self, key): return next((p for p in self.pages if p.key==key),None)
+    def page_by_key(self, key):
+        key={"options":"appearance","features":"user"}.get(key,key)   # the tabs before 4.0
+        return next((p for p in self.pages if p.key==key),None)
 
     def show_page(self, page):
         """Show a page (its tab is marked) without moving the selection off the tabs."""
@@ -418,7 +421,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         if focus is not None and holder is not self.modal_card: GLib.timeout_add(80,lambda:(scroll_into_view(scroll,focus),GLib.SOURCE_REMOVE)[1])
 
     def choose_swatch(self, title, message, colours, current, callback, per_row=6):
-        """Colours as a grid of squares without names (Options > Background colour); the current one has a ✓.
+        """Colours as a grid of squares without names (Appearance > Background colour); the current one has a ✓.
         The arrows move around the grid, OK chooses."""
         from tvwcs.model import WALLPAPERS
         self._begin_modal(title)
@@ -509,12 +512,14 @@ class ControlWindow(Gtk.ApplicationWindow):
     KEYS={"lower":("1234567890","qwertyuiop","asdfghjkl'","zxcvbnm,.-"),
           "upper":("1234567890","QWERTYUIOP","ASDFGHJKL\"","ZXCVBNM;:_"),
           "symbols":("!@#$%^&*()","`~-_=+[]{}","\\|;:'\",.<>","/?€£¥§°·×÷")}
-    def ask_text(self, title, message, callback, initial="", secret=False, ok_label="OK", back=None, error="", digits=None):
+    def ask_text(self, title, message, callback, initial="", secret=False, ok_label="OK", back=None, error="", digits=None, keyboard=None):
         """Ask for a line of text: typed on a keyboard, or picked letter by letter on the on-screen keyboard with
-        the D-pad. callback(text) runs on OK or Enter; Cancel (or Esc) runs back() or just closes. A password (secret)
-        opens with the keyboard a password was last typed on (Options > Password keyboard; the full one at first), and a
-        key switches between the two, keeping what is typed."""
-        if digits is None: digits=secret and self.app.password_keyboard=="digits"
+        the D-pad. callback(text) runs on OK or Enter; Cancel (or Esc) runs back() or just closes. The on-screen
+        keyboard is hidden, full or a number pad, as it was last left (settings "keyboard", shared with TVWCS), and
+        buttons change between them, keeping what is typed. digits=True offers only the number pad."""
+        only_digits=bool(digits)
+        kind="digits" if only_digits else (keyboard or self.app.keyboard)
+        if kind not in ("hidden","full","digits"): kind="hidden"
         self._begin_modal(title)
         if message: self._message(message)
         if error: self._message(error,"error")
@@ -523,15 +528,14 @@ class ControlWindow(Gtk.ApplicationWindow):
         entry.add_css_class("text-field"); entry.set_text(initial); entry.set_margin_bottom(S(8)); self.modal_card.append(entry)
         cancel_action=back or self.close_modal
         def submit(*_):
-            text=entry.get_text(); self.close_modal()
-            if secret: self._remember_keyboard(digits)
-            callback(text)
-        def switch():
-            typed=entry.get_text(); self.ask_text(title,message,callback,typed,secret,ok_label,back,error,not digits)
+            text=entry.get_text(); self.close_modal(); callback(text)
+        def switch(to):
+            typed=entry.get_text(); self._remember_keyboard(to)
+            self.ask_text(title,message,callback,typed,secret,ok_label,back,error,digits,keyboard=to)
         entry.connect("activate",submit)
-        self._text={"entry":entry,"layer":"lower","keys":[],"digits":digits}
+        self._text={"entry":entry,"layer":"lower","keys":[],"digits":kind=="digits"}
         groups=[NavGroup([entry])]
-        if digits:
+        if kind=="digits":
             for row in (("1","2","3"),("4","5","6"),("7","8","9"),("⌫","0",None)):
                 line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(3)); line.set_homogeneous(True); made=[]
                 for d in row:
@@ -539,7 +543,7 @@ class ControlWindow(Gtk.ApplicationWindow):
                     b=Gtk.Button(label=d); b.add_css_class("key")
                     b.connect("clicked",lambda _b,d=d:self._erase() if d=="⌫" else self._type(d)); line.append(b); made.append(b)
                 self.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
-        else:
+        elif kind=="full":
             for r in range(4):
                 line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(3)); line.set_homogeneous(True); row=[]
                 for c in range(10):
@@ -547,28 +551,29 @@ class ControlWindow(Gtk.ApplicationWindow):
                     line.append(b); row.append(b); self._text["keys"].append((r,c,b))
                 self.modal_card.append(line); g=NavGroup(row); g.column=True; groups.append(g)
         controls=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(3)); controls.set_homogeneous(True); controls.set_margin_top(S(3)); made=[]
-        specs=[] if digits else [("⇧ Shift",lambda:self._layer("upper" if self._text["layer"]!="upper" else "lower")),
-                                 ("&123",lambda:self._layer("symbols" if self._text["layer"]!="symbols" else "lower")),
-                                 ("Space",lambda:self._type(" ")),("⌫",self._erase)]
-        if secret: specs.append(("ABC  Full keyboard" if digits else "123  Number pad",switch))
+        specs=[("⇧ Shift",lambda:self._layer("upper" if self._text["layer"]!="upper" else "lower")),
+               ("&123",lambda:self._layer("symbols" if self._text["layer"]!="symbols" else "lower")),
+               ("Space",lambda:self._type(" ")),("⌫",self._erase)] if kind=="full" else []
+        if kind=="hidden": specs.append(("⌨  Show keyboard",lambda:switch("full")))
+        elif not only_digits:
+            specs.append(("ABC  Full keyboard" if kind=="digits" else "123  Number pad",lambda:switch("full" if kind=="digits" else "digits")))
+            specs.append(("Hide keyboard",lambda:switch("hidden")))
         for label,handler in specs:
             b=Gtk.Button(label=label); b.add_css_class("key"); b.add_css_class("wide"); b.connect("clicked",lambda _b,h=handler:h()); controls.append(b); made.append(b)
         if made: self.modal_card.append(controls); g=NavGroup(made); g.column=True; groups.append(g)
         cancel,ok=self._buttons(("Cancel",cancel_action,None),(ok_label,submit,"active")); groups.append(NavGroup([cancel,ok]))
-        if not digits: self._label_keys()
+        if kind=="full": self._label_keys()
         self._finish_modal(groups,cancel_action,entry)
         # the keyboard rows keep their column when moving up and down; the last row of keys has 4, so it maps 10 -> 4
-    def _remember_keyboard(self, digits):
-        """A password was typed on this keyboard: password dialogs open with it from now on, here and in TVWCS."""
-        kind="digits" if digits else "full"
-        if self.app.password_keyboard==kind: return
-        self.app.password_keyboard=kind
+    def _remember_keyboard(self, kind):
+        """The on-screen keyboard was changed: text dialogs open with it from now on, here and in TVWCS."""
+        if self.app.keyboard==kind: return
+        self.app.keyboard=kind
         try:
-            store=ConfigStore(); store.settings["password_keyboard"]=kind; store.save()
+            store=ConfigStore(); store.settings["keyboard"]=kind; store.save()
         except OSError: return
         from tvwcs.ui_control_pages import tell_tvwcs
         tell_tvwcs("reload")
-        if self.page is not None and self.page.key=="options": self.page.refresh(quiet=True)
     def _label_keys(self):
         layer=self.KEYS[self._text["layer"]]
         for r,c,b in self._text["keys"]: b.set_label(layer[r][c])
@@ -627,9 +632,8 @@ class ControlPanelApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         settings=ConfigStore().settings   # TVWCS's interface size, accent colour, use and motion; Options changes them (settings_changed)
-        self.scale_key=settings.get("scale"); self.scale=SCALE_PRESETS.get(self.scale_key,1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
-        self.use=settings.get("use",""); self.reduce_motion=bool(settings.get("reduce_motion"))
-        self.theme=settings.get("theme","dark"); self.password_keyboard=settings.get("password_keyboard","full")
+        self.scale_key=scale_key(settings); self.scale=SCALE_PRESETS.get(self.scale_key,1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
+        self.theme=settings.get("theme","dark"); self.keyboard=settings.get("keyboard","hidden")
     def do_startup(self):
         Gtk.Application.do_startup(self); self.scale=effective_scale(self.scale_key,screen_height()); set_scale(self.scale)   # fitted to the screen, now there is one
     def do_command_line(self, command_line):
