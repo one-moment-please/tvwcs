@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.5.2 — 2026-10-21
+
+- Settings > Sound folds outputs and inputs with nothing plugged in (an empty headphone jack, an HDMI port without a TV) under one "Not plugged in" row, closed until it is chosen. They can still be tried from there. The output or input in use is always shown.
+- On sway, Settings > Power and sleep no longer offers the screen saver, and swayidle no longer starts it: it was an ordinary fullscreen window there, which took fullscreen away from a video and moved focus. It comes back once it is drawn as an overlay (TODO.md).
+
 ## 3.5.1 — 2026-10-17
 
 - Settings > Network can take over the network of a minimal Debian install. There ifupdown runs the network (/etc/network/interfaces), and NetworkManager will not touch it, so Wi-Fi networks could not be chosen or changed (an install over Wi-Fi) and Ethernet could only be shown. Choosing the "Not managed" Ethernet port or Wi-Fi adapter now offers one button that uninstalls ifupdown, removes /etc/network and restarts NetworkManager, which then manages every port. It warns first that the Wi-Fi network has to be chosen again, and any IP address, gateway or DNS servers set by hand set again. This replaces the earlier Ethernet-only take-over. If uninstalling ifupdown fails, its ports are brought back up.

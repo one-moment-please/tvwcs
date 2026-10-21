@@ -107,6 +107,14 @@ class SoundTests(unittest.TestCase):
         self.assertEqual([(p.name,p.label,p.available) for p in a.ports],
                          [("analog-output-speaker","Speakers",True),("analog-output-headphones","Headphones",False)])
         self.assertEqual((b.muted,b.volume,b.ports),(True,100,[]))
+    def test_devices_with_nothing_plugged_in_fold_away_unless_in_use(self):
+        P=sound.Port
+        speakers=sound.Device("sink",1,"speakers","",0,False,[P("spk","Speakers"),P("hp","Headphones",False)])
+        hdmi=sound.Device("sink",2,"hdmi","",0,False,[P("hdmi","HDMI",False)])
+        virtual=sound.Device("sink",3,"null","",0,False)   # no ports: nothing to say it is unplugged
+        self.assertEqual([d.unplugged for d in (speakers,hdmi,virtual)],[False,True,False])
+        self.assertEqual(sound.split_unplugged([speakers,hdmi,virtual],"speakers"),([speakers,virtual],[hdmi]))
+        self.assertEqual(sound.split_unplugged([speakers,hdmi],"hdmi"),([speakers,hdmi],[]))
     def test_inputs_leave_out_monitors(self):
         sources=sound.parse_devices(SOURCES,"source")
         self.assertEqual([s.is_monitor for s in sources],[True,False])

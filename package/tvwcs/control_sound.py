@@ -36,6 +36,10 @@ class Device:
     icon: str = ""
     @property
     def label(self): return self.description or self.name
+    @property
+    def unplugged(self):
+        """The device says nothing is plugged into any of its connectors (a headphone jack, an HDMI port without a TV)."""
+        return bool(self.ports) and not any(p.available for p in self.ports)
 
 @dataclass
 class CardOutput:
@@ -144,6 +148,11 @@ def other_outputs(cards):
             profile=f"{out}+{keep_input}" if keep_input and f"{out}+{keep_input}" in names else out if out in names else name
             found.append(CardOutput(card.name,card.description or card.name,out,out_label,out_available,profile))
     return sorted(found,key=lambda o:(not o.hdmi,not o.available,o.card_label,o.label))
+
+def split_unplugged(devices, in_use=""):
+    """(the devices to show, the ones with nothing plugged in). The one in use is always shown."""
+    shown=[d for d in devices if d.name==in_use or not d.unplugged]
+    return shown,[d for d in devices if d not in shown]
 
 def sink_for(card_name, output):
     """The sink PipeWire and PulseAudio make for a card's output: alsa_card.X + output:hdmi-stereo -> alsa_output.X.hdmi-stereo."""
