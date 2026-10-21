@@ -647,7 +647,8 @@ class SoundPage(Page):
         minus=self.button("list-remove-symbolic","−","Quieter",lambda:step(-1)); plus=self.button("list-add-symbolic","+","Louder",lambda:step(1))
         mute=Gtk.Button()
         boost=bool(ConfigStore().settings["audio_boost"])
-        scale=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,sound.top(boost),1); scale.set_draw_value(False); scale.set_hexpand(True)
+        # a volume already above the top (set elsewhere) widens the bar, so it still shows where the volume is
+        scale=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,max(sound.top(boost),d.volume),1); scale.set_draw_value(False); scale.set_hexpand(True)
         scale.set_focusable(False); scale.set_valign(Gtk.Align.CENTER)
         value=Gtk.Label(); value.add_css_class("volume-value"); value.set_xalign(1)
         guard=[False]; pending=[0]

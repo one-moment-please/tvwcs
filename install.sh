@@ -891,7 +891,8 @@ main() {
     say; say "TVWCS $TARGET is installed in $DEST."
     [ -z "$UPGRADE_NOTES" ] || { say; printf '%s' "$UPGRADE_NOTES"; }
     if [ -n "$TTY" ] && [ -n "$WMS" ]; then
-        say "To use it in TV mode, choose \"TVWCS ($(set -- $WMS; [ $# = 2 ] && echo sway || echo "$1"))\" at the login screen."
+        if [ -n "$AUTOLOGIN_MOVE" ]; then say "${AUTOLOGIN_MOVE%% *} is logged in to \"TVWCS (${AUTOLOGIN_MOVE##*tvwcs-})\", in TV mode, from the next start."
+        else say "To use it in TV mode, choose \"TVWCS ($(set -- $WMS; [ $# = 2 ] && echo sway || echo "$1"))\" at the login screen."; fi
         if [ -n "${LS_NEW:-}" ] && [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && ! wm_socket i3 >/dev/null && ! wm_socket sway >/dev/null && [ "$(init_system)" = systemd ]; then
             if ask_yes "Show the login screen now?"; then
                 U=greetd; [ "$GREETER" = sddm ] && U=sddm
