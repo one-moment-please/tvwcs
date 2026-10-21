@@ -6,7 +6,9 @@ more. Each feature below needs packages of its own; it can be turned on (its pac
 uninstall its packages, but only those nothing else needs: TVWCS itself, another feature that is on, or any other
 installed package (apt is asked what removing them would remove, and nothing else may go).
 
-The choices are the "features" option: {key: False} for the features turned off; anything not listed is on.
+The choices are the "features" option: {key: False} for the features turned off and {key: True} for those turned on
+that are off unless chosen (Samba, which is not installed even by a full install, as it lets the computer talk to
+file servers on the network); anything not listed is as its default.
 
 `python3 -m tvwcs.features minimal` (run by install.sh) turns off the features whose software is missing;
 `python3 -m tvwcs.features off` prints the features turned off, one per line."""
@@ -24,16 +26,15 @@ class Feature:
     pages: tuple = ()           # the Settings pages it brings
     x11_only: bool = False
     in_use: tuple = ()          # processes that, while running, mean its packages cannot be uninstalled from here
+    default_on: bool = True     # False: off until turned on, even after a full install (Samba)
 
 FEATURES=(
     Feature("sound","Sound","Volume, and the speakers, headphones and microphones to use (the Sound page and the Quick Menu's volume).",
             ("pipewire","pipewire-pulse","wireplumber","pulseaudio-utils"),(("cmd","pactl"),),("sound",)),
     Feature("bluetooth","Bluetooth","Pairing and connecting Bluetooth remotes, headphones and game controllers.",
             ("bluez",),(("cmd","bluetoothctl"),),("bluetooth",)),
-    Feature("network","Network","Ethernet and Wi-Fi settings, with NetworkManager.",
-            ("network-manager",),(("cmd","nmcli"),),("network",),in_use=("NetworkManager",)),
-    Feature("storage","Storage","Mounting drives and switching them off, and network shares.",
-            ("udisks2","gvfs-backends"),(("cmd","udisksctl"),),("storage",)),
+    Feature("samba","Network shares (Samba)","Connecting to Windows and Samba shares, and NFS, SSH and FTP ones, on the Storage page.",
+            ("gvfs-backends",),(("libexec","gvfsd-smb"),),default_on=False),
     Feature("terminal","Terminal","A terminal inside Settings.",("gir1.2-vte-3.91",),(("gi","Vte","3.91"),),("terminal",)),
     Feature("apps","Apps from Flathub","Finding, installing and removing apps from Flathub.",("flatpak",),(("cmd","flatpak"),),("apps",)),
     Feature("screensaver","Screen saver","The bouncing logo after a time without input.",("python3-gi-cairo",),(("cairo",),)),
@@ -49,11 +50,18 @@ CORE_PACKAGES={"python3-gi","gir1.2-gtk-4.0","i3","sway","xdotool","x11-xserver-
                "adwaita-icon-theme","fonts-open-sans","xdg-desktop-portal","xdg-desktop-portal-gtk","xserver-xorg","xinit"}
 
 def clean(raw):
-    """The "features" option: only known keys, only False kept (on is the default)."""
-    return {k:False for k,v in raw.items() if k in BY_KEY and v is False} if isinstance(raw,dict) else {}
+    """The "features" option: only known keys, only the choices that differ from the feature's default kept."""
+    if not isinstance(raw,dict): return {}
+    return {k:v for k,v in raw.items() if k in BY_KEY and isinstance(v,bool) and v!=BY_KEY[k].default_on}
 
 def enabled(settings, key):
-    return (settings.get("features") or {}).get(key,True) is not False
+    value=(settings.get("features") or {}).get(key)
+    return value if isinstance(value,bool) else BY_KEY[key].default_on
+
+def choose(chosen, key, on):
+    """Turn a feature on or off in the "features" option (a dict, changed in place)."""
+    chosen.pop(key,None)
+    if on!=BY_KEY[key].default_on: chosen[key]=on
 
 def page_enabled(settings, page_key):
     key=PAGE_FEATURE.get(page_key)
@@ -165,10 +173,13 @@ def main(argv):
         for f in FEATURES:
             if applies(f) and not installed(f): off[f.key]=False
         store.settings["features"]=clean(off); store.save()
-        for key in store.settings["features"]: print(f"Turned off: {BY_KEY[key].label} (turn it on in Settings > Features)")
+        for key,on in store.settings["features"].items():
+            if not on: print(f"Turned off: {BY_KEY[key].label} (turn it on in Settings > Features)")
         return 0
     if argv==["off"]:
-        for key in clean(_store().settings.get("features")): print(key)
+        st=_store().settings
+        for f in FEATURES:
+            if not enabled(st,f.key): print(f.key)
         return 0
     print("Usage: python3 -m tvwcs.features minimal|off",file=sys.stderr); return 2
 

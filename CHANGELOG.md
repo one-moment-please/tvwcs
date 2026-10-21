@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.6.0 — 2026-10-17
+## 3.6.0 — 2026-10-21
 
 **Quick Menu**
 - A row's options (⋯, ← or a right-click) unfold in the Quick Menu itself instead of a dialog: upwards, just above their app or workspace, indented a little on both sides and with a small gap to the row above, so it is clear whose they are. ↑ from the row goes into them; Back, ⋯ again or moving away folds them.
@@ -9,6 +9,15 @@
 - The network, volume, Bluetooth and battery icons unfold a panel above the status row: the connections, the one in use first (a wired port NetworkManager leaves to ifupdown included), with address and signal, and Wi-Fi on or off; mute, − and + for the output and the input; the connected Bluetooth devices with Disconnect, and Bluetooth on or off; the battery's estimated time left, or time until fully charged. Each panel has a button for its Settings page.
 - The ⚙ Settings button and its option are gone: Settings is channel 000, and each status panel opens its own page.
 - The ⊞ Applications button has moved to the Quick Menu's bottom-right corner, after ⏻. It stays highlighted while Applications is open, and pressing it again closes them.
+
+## 3.5.2 — 2026-10-21
+
+- Settings > Features no longer turns the whole Storage page on or off: opening, closing and switching off drives is always there (udisks2 is always installed). In its place is **Network shares (Samba)**, which installs gvfs-backends (the Samba client and the other network-share back ends) and shows the Storage page's network shares. It is off until turned on, even after a full install, so the Samba client is not installed unless it is wanted.
+
+## 3.5.1 — 2026-10-17
+
+- Settings > Network can take over the network of a minimal Debian install. There ifupdown runs the network (/etc/network/interfaces), and NetworkManager will not touch it, so Wi-Fi networks could not be chosen or changed (an install over Wi-Fi) and Ethernet could only be shown. Choosing the "Not managed" Ethernet port or Wi-Fi adapter now offers one button that uninstalls ifupdown, removes /etc/network and restarts NetworkManager, which then manages every port. It warns first that the Wi-Fi network has to be chosen again, and any IP address, gateway or DNS servers set by hand set again. This replaces the earlier Ethernet-only take-over. If uninstalling ifupdown fails, its ports are brought back up.
+- Network is no longer one of Settings > Features: NetworkManager is always installed, even in a minimal install, and is never offered for uninstalling.
 
 ## 3.5.0 — 2026-10-16
 

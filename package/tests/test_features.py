@@ -25,6 +25,12 @@ class FeatureTests(unittest.TestCase):
         self.assertFalse(F.page_enabled({"features":{"sound":False}},"sound")); self.assertTrue(F.page_enabled({"features":{"sound":False}},"options"))
         self.assertEqual(F.clean({"sound":False,"nope":False,"bluetooth":True,"terminal":0}),{"sound":False})
         self.assertEqual(F.clean(None),{})
+    def test_samba_is_off_until_turned_on(self):
+        self.assertFalse(F.enabled({},"samba")); self.assertTrue(F.enabled({"features":{"samba":True}},"samba"))
+        self.assertEqual(F.clean({"samba":True,"sound":True}),{"samba":True}); self.assertEqual(F.clean({"samba":False}),{})
+        chosen={}; F.choose(chosen,"samba",True); self.assertEqual(chosen,{"samba":True})
+        F.choose(chosen,"samba",False); F.choose(chosen,"sound",False); self.assertEqual(chosen,{"sound":False})
+        self.assertNotIn("storage",F.BY_KEY); self.assertNotIn("network",F.BY_KEY)
     def test_x11_only_features(self):
         self.assertFalse(F.applies(F.BY_KEY["cursor"],{"SWAYSOCK":"/run/sway"})); self.assertTrue(F.applies(F.BY_KEY["cursor"],{}))
     def test_uninstall_when_nothing_else_needs_it(self):
@@ -38,10 +44,11 @@ class FeatureTests(unittest.TestCase):
     def test_no_uninstall_of_what_is_not_installed_or_apt_refuses(self):
         self.assertIn("not installed",F.removable(F.BY_KEY["bluetooth"],{},fake_run(set()),self.proc)[1])
         self.assertIn("broken",F.removable(F.BY_KEY["bluetooth"],{},fake_run({"bluez"},code=100),self.proc)[1])
-    def test_a_running_network_manager_is_never_uninstalled(self):
+    def test_a_feature_in_use_is_never_uninstalled(self):
         os.makedirs(os.path.join(self.proc,"42"))
         with open(os.path.join(self.proc,"42","comm"),"w") as f: f.write("NetworkManager\n")
-        packages,why=F.removable(F.BY_KEY["network"],{},fake_run({"network-manager"},"Remv network-manager [1]\n"),self.proc)
+        nm=F.Feature("nm","NM","",("network-manager",),(("cmd","nmcli"),),in_use=("NetworkManager",))
+        packages,why=F.removable(nm,{},fake_run({"network-manager"},"Remv network-manager [1]\n"),self.proc)
         self.assertEqual(packages,[]); self.assertIn("NetworkManager is running",why)
     def test_packages_of_tvwcs_itself_are_kept(self):
         fake=F.Feature("x","X","",("x11-xserver-utils","extra"),())
