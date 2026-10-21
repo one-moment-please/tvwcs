@@ -76,6 +76,30 @@ class XPointer:
     def move(self, x, y):
         if self.dpy: self.x11.XWarpPointer(self.dpy,0,self.root,0,0,0,0,int(x),int(y)); self.x11.XFlush(self.dpy)
 
+CW_BIT_GRAVITY=1<<4; SOUTH_WEST_GRAVITY=7
+class _GravityAttributes(ctypes.Structure):
+    """The start of Xlib's XSetWindowAttributes, up to bit_gravity (the only field set)."""
+    _fields_=[("background_pixmap",ctypes.c_ulong),("background_pixel",ctypes.c_ulong),("border_pixmap",ctypes.c_ulong),
+              ("border_pixel",ctypes.c_ulong),("bit_gravity",ctypes.c_int),("win_gravity",ctypes.c_int),("_rest",ctypes.c_char*64)]
+def keep_bottom_on_resize(surface):
+    """X11: when the window manager resizes the window, the X server keeps what is drawn anchored to the bottom-left
+    corner (not the top-left) until GTK draws it again, so a bottom-anchored menu's status row stays where it is.
+    Does nothing elsewhere (Wayland) or when Xlib cannot be loaded."""
+    try:
+        import gi; gi.require_version("GdkX11","4.0"); from gi.repository import GdkX11
+        if not isinstance(surface,GdkX11.X11Surface): return False
+        xid=surface.get_xid(); x11=ctypes.cdll.LoadLibrary(ctypes.util.find_library("X11") or "libX11.so.6")
+    except (ImportError,ValueError,OSError,AttributeError,TypeError): return False
+    # a connection of its own: the attribute is kept by the X server, whoever sets it
+    x11.XOpenDisplay.restype=ctypes.c_void_p; x11.XOpenDisplay.argtypes=[ctypes.c_char_p]
+    x11.XChangeWindowAttributes.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.c_ulong,ctypes.POINTER(_GravityAttributes)]
+    x11.XCloseDisplay.argtypes=[ctypes.c_void_p]
+    dpy=x11.XOpenDisplay(None)
+    if not dpy: return False
+    attributes=_GravityAttributes(bit_gravity=SOUTH_WEST_GRAVITY)
+    x11.XChangeWindowAttributes(dpy,xid,CW_BIT_GRAVITY,ctypes.byref(attributes)); x11.XCloseDisplay(dpy)   # closing flushes it
+    return True
+
 class Parker:
     """Counts how long the X pointer has rested; once it has rested for the hiding time, `due` says to move it.
     Moved once per rest: it is not moved again until someone moves it."""
