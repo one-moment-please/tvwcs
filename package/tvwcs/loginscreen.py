@@ -140,7 +140,8 @@ def look_from(settings) -> dict:
     """The login screen's look, from TVWCS's settings (or the look file)."""
     accent=settings.get("accent"); accent=accent if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent) else "#0078d7"
     theme=settings.get("theme") if settings.get("theme") in ("dark","light") else "dark"
-    scale=settings.get("scale") if settings.get("scale") in ("desktop","tenfoot","tenfoot_4k") else "desktop"
+    # "" (Automatic) is TV size: the login screen starts TVWCS's sessions, which are TV mode
+    scale=settings.get("scale") if settings.get("scale") in ("desktop","tenfoot","tenfoot_4k") else "tenfoot"
     return {"accent":accent.lower(),"theme":theme,"scale":scale}
 
 def status(version="", settings=None) -> dict:
@@ -547,8 +548,12 @@ def _version(source):
     return ""
 
 def _settings(config_file):
-    try: return (json.loads(Path(config_file).read_text(encoding="utf-8")).get("settings") or {}) if config_file else {}
-    except (OSError,ValueError,AttributeError): return {}
+    """A config.json's settings, read the way TVWCS reads them (so a setting from an older version, migrated when TVWCS
+    starts, gives the same look as Settings later compares against)."""
+    from tvwcs.model import _clean_settings
+    try: raw=(json.loads(Path(config_file).read_text(encoding="utf-8")).get("settings") or {}) if config_file else {}
+    except (OSError,ValueError,AttributeError): raw={}
+    return _clean_settings(raw)
 
 USAGE="""Usage (as root): python3 -m tvwcs.loginscreen <command>
   enable [--config FILE] [--autologin USER SESSION] [--previous UNIT] [--session USER SESSION]

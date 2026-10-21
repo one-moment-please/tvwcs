@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.1 — 2026-10-21
+
+- Settings > User no longer says the login screen "needs updating" right after an upgrade from 3.x. The installer and Settings now read the interface size the same way, and Automatic gives the login screen its TV size.
+- Settings > Sound: a volume already above the top (such as 160 %, set by another program) is shown where it is on the bar, instead of the bar sitting at its end.
+- After moving auto-login to TVWCS's session, the installer names that session instead of telling you to pick the sway one.
+- New screenshots in the README.
+
 ## 4.0.0 — 2026-10-21
 
 **Two modes**

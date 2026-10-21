@@ -89,6 +89,17 @@ class RootTests(unittest.TestCase):
         self.assertFalse(loginscreen.greetd_is_ours())
         self.assertIn(["systemctl","enable","--force","lightdm.service"],self.c.calls)
 
+    def test_a_3x_config_gives_the_look_settings_compares_with(self):
+        # 3.x saved "use": "tv" with "scale": "tenfoot"; TVWCS 4.0 reads that as Automatic (""), which is TV size here
+        import tempfile
+        with tempfile.NamedTemporaryFile("w",suffix=".json",delete=False) as f:
+            json.dump({"settings":{"use":"tv","scale":"tenfoot","accent":"#E81123"}},f)
+        try: raw=loginscreen._settings(f.name)
+        finally: os.unlink(f.name)
+        self.assertEqual(raw["scale"],"")
+        self.assertEqual(loginscreen.look_from(raw),loginscreen.look_from({"scale":"tenfoot","accent":"#e81123"}))
+        self.assertEqual(loginscreen.look_from({})["scale"],"tenfoot")
+
     def test_another_greeters_config_is_kept_and_put_back(self):
         self.use("greetd"); (self.etc/"greetd").mkdir(); conf=self.etc/"greetd"/"config.toml"
         conf.write_text('[default_session]\ncommand = "tuigreet"\nuser = "greeter"\n')
