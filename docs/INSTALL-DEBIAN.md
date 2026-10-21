@@ -85,7 +85,7 @@ The rest is done from the other computer.
    | **Show the login screen now?** | Enter (yes). It logs you in by itself if you said yes above. |
    | **Will TVWCS be used on a TV or on a desktop monitor?** | Enter (**TV**). |
 
-When the installer finishes, the TV shows TVWCS, and it does so every time the computer starts. Press ⚙ in the Quick Menu to open **Settings**.
+When the installer finishes, the TV shows TVWCS, and it does so every time the computer starts. Type channel 000 in the Quick Menu to open **Settings**.
 
 ## 5. Optional: sign in with a key instead of a password
 

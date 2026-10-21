@@ -30,10 +30,10 @@ class SystemActionTests(unittest.TestCase):
         self.assertIsNone(command_for("shutdown",which=have({"systemctl","loginctl","reboot","poweroff"}),systemd=False))
         self.assertIsNone(command_for("sleep",which=have(set()),systemd=True))
         self.assertIn("systemd",unavailable_message("reboot")); self.assertIn("lock_command",unavailable_message("lock"))
-    def test_power_menu_offers_lock_when_enabled_and_log_out_with_a_login_screen(self):
+    def test_power_menu_offers_lock_and_log_out_with_a_login_screen(self):
         ids=lambda settings,dm:[a.id for a in power_menu(settings,dm)]
-        self.assertEqual(ids({},False),["sleep","reboot","shutdown"])
-        self.assertEqual(ids({"quick_lock_button":True},True),["lock","sleep","reboot","shutdown","logout"])
+        self.assertEqual(ids({},False),["lock","sleep","reboot","shutdown"])
+        self.assertEqual(ids({"quick_lock_button":False},True),["lock","sleep","reboot","shutdown","logout"])
     def test_finds_a_login_screen(self):
         self.assertTrue(login_manager_installed(lambda p:p=="/etc/systemd/system/display-manager.service",lambda n:None))
         self.assertTrue(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))

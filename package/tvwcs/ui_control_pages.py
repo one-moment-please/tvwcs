@@ -231,15 +231,13 @@ class OptionsPage(_ConfigPage):
     def draw(self, store):
         st=store.settings
         self.section("QUICK MENU")
-        self.option("Settings button (⚙)","quick_settings_button","Opens this Settings app from the Quick Menu.")
         self.option("Close button (✕)","quick_close_button","Esc and the remote's Back key close the Quick Menu too.")
-        locker=command_for("lock",st)
-        self.option("Lock in the power menu","quick_lock_button",
-                    "The power menu always has Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
-                    ". It has no Log out here: without a login screen, logging out would only leave a text console.")
-                    +("" if locker else " No screen locker is installed (such as i3lock, or swaylock on sway), so Lock would not work yet."))
         self.option("Options buttons on rows (⋮)","hide_options_buttons","Even hidden, a row's options open by pressing ← on it, or by right-clicking it.",invert=True)
         self.option("Button hints","button_hints","Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
+        locker=command_for("lock",st)
+        self.note("The power menu (⏻ at the bottom of the Quick Menu) has Lock, Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
+                  ". It has no Log out here: without a login screen, logging out would only leave a text console.")
+                  +("" if locker else " No screen locker is installed (such as i3lock, or swaylock on sway), so Lock does not work yet."))
 
         self.section("DISPLAY")
         self.row("Used on",{"tv":"A TV","desktop":"A desktop monitor"}.get(st["use"],"Not chosen"),self.choose_use,ident="opt:use")
