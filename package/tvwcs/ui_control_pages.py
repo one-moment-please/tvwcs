@@ -9,7 +9,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
 from tvwcs import control_storage as storage
-from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
+from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_ubuntu as ubuntu, control_updates as updates
 from pathlib import Path
 from tvwcs import __version__, features, power, privilege, selfupdate
 from tvwcs import ui_control_login as login_ui
@@ -1095,6 +1095,7 @@ class AppsPage(_Console, Page):
                      detail="Installs Flatpak with the package manager, then adds Flathub. Asks for your password.",icon="system-software-install-symbolic",fallback="⇩",ident="get-flatpak")
             self.note("Apps here come from Flathub through Flatpak, which keeps each app with what it needs, apart from the system."
                       +("" if argv else " No supported package manager was found to install Flatpak with."))
+            self.draw_ubuntu_extras()
             self.last_run(); return
         if s.catalog is not None: self.toolbar(s)
         if s.problem: self.note(s.problem,"error")
@@ -1344,6 +1345,8 @@ class AppsPage(_Console, Page):
             self.note("Removes every Flatpak app and the runtimes they share, for a fresh start. Each app's own settings and files "
                       "in your home folder (~/.var/app) are kept.")
 
+        self.draw_ubuntu_extras()
+
     def toggle_unverified(self):
         store=ConfigStore(); store.settings["flatpak_unverified"]=not store.settings["flatpak_unverified"]; store.save()
         self.redraw()
@@ -1367,6 +1370,40 @@ class AppsPage(_Console, Page):
         self.win.confirm("Uninstall every Flatpak app?",f"This uninstalls all {len(self.state.installed)} Flatpak apps and the runtimes they use, with their "
                          "files. Their data in your home folder (~/.var/app) is kept."+(" It asks for your password for the system-wide ones." if len(steps)>1 else ""),
                          "Uninstall all",lambda:self.run_steps("Uninstalling Flatpak apps",steps,"Every Flatpak app is uninstalled."))
+
+    def draw_ubuntu_extras(self):
+        """Ubuntu's Snap, cloud-init and Ubuntu Pro client, each offered for removal while it is installed (control_ubuntu)."""
+        extras=ubuntu.installed_extras()
+        if not extras: return
+        self.section("UBUNTU EXTRAS")
+        for e,pkgs in extras:
+            self.row(f"Remove {e.name}","",lambda e=e,pkgs=pkgs:self.remove_ubuntu_extra(e,pkgs),icon="user-trash-symbolic",fallback="✕",
+                     ident=f"ubuntu:{e.key}",detail=", ".join(pkgs))
+        self.note("Ubuntu comes with these, and a TV computer does without them. "+" ".join(f"{e.name}: {e.what}" for e,_p in extras)
+                  +" Each is removed with its settings (purged). Nothing stops a package that needs one of them from installing it again.")
+    def remove_ubuntu_extra(self, e, pkgs):
+        also=ubuntu.would_remove(pkgs); apps=ubuntu.snap_apps() if e.key=="snap" else []
+        text=e.what
+        if apps: text+=f"\n\nSnap apps removed with it: {', '.join(apps)}."
+        if also: text+=f"\n\nAlso removed, as they need it: {', '.join(also)}."
+        text+=" It asks for your password."
+        self.win.confirm(f"Remove {e.name}?",text,"Remove",
+                         lambda:self.run_steps(f"Removing {e.name}",[(ubuntu.purge_argv([e.key]),True)],f"{e.name} is removed.",
+                                                       focus="set:list" if self.state.flatpak else "get-flatpak"))
+
+    def ubuntu_extras(self):
+        """Ubuntu's Snap, cloud-init and Ubuntu Pro client, each offered for removal while it is installed (control_ubuntu)."""
+        extras=ubuntu.installed_extras()
+        if not extras: self.win.notice("Ubuntu extras","Snap, cloud-init and the Ubuntu Pro client are not installed."); return
+        def picked(key):
+            e,pkgs=next((e,p) for e,p in extras if e.key==key)
+            also=ubuntu.would_remove(pkgs); apps=ubuntu.snap_apps() if e.key=="snap" else []
+            text=e.what
+            if apps: text+=f"\n\nSnap apps removed with it: {', '.join(apps)}."
+            if also: text+=f"\n\nAlso removed, as they need it: {', '.join(also)}."
+            text+=" It asks for your password."
+            self.win.confirm(f"Remove {e.name}?",text,"Remove",lambda:self.run_steps(f"Removing {e.name}",[(ubuntu.purge_argv([e.key]),True)],f"{e.name} is removed."))
+        self.win.choose_option("Remove Ubuntu extras",[(e.key,f"{e.name} ({', '.join(p)})") for e,p in extras],None,picked)
 
     def run_steps(self, label, steps, success, app_id=None, focus=None):
         """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
@@ -1561,6 +1598,11 @@ class NetworkPage(Page):
         return "NetworkManager" if s.managed else "Shown only (no NetworkManager)"
     def draw(self, s):
         if not s.managed: self.note(s.message)
+        unmanaged=[i for i in s.interfaces if i.state.startswith("unmanaged")]
+        if s.managed and unmanaged and network.unmanaged_reason(unmanaged[0].device)=="netplan":
+            self.row("Let NetworkManager manage the network","",lambda:self.take_over(unmanaged[0]),icon="emblem-system-symbolic",fallback="⚙",ident="netplan",
+                     detail="netplan gives the network to systemd-networkd (as Ubuntu Server does), so it can only be shown here. "
+                            "Saved Wi-Fi networks and addresses set by hand are kept.")
         self.section("ETHERNET")
         wired=s.of_kind("ethernet")
         if not wired: self.note("No Ethernet port was found.")
@@ -1616,6 +1658,14 @@ class NetworkPage(Page):
                   "The network drops for a moment. Ethernet connects again by itself, but you have to choose your Wi-Fi network and enter "
                   "its password again here, and any IP address, gateway or DNS servers set by hand have to be set again. It asks for your password.")
             title,ok="Hand the network to NetworkManager?","Hand it over"
+        elif reason=="netplan":
+            text=(f"{i.device} is set up by netplan (/etc/netplan), which gives it to systemd-networkd, as Ubuntu Server does, so "
+                  "NetworkManager (which Settings uses) leaves it alone. Settings can set netplan to use NetworkManager instead: one "
+                  "file is added to /etc/netplan (the others are kept, and backed up in /var/backups) and the settings are applied, "
+                  "so NetworkManager manages every Ethernet port and Wi-Fi adapter from then on.\n\n"
+                  "Your saved Wi-Fi networks and any IP address, gateway or DNS servers set by hand are kept: netplan hands them to "
+                  "NetworkManager. The network drops for a moment while it switches. It asks for your password.")
+            title,ok="Hand the network to NetworkManager?","Hand it over"
         else:
             text=(f"NetworkManager is set to leave {i.device} alone. Settings can ask it to manage it. "
                   "If that does not last after a restart, a file in /etc/NetworkManager/conf.d lists it under unmanaged-devices.")
@@ -1629,7 +1679,7 @@ class NetworkPage(Page):
                                       if any(w.kind=="wifi" for w in self.state.interfaces) and reason=="ifupdown" else ""))
                 self.refresh(quiet=True)
             self.win.run_as_root(network.take_over_argv(i.device,reason),f"Handing {i.device} to NetworkManager",lines.append,done)
-        self.win.confirm(title,text,ok,go,danger=reason=="ifupdown")
+        self.win.confirm(title,text,ok,go,danger=reason in ("ifupdown","netplan"))
 
     def ip_row(self, i):
         """IP address, default gateway and DNS servers of the interface's connection: from DHCP, or set by hand."""

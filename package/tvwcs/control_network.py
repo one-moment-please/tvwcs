@@ -308,12 +308,27 @@ def _read(path):
         with open(path,encoding="utf-8") as f: return f.read()
     except OSError: return ""
 
+# ------------------------------------------------------------------ ports netplan gives to systemd-networkd (Ubuntu)
+# Ubuntu Server (and an Ubuntu cloud image) describes its network in /etc/netplan, and netplan hands it to
+# systemd-networkd, telling NetworkManager to leave those ports alone. Handing the network to NetworkManager sets
+# netplan's renderer to NetworkManager (one more file in /etc/netplan; the others are kept, backed up first) and
+# applies it: netplan turns every port and Wi-Fi network it describes into a NetworkManager connection, so saved
+# Wi-Fi networks and fixed addresses are kept. Ubuntu Desktop already uses NetworkManager.
+NETWORKD_RUN="/run/systemd/network"
+NETPLAN_NM_FILE="/etc/netplan/90-tvwcs-network-manager.yaml"
+
+def netplan_networkd(folder=None):
+    """netplan hands at least one port to systemd-networkd (it wrote a 10-netplan-*.network file for it)."""
+    try: return any(n.startswith("10-netplan-") and n.endswith(".network") for n in os.listdir(folder or NETWORKD_RUN))
+    except OSError: return False
+
 def unmanaged_reason(device):
     """Why NetworkManager leaves `device` alone: "ifupdown" (ifupdown is installed, with /etc/network/interfaces, and
     NetworkManager is set to leave what it lists alone; the installer makes that file readable by root only when it
-    holds a Wi-Fi password, so it is not read here), or "config" (another setting; Settings can still ask
-    NetworkManager to manage it)."""
+    holds a Wi-Fi password, so it is not read here), "netplan" (netplan gives it to systemd-networkd), or "config"
+    (another setting; Settings can still ask NetworkManager to manage it)."""
     if os.path.exists(INTERFACES) and (have("ifup") or os.path.exists("/sbin/ifup")) and ifupdown_ignored(_read(NM_CONF)): return "ifupdown"
+    if have("netplan") and netplan_networkd(): return "netplan"
     return "config"
 
 # Run as root. The ports ifupdown has up are taken down first, so no DHCP client or wpa_supplicant of its own is
@@ -341,8 +356,31 @@ sleep 1
 nmcli device connect "$1" || true
 '''
 
+# Run as root. On a failure the old files are put back and applied again, so the computer stays online. systemd-networkd
+# is turned off afterwards when nothing is left for it: otherwise start-up waits up to two minutes for it
+# (systemd-networkd-wait-online).
+NETPLAN_SCRIPT=r'''set -u
+backup=/var/backups/tvwcs-netplan-$(date +%Y%m%d-%H%M%S)
+mkdir -p "$backup" && cp -a /etc/netplan/. "$backup"/ || exit 1
+undo() { echo "Putting the old network settings back."; rm -f /etc/netplan/*.yaml; cp -a "$backup"/. /etc/netplan/; netplan apply; exit 1; }
+for f in /etc/netplan/*.yaml; do [ -f "$f" ] && sed -i '/^[[:space:]]*renderer:[[:space:]]*networkd[[:space:]]*$/d' "$f"; done
+printf '# Added by TVWCS Settings > Network: NetworkManager manages the network.\nnetwork:\n  version: 2\n  renderer: NetworkManager\n' > @FILE@
+chmod 600 /etc/netplan/*.yaml
+netplan generate || undo
+systemctl enable NetworkManager.service >/dev/null 2>&1 || true
+netplan apply || undo
+for i in 1 2 3 4 5 6 7 8 9 10; do nmcli -t general >/dev/null 2>&1 && break; sleep 1; done
+if ! ls /run/systemd/network/10-netplan-*.network >/dev/null 2>&1; then
+  systemctl disable --now systemd-networkd-wait-online.service >/dev/null 2>&1 || true
+  systemctl disable --now systemd-networkd.service systemd-networkd.socket >/dev/null 2>&1 || true
+fi
+echo "NetworkManager manages the network now. The old settings are in $backup."
+'''.replace("@FILE@",NETPLAN_NM_FILE)
+
 def take_over_argv(device, reason):
     """The root command that hands `device` to NetworkManager: with "ifupdown", ifupdown is uninstalled and
-    /etc/network removed (every port goes to NetworkManager); otherwise NetworkManager is only asked to manage it."""
+    /etc/network removed (every port goes to NetworkManager); with "netplan", netplan's renderer becomes
+    NetworkManager (every port it describes goes to it); otherwise NetworkManager is only asked to manage it."""
     if not re.fullmatch(r"[A-Za-z0-9_.:-]+",device): raise ValueError("Unexpected device name.")
-    return ["sh","-c",DROP_IFUPDOWN_SCRIPT if reason=="ifupdown" else SET_MANAGED_SCRIPT,"sh",device]
+    script={"ifupdown":DROP_IFUPDOWN_SCRIPT,"netplan":NETPLAN_SCRIPT}.get(reason,SET_MANAGED_SCRIPT)
+    return ["sh","-c",script,"sh",device]

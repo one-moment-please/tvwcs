@@ -137,6 +137,20 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(state["users"][os.environ.get("USER") or subprocess.run(["id","-un"],capture_output=True,text=True).stdout.strip()]["session"],"tvwcs-sway")
         self.assertFalse((self.home/".config"/"sway").exists())   # "Not now"
         self.assertIn('choose "TVWCS (sway)" at the login screen',out)
+    def test_on_ubuntu_it_offers_to_remove_its_extras_one_by_one(self):
+        self.wm("sway"); (self.etc/"os-release").write_text("ID=ubuntu\nID_LIKE=debian\n")
+        tool(self.bin,"dpkg-query",'for a; do p=$a; done; case "$p" in snapd|cloud-init) printf ii ;; esac')
+        out=self.converse([],{"Choose 1-":"","Go ahead":"y","sudo rule":"n","Remove Snap":"y","Remove cloud-init":""},
+                          TVWCS_PACKAGES="python3 python3-gi snapd cloud-init")
+        self.assertEqual(self.status,0,out)
+        self.assertIn("== Ubuntu extras",out); self.assertNotIn("Ubuntu Pro client",out)   # not installed: not offered
+        self.assertIn("  Removing: Snap (snapd)\n",out); self.assertLess(out.index("Go ahead?"),out.index("Removing Snap (snapd)..."))
+        apt=self.log.read_text(); self.assertIn("apt-get purge -y snapd\n",apt); self.assertNotIn("cloud-init",apt)
+        self.assertLess(apt.index("apt-get install"),apt.index("apt-get purge"))
+    def test_extras_are_only_offered_on_ubuntu(self):
+        self.wm("sway")
+        out=self.converse([],{"Choose 1-":"","Go ahead":"y","sudo rule":"n"},TVWCS_PACKAGES="python3 python3-gi snapd cloud-init")
+        self.assertEqual(self.status,0,out); self.assertNotIn("Ubuntu extras",out); self.assertNotIn("purge",self.log.read_text())
     def test_suggests_sway_when_neither_is_installed_and_offers_both(self):
         out=self.converse([],{"Which should TVWCS use":"","Choose 1-3 [3]":"3","Go ahead":"n"})
         self.assertIn("sway is recommended: it plays video more smoothly. i3 may work better",out)
