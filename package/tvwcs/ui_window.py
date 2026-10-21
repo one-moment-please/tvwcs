@@ -110,7 +110,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             controls=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); controls.add_css_class("window-controls")
             for b in buttons: controls.append(b)
             header.append(controls); pane.append(header)
-        else: pane.set_margin_top(S(14))
+        else:   # space inside the pane, not a margin outside it, which would show the window's black background above it
+            top=Gtk.Box(); top.set_size_request(-1,S(14)); pane.append(top)
         self._header_group=buttons
         # Everything below the header sits at the bottom, nearest the search field: favorites, open applications, the
         # search results, the search field, then the status row. The space left over (on a TV, or with Applications

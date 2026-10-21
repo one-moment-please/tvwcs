@@ -853,12 +853,14 @@ main() {
     [ -n "$WMS" ] || say "Neither i3 nor sway is set up; run install.sh in a terminal to choose one."
     work_out_packages
 
-    heading "Ready to install TVWCS $TARGET"
-    if [ -n "$NEEDS" ]; then say "These packages will be installed:"; show_needs; fi
-    for WM in $WMS; do say "  TVWCS ($WM) session at the login screen (TV mode)$( [ -f "$(session_config "$WM")" ] && echo ", already set up")"
-        case "$(usual_of "$WM")" in add|create|keep|move) say "  TVWCS in your usual $WM session (desktop mode)" ;; esac; done
-    case "$GREETER" in tvwcs) [ "$(login_screen)" = tvwcs ] && say "  TVWCS's login screen, brought up to date" || say "  TVWCS's login screen" ;; sddm) say "  SDDM as the login screen" ;; esac
-    if [ -n "$TTY" ]; then ask_yes "Go ahead?" || { say "Nothing was changed."; exit 0; }; fi
+    if [ -n "$TTY" ]; then
+        heading "Ready to install TVWCS $TARGET"
+        if [ -n "$NEEDS" ]; then say "These packages will be installed:"; show_needs; fi
+        for WM in $WMS; do say "  TVWCS ($WM) session at the login screen (TV mode)$( [ -f "$(session_config "$WM")" ] && echo ", already set up")"
+            case "$(usual_of "$WM")" in add|create|keep|move) say "  TVWCS in your usual $WM session (desktop mode)" ;; esac; done
+        case "$GREETER" in tvwcs) [ "$(login_screen)" = tvwcs ] && say "  TVWCS's login screen, brought up to date" || say "  TVWCS's login screen" ;; sddm) say "  SDDM as the login screen" ;; esac
+        ask_yes "Go ahead?" || { say "Nothing was changed."; exit 0; }
+    else say "Installing TVWCS $TARGET in $DEST. Without a terminal, packages and the login screen are left as they are."; fi
 
     # ---- from here on, things change; a failure undoes them
     [ -z "$WANT" ] || download_release "$WANT" || fail "TVWCS $WANT could not be downloaded."

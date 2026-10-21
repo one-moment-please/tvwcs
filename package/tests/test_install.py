@@ -29,7 +29,14 @@ class InstallTests(unittest.TestCase):
         # wget: the file named after the URL's last parts in downloads/ (a/b/c -> a_b_c), else fail
         tool(self.bin,"wget",f'out=$2; url=$3; f=$(echo "$url" | sed "s#^[a-z]*://[^/]*/##; s#[/?=&]#_#g"); [ -f "{self.downloads}/$f" ] || exit 8; cp "{self.downloads}/$f" "$out"')
         self.dest=self.home/".local"/"share"/"tvwcs"
-        self.env={"PATH":f"{self.bin}:{os.environ['PATH']}","HOME":str(self.home),"TVWCS_ETC":str(self.etc),"TVWCS_ROOT":str(self.root),
+        # this computer's own commands, less the window managers and login screens, which each test stands in for
+        self.sys=t/"sysbin"; self.sys.mkdir(); hidden={"i3","sway","gdm3","gdm","sddm","lightdm","lxdm","xdm","slim","ly","greetd",
+            "emptty","nodm","entrance","lemurs","Xorg","Xlibre","startx","pipewire","pulseaudio"}
+        for d in os.environ["PATH"].split(":"):
+            if not os.path.isdir(d): continue
+            for e in os.scandir(d):
+                if e.name not in hidden and not (self.sys/e.name).exists() and os.access(e.path,os.X_OK): (self.sys/e.name).symlink_to(e.path)
+        self.env={"PATH":f"{self.bin}:{self.sys}","HOME":str(self.home),"TVWCS_ETC":str(self.etc),"TVWCS_ROOT":str(self.root),
                   "TVWCS_SHARE":str(self.share),"TVWCS_BINDIR":str(self.root/"usr"/"local"/"bin"),"TVWCS_RUN":str(t/"run"),
                   "TVWCS_DEST":str(self.dest),"TVWCS_NO_RESTART":"1","TVWCS_PACKAGES":"","XDG_RUNTIME_DIR":str(t/"rt"),
                   "TVWCS_GITHUB":"https://github.test","TVWCS_API":"https://api.test","TVWCS_UNITS":str(self.root/"lib"/"systemd"/"system"),
