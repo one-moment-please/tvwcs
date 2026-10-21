@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.1.0 — 2026-10-21
+
+**Quick Menu**
+- Favorites and open applications are one list, without the "Favorites" and "Open applications" headings: favorites first, in their order, then the other open apps. A favorite that is open stays in its place, shown as the open app with ★.
+- In TV mode the channel search field is three characters wide and shows **___** (no "#").
+- While an app starts, a spinner turns in place of its icon in its button, instead of the large "Starting…" notice. The notice only shows when the app was started with no button of it on screen (by its hotkey, say). Selecting the button again while it spins does nothing.
+- A row's options list the app's own shortcuts at the top (such as each Settings page), then opening it the other way, then **Close this application** at the bottom, nearest the row. The selection lands on the option just above Close.
+
 ## 4.0.1 — 2026-10-21
 
 - Settings > User no longer says the login screen "needs updating" right after an upgrade from 3.x. The installer and Settings now read the interface size the same way, and Automatic gives the login screen its TV size.

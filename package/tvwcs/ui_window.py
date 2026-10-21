@@ -14,6 +14,7 @@ from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_b
 from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
 from tvwcs import cursor
+from tvwcs.workspaces import quick_list
 from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, Marquee, muted_label, scroll_to_show, section_title, usable)
 
 NAME_SCROLL_DELAY=3000                   # ms a selected Quick Menu row waits before a name too long to fit scrolls by
@@ -40,6 +41,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._provider=None; self._expanded={"Media","Internet","Games"}; self._guide_scroll=0.0
         self._popovers=0; self._was_active=False; self._capture=None; self._capture_cb=None; self._pin=None
         self._panel_token=0; self._volume_target={}; self._volume_busy=set()
+        self.launching=set(); self._launch_slots=[]   # profiles starting now: their buttons show a spinner (set_launching)
         self._reset_nav()
         self.set_decorated(False); self.set_hide_on_close(True); self.set_resizable(True); self.add_css_class("tvwcs-window")
         self.pointer=PointerWatch(self,lambda:cursor.hide_ms(self.app.store.settings))   # hover colours only while the mouse is in use
@@ -113,7 +115,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         else:   # space inside the pane, not a margin outside it, which would show the window's black background above it
             top=Gtk.Box(); top.set_size_request(-1,S(14)); pane.append(top)
         self._header_group=buttons
-        # Everything below the header sits at the bottom, nearest the search field: favorites, open applications, the
+        # Everything below the header sits at the bottom, nearest the search field: favorites and open applications, the
         # search results, the search field, then the status row. The space left over (on a TV, or with Applications
         # open) is above them. At a desk the window is only as tall as all this (main.fit_quick_menu).
         body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_margin_bottom(S(10)); body.set_vexpand(True); pane.append(body)
@@ -126,7 +128,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.results_scroll.get_vadjustment().connect("changed",self._keep_at_bottom)
         self.search_entry=Gtk.SearchEntry(); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search)
         self.search_entry.connect("changed",self._search_typed)
-        # On a TV the field is three digits wide, with what to type beside it; it stretches once letters (or a fourth
+        # On a TV the field is three characters wide, with what to type beside it; it stretches once letters (or a fourth
         # digit) show it is a search. At a desk it is one full-width field.
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); line.append(self.search_entry)
         self.channel_hint=Gtk.Label(label="Type a channel number, or letters to search"); self.channel_hint.add_css_class("channel-hint")
@@ -150,10 +152,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if getattr(self,"_search_narrow",None)==narrow: return
         self._search_narrow=narrow
         e.set_hexpand(not narrow); e.set_halign(Gtk.Align.START if narrow else Gtk.Align.FILL)
-        e.set_width_chars(2*CHANNEL_DIGITS+2 if narrow else -1); e.set_max_width_chars(2*CHANNEL_DIGITS+2 if narrow else -1)   # "# _ _ _", + the ✕ that clears it
+        e.set_width_chars(CHANNEL_DIGITS if narrow else -1); e.set_max_width_chars(CHANNEL_DIGITS if narrow else -1)   # "___"; no ✕ while narrow (theme)
         (e.add_css_class if narrow else e.remove_css_class)("channel-entry")
         (e.add_css_class if tv else e.remove_css_class)("tv-search")   # the app buttons' fill, no magnifier
-        e.set_placeholder_text("# "+" ".join("_"*CHANNEL_DIGITS) if narrow else "Search, or type a channel number")
+        e.set_placeholder_text("_"*CHANNEL_DIGITS if narrow else "Search, or type a channel number")
         self.channel_hint.set_visible(narrow)
 
     # ---------------------------------------------------------- the bottom: clock, status icons and power
@@ -469,22 +471,20 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         threading.Thread(target=run,daemon=True).start()
 
     def _build_quick_content(self,content):
-        """Favorites, then the open applications below them (nearest the search field). A section with nothing in it
-        is left out; with neither, a note says where the installed applications are."""
+        """One list: favorites in their order, then the other open applications (nearest the search field), with no
+        headings. An open favorite shows once, as the open application (with ★). With neither, a note says where the
+        installed applications are."""
         entries=self.app.workspace_entries(); outputs=self.app.wm.outputs()
-        # a favorite that is open shows once, as the open application (with ★)
         opened=self.app.open_favorites([w for e in entries for w in e.windows])
         # an app that is uninstalled stays a favorite, hidden, and comes back if it is installed again
         installed=self.app.catalogue.by_id()
-        favorites=[p for p in self.app.store.favorites() if p.desktop_id in installed and (p.command.strip() or p.desktop_action or p.desktop_id not in opened)]
-        self._starred={opened[p.desktop_id]["con_id"] for p in self.app.store.favorites() if p.desktop_id in opened and p not in favorites}
-        if favorites: content.append(section_title("FAVORITES"))
-        for profile in favorites: content.append(self._favorite_row(profile))
-        if entries: content.append(section_title("OPEN APPLICATIONS"))
-        for entry in entries:
-            content.append(self._window_row(entry.windows[0]) if len(entry.windows)==1 else self._workspace_row(entry,outputs))
+        favorites=[p for p in self.app.store.favorites() if p.desktop_id in installed]
+        rows,self._starred=quick_list(favorites,entries,opened)
+        for kind,item in rows:
+            if kind=="favorite": content.append(self._favorite_row(item))
+            else: content.append(self._window_row(item.windows[0]) if len(item.windows)==1 else self._workspace_row(item,outputs))
         if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the i3 or sway window manager."))
-        if not favorites and not entries:
+        if not rows:
             content.append(muted_label("Nothing is open and there are no favorites yet. Press → (or ⊞ in the bottom-right corner) to see your installed applications."))
     def _keep_at_bottom(self,adj):
         """The Quick Menu's lists grow upwards from the search field: when they overflow, show their bottom. "changed"
@@ -499,7 +499,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _favorite_row(self,p):
         app=self.app.catalogue.by_id().get(p.desktop_id)
         main=Gtk.Button(); main.add_css_class("launch-row"); main.set_hexpand(True)
-        inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); inner.append(app_icon(app.icon if app else None,p.name,32))
+        inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); self._launch_slot(p,inner,app_icon(app.icon if app else None,p.name,32),32)
         if p.channel is not None:
             ch=Gtk.Label(label=f"{p.channel:03d}"); ch.add_css_class("channel-number"); inner.append(ch)
         inner.append(Marquee(self.app.profile_name(p,app),delay=NAME_SCROLL_DELAY).follow(main))
@@ -564,8 +564,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _options_row(self,main,items):
         """A row: ⋯ then the application, with its options folded away above it. ⋯, ← on the application or a
         right-click unfolds them upwards, a little indented on both sides and close to their row (with a small gap to
-        the row above), the first option nearest the row. items() makes them when they open: (icon, fallback glyph,
-        label, action, dangerous). The ⋯ button can be hidden in Settings.
+        the row above), in the order items() makes them, top to bottom: the last one (Close) is nearest the row.
+        items() makes them when they open: (icon, fallback glyph, label, action, dangerous). The ⋯ button can be hidden in Settings.
         -> (the options and the row, the row's NavGroup); the NavGroup's `line` is the row itself."""
         box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0)
         panel=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); panel.add_css_class("row-options"); panel.set_visible(False)
@@ -585,7 +585,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                 main.grab_focus(); self._close_open(); return True
             self._close_open(); made=items(); buttons=[]
             if not made: panel.append(muted_label("Nothing to choose here."))
-            for icon,fallback,label,action,danger in reversed(made):   # upwards: the first option is the lowest
+            for icon,fallback,label,action,danger in made:
                 b=self.dialog_button(icon,fallback,label); b.add_css_class("menu-item")
                 if danger: b.add_css_class("danger")
                 b.connect("clicked",lambda _b,a=action:run(a)); panel.append(b); buttons.append(b); pointer_only(b)
@@ -593,7 +593,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             for b in buttons:
                 g=NavGroup([b]); g.option_item=True; options.append(g)
             group.options=options; panel.set_visible(True); self._open_row=group
-            (buttons[-1] if buttons else main).grab_focus(); self.app.fit_quick_menu()
+            # the selection lands on the option nearest the row that is not Close
+            safe=[b for b in buttons if not b.has_css_class("danger")]
+            (safe[-1] if safe else buttons[-1] if buttons else main).grab_focus(); self.app.fit_quick_menu()
             scroll=box.get_ancestor(Gtk.ScrolledWindow)
             if scroll is not None:   # unfolded upwards: bring the top of the options into sight, keeping the row in sight
                 GLib.timeout_add(60,lambda:(scroll_to_show(scroll,box),GLib.SOURCE_REMOVE)[1])
@@ -609,6 +611,27 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         """Fold away the open row options or status panel, if any."""
         row=self._open_row; self._open_row=None
         if row is not None and row.expanded(): row.collapse()
+
+    def _launch_slot(self,p,inner,icon,size):
+        """Put a profile's icon in its button, with a spinner that takes the icon's place while the profile starts."""
+        spinner=Gtk.Spinner(); spinner.set_size_request(S(size),S(size)); spinner.set_tooltip_text("Starting…")
+        inner.append(icon); inner.append(spinner); self._launch_slots.append((p.id,icon,spinner))
+        self._show_launching(icon,spinner,p.id in self.launching)
+    @staticmethod
+    def _show_launching(icon,spinner,on):
+        icon.set_visible(not on); spinner.set_visible(on); (spinner.start if on else spinner.stop)()
+    def set_launching(self,profile_id,on):
+        """Show (or stop) the spinner on every button of a profile that is starting. -> whether one is on screen."""
+        (self.launching.add if on else self.launching.discard)(profile_id)
+        self._launch_slots=[s for s in self._launch_slots if s[1].get_root() is self]   # rows rebuilt since are gone
+        shown=False
+        for pid,icon,spinner in self._launch_slots:
+            if pid!=profile_id: continue
+            self._show_launching(icon,spinner,on); shown=shown or spinner.is_visible()   # it and every container it is in
+        return shown
+    def launching_slow(self,profile_id,name):
+        for pid,_icon,spinner in self._launch_slots:
+            if pid==profile_id: spinner.set_tooltip_text(f"{name} has not opened a window yet. It may still be starting, or it may not have started.")
 
     @staticmethod
     def _lock_mark():
@@ -627,17 +650,19 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         shown=", ".join(names[:2])+(f" and {len(names)-2} more" if len(names)>2 else "")
         return [("view-dual-symbolic","◫",f"Open alongside {shown}",lambda:run(LAUNCH_SAME),False)]
     def _profile_items(self,p,app):
-        """A favorite's (or search result's) menu: open it the other way this once, its shortcuts, and Close when it is open."""
-        items=self._one_time_item(lambda mode:self.app.launch_profile(p,mode=mode))
-        items+=self._action_items(app)
+        """A favorite's (or search result's) menu, top to bottom: its shortcuts, open it the other way this once, and
+        Close (nearest the row) when it is open."""
+        items=self._action_items(app)
+        items+=self._one_time_item(lambda mode:self.app.launch_profile(p,mode=mode))
         if not p.command.strip() and not p.desktop_action:
             w=self.app.wm.find_matching(p,app)
             if w is not None: items.append(("window-close-symbolic","✕",f"Close {p.name}",lambda con=w["con_id"]:self._close_open_window(con),True))
         return items
     def _window_items(self,w,app):
-        """An open application's menu: open it the other way this time, its shortcuts, Close."""
-        items=[] if self.app.tv and w.get("workspace_visible") else self._one_time_item(lambda mode:self.app.focus_window(w["con_id"],mode))
-        items+=self._action_items(app)
+        """An open application's menu, top to bottom: its shortcuts, open it the other way this time, then Close
+        (nearest the row)."""
+        items=self._action_items(app)
+        if not (self.app.tv and w.get("workspace_visible")): items+=self._one_time_item(lambda mode:self.app.focus_window(w["con_id"],mode))
         items.append(("window-close-symbolic","✕","Close this application",lambda:self._close_open_window(w["con_id"]),True))
         return items
 
@@ -710,7 +735,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not primary and not lineup: row.set_margin_start(S(16))   # a secondary profile hangs under its application
         main=Gtk.Button(); main.set_hexpand(True); main.add_css_class("launch-row")
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12))
-        inner.append(app_icon(app.icon if app else None,p.name,32) if (primary or lineup) else child_marker(32))
+        self._launch_slot(p,inner,app_icon(app.icon if app else None,p.name,32) if (primary or lineup) else child_marker(32),32)
         ch=Gtk.Label(label=f"{p.channel:03d}" if p.channel is not None else ""); ch.set_width_chars(4); ch.set_xalign(0); ch.add_css_class("channel-number"); inner.append(ch)
         name=Gtk.Label(label=self.app.profile_name(p,app)); name.set_xalign(0); name.set_ellipsize(3); inner.append(name)
         # Each profile has its own description; without one the main profile shows its application's, another its launch options.
@@ -803,7 +828,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                 w=result["window"]; row.append(self.app.window_icon(w,28,result.get("badge"))); app=self.app.match_application_window(w)
                 items=lambda w=w,a=app:self._window_items(w,a)
             else:
-                p=result["profile"]; app=self.app.catalogue.by_id().get(p.desktop_id); row.append(app_icon(app.icon if app else None,p.name,28))
+                p=result["profile"]; app=self.app.catalogue.by_id().get(p.desktop_id); self._launch_slot(p,row,app_icon(app.icon if app else None,p.name,28),28)
                 items=lambda p=p,a=app:self._profile_items(p,a)
             row.append(Marquee(result["label"] if result["kind"]=="window" else self.app.profile_name(p,app),delay=NAME_SCROLL_DELAY).follow(main))
             detail=Gtk.Label(label=result["detail"]); detail.add_css_class("muted"); detail.set_ellipsize(3); row.append(detail); main.set_child(row)

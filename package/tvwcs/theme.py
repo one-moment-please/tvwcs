@@ -74,6 +74,7 @@ button.status-off { color: @FAINT@; }
 /* the Quick Menu's channel hint and the "Starting …" card */
 .channel-hint { color: @MUTED@; font-size: 15px; }
 entry.channel-entry { font-size: 24px; }
+entry.channel-entry text { letter-spacing: 2px; }
 entry.tv-search { border-color: @RAISED@; }
 entry.tv-search > image { -gtk-icon-size: 0; min-width: 0; margin: 0; padding: 0; opacity: 0; }
 entry.tv-search text placeholder { color: @ACCENT@; opacity: 1; }
