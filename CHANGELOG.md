@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.5.2 — 2026-10-21
+
+- Settings > Features no longer turns the whole Storage page on or off: opening, closing and switching off drives is always there (udisks2 is always installed). In its place is **Network shares (Samba)**, which installs gvfs-backends (the Samba client and the other network-share back ends) and shows the Storage page's network shares. It is off until turned on, even after a full install, so the Samba client is not installed unless it is wanted.
+
 ## 3.5.1 — 2026-10-17
 
 - Settings > Network can take over the network of a minimal Debian install. There ifupdown runs the network (/etc/network/interfaces), and NetworkManager will not touch it, so Wi-Fi networks could not be chosen or changed (an install over Wi-Fi) and Ethernet could only be shown. Choosing the "Not managed" Ethernet port or Wi-Fi adapter now offers one button that uninstalls ifupdown, removes /etc/network and restarts NetworkManager, which then manages every port. It warns first that the Wi-Fi network has to be chosen again, and any IP address, gateway or DNS servers set by hand set again. This replaces the earlier Ethernet-only take-over. If uninstalling ifupdown fails, its ports are brought back up.
