@@ -620,13 +620,23 @@ class TVWCSApp(Gtk.Application):
                 info=Gio.DesktopAppInfo.new(application.desktop_id)
                 if info is None: raise RuntimeError("Desktop launcher is no longer available.")
                 before={int(w["con_id"]) for w in self.wm.windows()}; urgent=self.wm.urgent_ids(); launch=mode or self.launch_mode(profile)
-                self.wm.prepare_for_launch(launch); info.launch_action(action_id,None)
+                # An app that is open usually takes its own actions in the window it has (Settings' pages), and does not
+                # always flag it (sway without an activation token): no new workspace, and its window is shown.
+                existing=self.wm.find_matching(profile,application) if profile is not None and mode is None else None
+                if existing is None: self.wm.prepare_for_launch(launch)
+                info.launch_action(action_id,None)
             except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}"); return
-            # watched like any launch: an app that is already open (Settings' pages) often only flags its window, which is then shown
+            if existing is not None: GLib.timeout_add(1200,self._show_after_action,existing,before); return
+            # watched like any launch: an app that is already open often only flags its window, which is then shown
             if profile is not None: self._launched(profile,started=True,before=before,urgent=urgent,mode=launch)
             else: self.hide_window(launched=True)
         # An action starts the application, so the main profile's PIN applies to it too.
         self._with_pins([profile] if profile and profile.pin_hash else [],go)
+    def _show_after_action(self,window,before):
+        """After an open app's action: a new window it opened is already shown; otherwise show the window it has."""
+        if not any(int(w["con_id"]) not in before for w in self.wm.windows()) and not self.wm.focus(window["con_id"],self.window_mode(window)):
+            self.notify_message("Could not show that application. It may have closed."); return GLib.SOURCE_REMOVE
+        self.hide_window(launched=True); return GLib.SOURCE_REMOVE
     def restart(self,launcher=None):
         """Start a fresh TVWCS once this process has exited (after an update replaced the program files), then quit.
         `launcher`: the new install's launcher, when the update moved TVWCS to another folder."""

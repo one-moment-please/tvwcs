@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.2.1 — 2026-10-21
+
+- Picking a page of an open Settings window (or another open app's shortcut) from its ⋯ menu shows that window on the page, on sway too. Before, sway left you on a new, empty workspace with a "Starting TVWCS Settings…" card, because the open window doesn't flag itself there.
+
 ## 4.2.0 — 2026-10-21
 
 **Quick Menu**
