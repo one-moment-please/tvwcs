@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.1.0 — 2026-10-21
+
+**Settings**
+- **Apps**: the buttons along the top are tabs. **Search** puts a search bar right under them that searches as you type, with a ⌨ button on its left for the on-screen keyboard. **Featured** is now **Categories**: two rows of buttons with every category, Featured first. **Settings** shows on the page instead of in a pop-up, and explains how apps are installed and what each choice does.
+- **Power and sleep**: the screen saver now works on sway too, drawn over every window (with gtk4-layer-shell, which the page offers to install), so a video playing full screen stays full screen under it. The DVD logo is gone: the TVWCS logo or a picture of your own. A DVD logo chosen before shows the TVWCS logo.
+- **Remote and hotkeys**: clearing a Quick Menu hotkey asks first, and says whether another device's hotkey still opens it.
+- **Storage**: a button to uninstall network shares (Samba), beside the one that installs them.
+- The ✕ at the top of the tabs is gone. Esc (or Back) from the tabs closes Settings, as does the window manager.
+- In a text field on a page, ← at its start and → at its end move to the button beside it, so a remote can reach Search's ⌨ button.
+
 ## 4.0.2 — 2026-10-21
 
 - The Quick Menu no longer flickers when a status panel (Wi-Fi, volume, Bluetooth, battery or ⏻) or an app's options open or close at a desk. It now grows and shrinks upwards with the clock and status row held still, instead of first growing off the bottom of the screen and then jumping into place.

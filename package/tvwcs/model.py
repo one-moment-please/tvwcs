@@ -84,7 +84,7 @@ DEFAULT_WALLPAPER="#323232"   # dark grey
 # The on-screen keyboard: hidden (a button shows it), the full keyboard, or a number pad. The one last used comes back.
 KEYBOARDS={"hidden":"Hidden","full":"Full keyboard","digits":"Number pad"}
 # Settings > Power and sleep > Screen saver: the bouncing logo.
-SCREENSAVER_LOGOS={"dvd":"The DVD Video logo","tvwcs":"The TVWCS logo","image":"A picture of your own"}
+SCREENSAVER_LOGOS={"tvwcs":"The TVWCS logo","image":"A picture of your own"}   # "dvd" (before 4.1) reads as "tvwcs"
 
 def key_hints(tv) -> str:
     """The Settings app's footer: a remote's key is called Back, a keyboard's Esc."""

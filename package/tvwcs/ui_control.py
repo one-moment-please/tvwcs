@@ -21,7 +21,7 @@ from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints, scale_key, tv_mode
 from tvwcs.theme import render_css
 from tvwcs import cursor
-from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, icon_button, screen_height, scroll_into_view, scroll_to_show, set_scale, usable
+from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, screen_height, scroll_into_view, scroll_to_show, set_scale, usable
 
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
@@ -63,6 +63,7 @@ button.key { min-height: 48px; min-width: 40px; padding: 0 6px; font-size: 18px;
 button.key.wide { font-size: 15px; }
 entry.text-field { font-size: 22px; min-height: 52px; }
 button.app-tool { min-height: 48px; padding: 0 12px; }
+entry.search-bar { min-height: 48px; font-size: 18px; }
 button.app-tool.current { box-shadow: inset 0 -4px 0 @ACCENT@; }
 button.app-tile { padding: 16px 10px 12px 10px; min-height: 170px; }
 .app-name { font-size: 16px; font-weight: 600; }
@@ -188,8 +189,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_end(S(20)); header.set_margin_bottom(S(14))
         brand=Gtk.Label(label="Settings"); brand.add_css_class("brand"); brand.set_xalign(0); brand.set_hexpand(True); header.append(brand)
         self.tab_header=header; self.brand=brand; self.tab_labels=[]; self._narrow=None
-        self.close_button=icon_button("window-close-symbolic","✕","Close Settings"); self.close_button.add_css_class("close-button"); self.close_button.add_css_class("square")
-        self.close_button.connect("clicked",lambda *_:self.close()); header.append(self.close_button); column.append(header)
+        column.append(header)   # no close button: Esc (or Back) from the tabs, or the window manager, closes Settings
         tabs=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2))
         tab_scroll=Gtk.ScrolledWindow(); tab_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); tab_scroll.set_vexpand(True)
         tab_scroll.set_child(tabs); column.append(tab_scroll); self.tab_scroll=tab_scroll   # in TV Mode on a 1080p screen the tabs can be taller than it; they scroll
@@ -232,9 +232,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         if narrow is self._narrow or not hasattr(self,"tab_column"): return
         self._narrow=narrow
         self.tab_column.set_size_request(S(76) if narrow else S(330),-1)
-        self.brand.set_visible(not narrow); self.footer.set_visible(not narrow)
-        for m in (self.tab_header.set_margin_start,self.tab_header.set_margin_end): m(S(16) if narrow else S(20))
-        self.close_button.set_hexpand(narrow); self.close_button.set_halign(Gtk.Align.CENTER if narrow else Gtk.Align.FILL)
+        self.tab_header.set_visible(not narrow); self.footer.set_visible(not narrow)
         for label,(key,b) in zip(self.tab_labels,self.tab_buttons.items()):
             label.set_visible(not narrow); b.set_tooltip_text(label.get_text() if narrow else None)
             (b.add_css_class if narrow else b.remove_css_class)("icon-tab")
@@ -279,7 +277,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def _groups(self, area):
         if area=="modal": return self._modal_groups
         if area=="page": return self.page.nav_groups()
-        return [NavGroup([self.close_button])]+[NavGroup([b]) for b in self.tab_buttons.values()]
+        return [NavGroup([b]) for b in self.tab_buttons.values()]
     def _group_index(self, groups, focused):
         for i,g in enumerate(groups):
             if any(w is focused for w in g): return i
@@ -318,7 +316,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def _move_within(self, step):
         focused=self.get_focus(); area=self._area(focused)
         if area=="tabs":
-            if step>0 and self.page is not None and focused is not self.close_button: return self.enter_page()
+            if step>0 and self.page is not None: return self.enter_page()
             return True
         groups=self._groups(area); gi=self._group_index(groups,focused)
         if gi<0: return self.enter_page() if area=="page" else False
@@ -344,6 +342,11 @@ class ControlWindow(Gtk.ApplicationWindow):
             return self._move_group(1 if keyval==Gdk.KEY_Down else -1)
         if keyval in (Gdk.KEY_Left,Gdk.KEY_Right) and not editable:
             return self._move_within(1 if keyval==Gdk.KEY_Right else -1)
+        if keyval in (Gdk.KEY_Left,Gdk.KEY_Right) and self._area(focused)=="page" and isinstance(focused,Gtk.Editable):
+            # in a text field on a page (Apps > Search), ← at its start and → at its end move along the row
+            at=focused.get_position(); selected=focused.get_selection_bounds()   # PyGObject: () when nothing is selected
+            if not selected and ((keyval==Gdk.KEY_Left and at==0) or (keyval==Gdk.KEY_Right and at>=len(focused.get_text()))):
+                return self._move_within(1 if keyval==Gdk.KEY_Right else -1)
         return False
 
     def _key_released(self, _controller, keyval, _keycode, _state):

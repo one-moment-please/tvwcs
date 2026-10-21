@@ -38,8 +38,10 @@ class ScreensaverTests(unittest.TestCase):
         run=tempfile.mkdtemp(); path=S.saver_script("/opt/tvwcs/bin/tvwcs",{"XDG_RUNTIME_DIR":run})
         self.assertTrue(os.access(path,os.X_OK))
         with open(path) as f: self.assertIn("exec '/opt/tvwcs/bin/tvwcs' screensaver --xsecurelock",f.read())
-    def test_the_tvwcs_logo_has_no_word_in_its_disc(self):
-        self.assertIsNone(S.LOGO_WORDS["tvwcs"][1]); self.assertEqual(S.LOGO_WORDS["dvd"],("DVD","VIDEO"))
+    def test_the_dvd_logo_is_gone(self):
+        from tvwcs.model import SCREENSAVER_LOGOS, _clean_settings
+        self.assertNotIn("dvd",SCREENSAVER_LOGOS)
+        self.assertEqual(_clean_settings({"screensaver_logo":"dvd"})["screensaver_logo"],"tvwcs")   # chosen before 4.1
     def test_the_qr_code_has_a_finder_pattern_on_the_left(self):
         dark=S.qr_modules(40,9,6)
         ring={(6+c,1+r) for c in range(7) for r in range(7) if c in (0,6) or r in (0,6)}
@@ -48,6 +50,18 @@ class ScreensaverTests(unittest.TestCase):
         self.assertTrue(ring<=dark and centre<=dark); self.assertFalse(light&dark)
         self.assertTrue(any(c>14 for c,_r in dark))   # random squares fill the rest
         self.assertEqual(dark,S.qr_modules(40,9,6))    # the same every time
+
+    def test_on_sway_it_needs_gtk4_layer_shell_preloaded(self):
+        import tempfile, os
+        d=tempfile.mkdtemp()
+        self.assertFalse(S.layer_shell_missing({"DISPLAY":":0"},dirs=(d,)))            # i3: a fullscreen window
+        if not __import__("glob").glob(f"/usr/lib/*/girepository-1.0/{S.LAYER_SHELL_TYPELIB}"):
+            self.assertTrue(S.layer_shell_missing({"SWAYSOCK":"/run/sway"},dirs=(d,)))
+        open(os.path.join(d,S.LAYER_SHELL_TYPELIB),"w").close()
+        self.assertFalse(S.layer_shell_missing({"SWAYSOCK":"/run/sway"},dirs=(d,)))
+        self.assertEqual(S.launch_env({"SWAYSOCK":"s","LD_PRELOAD":"libx.so"})["LD_PRELOAD"],"libgtk4-layer-shell.so.0 libx.so")
+        self.assertEqual(S.launch_env({"SWAYSOCK":"s","LD_PRELOAD":"libgtk4-layer-shell.so.0"})["LD_PRELOAD"],"libgtk4-layer-shell.so.0")
+        self.assertNotIn("LD_PRELOAD",S.launch_env({"DISPLAY":":0"}))
 
 if __name__=="__main__": unittest.main()
 
