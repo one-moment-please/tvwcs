@@ -121,6 +121,21 @@ def parse_ip_json(addr_json, route_json, physical=_physical):
                                "",link.get("address",""),addresses,gateways.get(name,"")))
     return found
 
+def with_unmanaged(interfaces, addr_json, route_json, physical=_physical):
+    """NetworkManager's interfaces, with the ones it leaves alone (an ifupdown port on Debian is "unmanaged") but that
+    are up with an address shown as connected, from `ip`; then ordered by default route, the one in use first."""
+    seen={i.device:i for i in parse_ip_json(addr_json,route_json,physical)}
+    for iface in interfaces:
+        live=seen.get(iface.device)
+        if iface.state.startswith("unmanaged") and live is not None and live.connected:
+            iface.state="connected (not managed by NetworkManager)"; iface.addresses=live.addresses; iface.gateway=live.gateway
+    try: routes=json.loads(route_json or "[]")
+    except ValueError: routes=[]
+    metric={}
+    for r in routes:
+        if r.get("dst")=="default" and r.get("dev"): metric[r["dev"]]=min(metric.get(r["dev"],1<<31),r.get("metric",0))
+    return sorted(interfaces,key=lambda i:metric.get(i.device,1<<32))
+
 def parse_ipv4(text):
     """`nmcli -t -f ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns connection show <uuid>` -> Ipv4Settings."""
     s=Ipv4Settings()
@@ -187,6 +202,12 @@ def read_state(scan=False):
         saved=saved_wifi(connections)
         for n in networks: n.saved_uuid=saved.get(n.ssid,"")
     return NetState(True,"",interfaces,wifi_on,networks)
+
+def read_details():
+    """read_state() for the Quick Menu's network panel: what is connected, the connection in use first."""
+    state=read_state(scan=False)
+    state.interfaces=with_unmanaged(state.interfaces,run(["ip","-j","addr"],timeout=5).out,run(["ip","-j","route"],timeout=5).out)
+    return state
 
 def saved_wifi(connections):
     """{ssid: uuid} of the saved Wi-Fi connections (a connection's name is not always its network's name)."""

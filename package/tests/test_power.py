@@ -125,6 +125,17 @@ class BatteryTests(unittest.TestCase):
         self.assertEqual((b.present,b.percent,b.on_battery,b.charging),(True,77,False,True))
         b=power.read_battery(self.supply({"AC":{"type":"Mains","online":"1"},"BAT0":{"type":"Battery","status":"Full","capacity":"100"}}))
         self.assertEqual((b.on_battery,b.charging),(False,False))
+    def test_time_left_and_time_to_full(self):
+        bat=lambda **v:self.supply({"BAT0":{"type":"Battery",**v}})
+        # 30 Wh left, drawing 10 W: 3 hours; 30 Wh to go at 20 W: an hour and a half
+        self.assertEqual(power.battery_time(bat(status="Discharging",energy_now="30000000",energy_full="60000000",power_now="10000000")),(10800,"empty"))
+        self.assertEqual(power.battery_time(bat(status="Charging",energy_now="30000000",energy_full="60000000",power_now="20000000")),(5400,"full"))
+        self.assertEqual(power.battery_time(bat(status="Discharging",charge_now="2000000",charge_full="4000000",current_now="-1000000")),(7200,"empty"))
+        self.assertEqual(power.battery_time(bat(status="Discharging",time_to_empty_now="600",energy_now="1",energy_full="2",power_now="1")),(600,"empty"))
+        self.assertEqual(power.battery_time(bat(status="Discharging",energy_now="30",energy_full="60",power_now="0")),(None,"empty"))   # no rate yet
+        self.assertEqual(power.battery_time(bat(status="Full",capacity="100")),(None,""))
+        self.assertEqual(power.battery_time("/nonexistent"),(None,""))
+        self.assertEqual([power.time_text(s) for s in (10800,12000,2700,20)],["3 h","3 h 20 min","45 min","1 min"])
     def test_a_mouse_battery_is_not_the_computers(self):
         self.assertFalse(power.read_battery(self.supply({"hidpp_battery_0":{"type":"Battery","scope":"Device","capacity":"20","status":"Discharging"}})).present)
     def test_times_and_critical_action(self):

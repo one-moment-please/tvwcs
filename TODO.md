@@ -475,7 +475,7 @@ logging out unmounts it).
 
 ---
 
-## 5. The screen saver on sway (not started; hidden there since 3.5.3)
+## 5. The screen saver on sway (not started; hidden there since 3.6.1)
 
 **Why it is hidden:** `tvwcs screensaver` opens a plain fullscreen GTK window per monitor. On sway that window joins
 the workspace like any app, takes fullscreen away from whatever had it (a video) without giving it back, and moves

@@ -1,9 +1,19 @@
 # Changelog
 
-## 3.5.3 — 2026-10-21
+## 3.6.1 — 2026-10-21
 
 - Settings > Sound folds outputs and inputs with nothing plugged in (an empty headphone jack, an HDMI port without a TV) under one "Not plugged in" row, closed until it is chosen. They can still be tried from there. The output or input in use is always shown.
 - On sway, Settings > Power and sleep no longer offers the screen saver, and swayidle no longer starts it: it was an ordinary fullscreen window there, which took fullscreen away from a video and moved focus. It comes back once it is drawn as an overlay (TODO.md).
+
+## 3.6.0 — 2026-10-21
+
+**Quick Menu**
+- A row's options (⋯, ← or a right-click) unfold in the Quick Menu itself instead of a dialog: upwards, just above their app or workspace, indented a little on both sides and with a small gap to the row above, so it is clear whose they are. ↑ from the row goes into them; Back, ⋯ again or moving away folds them.
+- A workspace's individual apps unfold upwards too, above the workspace (▴ shows them, ▾ folds them).
+- ⏻ has moved to the bottom right, beside the status icons. Its menu unfolds above it and now always has **Lock**, as well as Sleep, Reboot, Shut down and (with a login screen) Log out. The "Lock in the power menu" option is gone.
+- The network, volume, Bluetooth and battery icons unfold a panel above the status row: the connections, the one in use first (a wired port NetworkManager leaves to ifupdown included), with address and signal, and Wi-Fi on or off; mute, − and + for the output and the input; the connected Bluetooth devices with Disconnect, and Bluetooth on or off; the battery's estimated time left, or time until fully charged. Each panel has a button for its Settings page.
+- The ⚙ Settings button and its option are gone: Settings is channel 000, and each status panel opens its own page.
+- The ⊞ Applications button has moved to the Quick Menu's bottom-right corner, after ⏻. It stays highlighted while Applications is open, and pressing it again closes them.
 
 ## 3.5.2 — 2026-10-21
 
@@ -18,6 +28,7 @@
 
 - Settings > Displays has a **Scale** that makes text and controls bigger. In sway each display has its own, from 100 % to 300 % in steps of 25 %. In i3 (X11) there is one scale for every display, in whole steps (100 %, 200 %, 300 %); turning on **Fractional scaling** also offers 125 %, 150 %, 175 % and so on. A fractional scale is drawn at the next whole step and shrunk by xrandr, as GNOME does it, so it is a little less sharp. Only scales that leave a display at least 540 pixels high are offered, and a new scale goes back after 15 seconds unless it is kept.
 - In i3 the scale reaches apps through Xft.dpi (and ~/.Xresources, so i3 and the next log-in use it too) and, for GTK apps, through xsettingsd, which install.sh now asks for in i3.
+
 ## 3.4.3 — 2026-10-16
 
 - The real cause of "Logging in…" hanging is fixed: greetd's worker locks its memory, and pam_ecryptfs ran out of stack under the default memory-lock limit about one login in three. TVWCS's login screen now lifts greetd's limit (/etc/systemd/system/greetd.service.d/tvwcs-memlock.conf, removed when the login screen is turned off) and no longer rewrites greetd's PAM config: greetd's own comes back on update, so home folders encrypted with eCryptfs unlock as usual.

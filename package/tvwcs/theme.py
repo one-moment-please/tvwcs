@@ -77,6 +77,16 @@ entry.channel-entry { font-size: 24px; }
 .digit-box { min-width: 56px; min-height: 64px; font-size: 34px; font-weight: 300; background: @RAISED@; border: 2px solid @BORDER@; }
 .digit-box.current { border-color: @ACCENT@; }
 button.menu-item { padding: 0 16px; }
+/* a Quick Menu row's options, unfolded above it, and a status icon's panel */
+.row-options button.menu-item { min-height: 40px; }
+.row-options button.menu-item:not(:focus):not(:active) { background: @HEADER@; }
+.status-panel { background: @HEADER@; padding: 10px 12px; }
+.panel-title { font-size: 15px; font-weight: 700; margin-top: 2px; }
+.status-panel button { min-height: 40px; }
+.status-panel scale { padding: 0 6px; }
+.status-panel scale trough { background: @TROUGH@; border: none; border-radius: 0; min-height: 8px; }
+.status-panel scale highlight { background: @ACCENT@; border: none; border-radius: 0; min-height: 8px; margin: 0; }
+.status-panel scale slider { background: @FG@; border: none; border-radius: 0; min-width: 12px; min-height: 20px; margin: -6px 0; box-shadow: none; }
 """
 
 # The two looks (Settings > Options > Appearance). The selection stays a solid accent block with white text in both.

@@ -97,6 +97,41 @@ def read_battery(root=None):
     on_battery=discharging or mains is False
     return Battery(True,max(0,min(100,percent)),on_battery,charging and not on_battery)
 
+def battery_time(root=None):
+    """(seconds, "empty" | "full"): how long until the battery runs out (on battery) or is charged, from the kernel's own
+    estimate or from the rate it drains or charges at. Seconds is None when it cannot be told yet (no battery, a full
+    one, or no rate reported)."""
+    def value(path, name):
+        try:
+            with open(os.path.join(path,name),encoding="utf-8") as f: return f.read().strip()
+        except OSError: return ""
+    def number(path, name):
+        v=value(path,name); return int(v) if v.lstrip("-").isdigit() else None
+    try: entries=sorted(os.scandir(root or POWER_SUPPLY),key=lambda e:e.name)
+    except OSError: return None,""
+    now=full=rate=0; told=0; direction=""
+    for e in entries:
+        if value(e.path,"type")!="Battery" or value(e.path,"scope")=="Device" or value(e.path,"present")=="0": continue
+        status=value(e.path,"status")
+        if status=="Discharging": direction="empty"
+        elif status=="Charging" and direction!="empty": direction="full"
+        t=number(e.path,"time_to_empty_now" if status=="Discharging" else "time_to_full_now")
+        if t: told+=t
+        for n,f,r in (("energy_now","energy_full","power_now"),("charge_now","charge_full","current_now")):
+            a,b,c=number(e.path,n),number(e.path,f),number(e.path,r)
+            if a is not None and b:
+                now+=a; full+=b; rate+=abs(c or 0); break
+    if not direction: return None,""
+    if told: return told,direction
+    if rate<=0: return None,direction
+    left=now if direction=="empty" else max(0,full-now)
+    return round(left*3600/rate),direction
+
+def time_text(seconds):
+    """3 h 20 min, 45 min, 1 min."""
+    minutes=max(1,round(seconds/60)); h,m=divmod(minutes,60)
+    return f"{h} h {m} min" if h and m else f"{h} h" if h else f"{m} min"
+
 def active_idle(settings, battery):
     """The times in use now: the battery's while the computer runs on it, else the plugged-in ones."""
     return settings["idle_battery"] if battery.present and battery.on_battery else settings["idle"]
