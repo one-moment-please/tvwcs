@@ -538,7 +538,7 @@ class TVWCSApp(Gtk.Application):
         waiting=w.is_visible() or blank
         card=False
         if waiting:
-            if w.is_visible(): self.wm.move_tvwcs_to_current_workspace(); self.apply_geometry()   # follow to the new workspace
+            if w.is_visible(): self.wm.move_tvwcs_to_current_workspace(); self.apply_geometry(); w.present()   # follow to the new workspace, keeping the focus
             else: self.show_mode("toggle")
             self.grace_until=time.monotonic()+tv_mode.LAUNCH_GRACE   # Back hides TVWCS over the empty screen meanwhile
             card=not w.set_launching(profile.id,True)
@@ -619,8 +619,12 @@ class TVWCSApp(Gtk.Application):
             try:
                 info=Gio.DesktopAppInfo.new(application.desktop_id)
                 if info is None: raise RuntimeError("Desktop launcher is no longer available.")
-                self.wm.prepare_for_launch(mode or self.launch_mode(profile)); info.launch_action(action_id,None); self.hide_window(launched=True)
-            except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}")
+                before={int(w["con_id"]) for w in self.wm.windows()}; urgent=self.wm.urgent_ids(); launch=mode or self.launch_mode(profile)
+                self.wm.prepare_for_launch(launch); info.launch_action(action_id,None)
+            except Exception as exc: self.notify_message(f"Could not launch desktop action: {exc}"); return
+            # watched like any launch: an app that is already open (Settings' pages) often only flags its window, which is then shown
+            if profile is not None: self._launched(profile,started=True,before=before,urgent=urgent,mode=launch)
+            else: self.hide_window(launched=True)
         # An action starts the application, so the main profile's PIN applies to it too.
         self._with_pins([profile] if profile and profile.pin_hash else [],go)
     def restart(self,launcher=None):

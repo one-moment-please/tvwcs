@@ -155,7 +155,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if getattr(self,"_search_narrow",None)==narrow: return
         self._search_narrow=narrow
         e.set_hexpand(not narrow); e.set_halign(Gtk.Align.START if narrow else Gtk.Align.FILL)
-        e.set_width_chars(CHANNEL_DIGITS if narrow else -1); e.set_max_width_chars(CHANNEL_DIGITS if narrow else -1)   # "___"; no ✕ while narrow (theme)
+        # three digits, + a little for the field's padding (the theme hides the ✕ while narrow)
+        e.set_width_chars(CHANNEL_DIGITS+1 if narrow else -1); e.set_max_width_chars(CHANNEL_DIGITS+1 if narrow else -1)
         (e.add_css_class if narrow else e.remove_css_class)("channel-entry")
         (e.add_css_class if tv else e.remove_css_class)("tv-search")   # the app buttons' fill, no magnifier
         e.set_placeholder_text("_"*CHANNEL_DIGITS if narrow else "Search, or type a channel number")
@@ -817,7 +818,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if self._contains(self.results_box,self.get_focus()): self.search_entry.grab_focus()   # its row is about to go (the field's ✕ clicked)
         if any(self._open_row is g for g in self._result_groups): self._open_row=None
         clear_box(self.results_box); self._result_groups=[]; self._result_mains=[]; self._selected_result=0
-        q=self.search_entry.get_text()
+        q=self.search_entry.get_text(); self._results_query=q
         self.results_scroll.set_visible(bool(q.strip()))
         self._shape_search()
         if not q.strip(): self._search_results=[]; self.app.fit_quick_menu(); return
@@ -842,6 +843,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.app.fit_quick_menu()
     def _activate_search(self,*_):
         if self._channel_source: GLib.source_remove(self._channel_source); self._channel_source=0   # Enter launches it now
+        # typed and OK'd at once: list the results first (GTK waits a moment), so the launch spinner has its button
+        if getattr(self,"_results_query",None)!=self.search_entry.get_text(): self._refresh_search_results()
         q=self.search_entry.get_text().strip()
         if q.isdigit():
             p=next((p for p in self.app.store.profiles if p.channel==int(q)),None)
@@ -1074,7 +1077,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             GLib.timeout_add(150,self._close_if_unfocused)
     def _close_if_unfocused(self):
         # Child windows (profile editor) and open popovers legitimately take focus; only a click elsewhere closes TVWCS.
-        if self.is_visible() and not self.is_active() and self._popovers==0 and not self.app.has_dialogs(): self.app.hide_window()
+        # Nor while an app starts: opening it in a workspace of its own moves the focus, and its button shows the spinner.
+        if self.is_visible() and not self.is_active() and self._popovers==0 and not self.app.has_dialogs() and not self.launching: self.app.hide_window()
         return GLib.SOURCE_REMOVE
     def _dismiss_dialogs_if_active(self):
         if self.is_visible() and self.is_active(): self.app.dismiss_dialogs()   # still in front: not a passing focus change
