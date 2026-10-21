@@ -1620,6 +1620,11 @@ class StoragePage(Page):
         self.note("Each drive's partitions are listed under it. Mounting a partition makes its files readable, in the folder shown "
                   "under it. Unmount it, or switch the drive off with ⏏, before unplugging it.")
         self.section("NETWORK SHARES")
+        if not features.enabled(ConfigStore().settings,"samba"):
+            self.row("Network shares are off","Off",lambda:turn_feature_on(self,features.BY_KEY["samba"]),icon="folder-remote-symbolic",fallback="⇄",
+                     ident="share:feature",detail="Turn on Network shares (Samba) in Features to connect to Windows, Samba, NFS or SSH shares. "
+                     "Turning it on installs "+", ".join(features.BY_KEY["samba"].packages)+".")
+            return
         missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
         if missing: self.note("Connecting to network shares needs "+" and ".join(missing)+". Install it with sudo apt install "
                               +" ".join(m.split()[0] for m in missing)+".","error")
@@ -1861,7 +1866,7 @@ class DateTimePage(Page):
 def turn_feature_on(page, f, after=None):
     """Install the feature's missing packages (asking first), then turn it on; TVWCS and the page read it again."""
     def switch_on():
-        store=ConfigStore(); store.settings["features"].pop(f.key,None); store.save(); tell_tvwcs("reload")
+        store=ConfigStore(); features.choose(store.settings["features"],f.key,True); store.save(); tell_tvwcs("reload")
         if after: after()
         page.refresh(quiet=True)
     if features.installed(f): switch_on(); return
@@ -1882,7 +1887,7 @@ def turn_feature_on(page, f, after=None):
 
 def turn_feature_off(page, f, uninstall):
     def switch_off():
-        store=ConfigStore(); store.settings["features"][f.key]=False; store.save(); tell_tvwcs("reload"); page.refresh(quiet=True)
+        store=ConfigStore(); features.choose(store.settings["features"],f.key,False); store.save(); tell_tvwcs("reload"); page.refresh(quiet=True)
     if not uninstall: switch_off(); return
     page.set_status("Checking what else needs it…")
     def check(): return features.removable(f,ConfigStore().settings)
@@ -1921,7 +1926,8 @@ class FeaturesPage(Page):
             else: value,detail="Off",f.what+("" if have else f" Turning it on installs {', '.join(f.packages)}.")
             self.row(f.label,value,lambda f=f,on=on,have=have:self.change(f,on and have),detail=detail,ident=f"feature:{f.key}",
                      value_css="state-on" if on and have else "setting-value")
-        self.note("A minimal install starts with the features whose software is not installed turned off. A feature that is off "
+        self.note("A minimal install starts with the features whose software is not installed turned off, and Network shares (Samba) "
+                  "is off until you turn it on, even after a full install. A feature that is off "
                   "keeps its Settings page, which only offers to turn it on. Uninstalling removes only its own packages, and only "
                   "when nothing else installed needs them; it never removes other software.")
     def change(self, f, on):
