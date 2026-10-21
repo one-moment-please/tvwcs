@@ -512,21 +512,22 @@ class PowerPage(Page):
         times=s.settings; screen=times["screen_off"]
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
-        self.section("SCREEN SAVER")
         st=ConfigStore().settings
         saver=features.BY_KEY["screensaver"]
-        if not features.enabled(st,"screensaver"):
+        if s.session=="sway": pass   # the screen saver is a plain fullscreen window, which sway handles badly: hidden there for now
+        elif not features.enabled(st,"screensaver"):
+            self.section("SCREEN SAVER")
             self.row("Screen saver","Off",lambda:turn_feature_on(self,saver),icon="video-display-symbolic",fallback="▭",ident="saver:feature",
                      detail="Turned off in Features"+("" if features.installed(saver) else f". Turning it on installs {', '.join(saver.packages)}"))
         else:
+            self.section("SCREEN SAVER")
             logo=st["screensaver_logo"]
             self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
             on_lock=bool(st["screensaver_on_lock"]) and features.enabled(st,"lock_saver")
             lock_saver=features.BY_KEY["lock_saver"]; ready=features.enabled(st,"lock_saver") and features.installed(lock_saver)
-            if s.session=="sway": why="Not available on sway: swaylock cannot show a screen saver"
-            elif not ready: why=f"Needs {', '.join(lock_saver.packages)}, which locks the screen while the screen saver shows. Choose this to install it"
+            if not ready: why=f"Needs {', '.join(lock_saver.packages)}, which locks the screen while the screen saver shows. Choose this to install it"
             else: why="A key shows the password box; after a minute without one, the screen saver comes back"
-            action=None if s.session=="sway" else self.toggle_saver_on_lock if ready else lambda:turn_feature_on(self,lock_saver,after=self.saver_on_lock_on)
+            action=self.toggle_saver_on_lock if ready else lambda:turn_feature_on(self,lock_saver,after=self.saver_on_lock_on)
             self.row("Show it when the computer locks",_on_off(on_lock),action,detail=why,
                      icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
             self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
@@ -572,7 +573,7 @@ class PowerPage(Page):
     def idle_rows(self, s, times, option, heading):
         """The four times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
         self.section(heading); tag="" if option=="idle" else "bat"
-        if features.enabled(ConfigStore().settings,"screensaver"):
+        if features.enabled(ConfigStore().settings,"screensaver") and s.session!="sway":   # not on sway yet (see power.swayidle_argv)
             self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
                      icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
         screen=times["screen_off"]
@@ -666,18 +667,37 @@ class SoundPage(Page):
         if not state.available: self.note(state.message); return
         self.section("OUTPUT")
         current=state.output()
+        shown,unplugged=sound.split_unplugged(state.outputs,current.name if current else "")
         if current is None: self.note(self.no_output_text(state))
         else:
             self.volume_row(current,"out")
-            for d in state.outputs: self.device_row(d,d.name==(current.name if current else ""),"audio-speakers-symbolic","🔈")
-        for o in state.other_outputs: self.card_output_row(o)
+            for d in shown: self.device_row(d,d.name==current.name,"audio-speakers-symbolic","🔈")
+        for o in state.other_outputs:
+            if o.available: self.card_output_row(o)
+        self.unplugged_rows("out",[lambda d=d:self.device_row(d,False,"audio-speakers-symbolic","🔈") for d in unplugged]
+                            +[lambda o=o:self.card_output_row(o) for o in state.other_outputs if not o.available])
         self.section("INPUT")
         current=state.input()
+        shown,unplugged=sound.split_unplugged(state.inputs,current.name if current else "")
         if current is None: self.note("No microphone or other input is connected.")
         else:
             self.volume_row(current,"in")
-            for d in state.inputs: self.device_row(d,d.name==current.name,"audio-input-microphone-symbolic","🎤")
+            for d in shown: self.device_row(d,d.name==current.name,"audio-input-microphone-symbolic","🎤")
+        self.unplugged_rows("in",[lambda d=d:self.device_row(d,False,"audio-input-microphone-symbolic","🎤") for d in unplugged])
         self.note("Choosing a device uses it from now on; sound that is already playing moves to it too.")
+
+    def unplugged_rows(self, kind, draws):
+        """Outputs or inputs with nothing plugged in, folded under one row that opens and closes them: they can still be
+        tried, but seldom are."""
+        if not draws: return
+        opened=getattr(self,"opened",set()); self.opened=opened; is_open=kind in opened
+        def toggle():
+            opened.symmetric_difference_update({kind}); self.redraw()
+        self.row("Not plugged in",f"{len(draws)} · "+("Hide" if is_open else "Show"),toggle,
+                 detail="Nothing seems connected here, but they can be tried",icon="pan-down-symbolic" if is_open else "pan-end-symbolic",
+                 fallback="▾" if is_open else "▸",ident=f"unplugged:{kind}")
+        if is_open:
+            for draw in draws: draw()
 
     def device_row(self, d, in_use, icon, fallback):
         ports=[p for p in d.ports if p.available]
@@ -699,7 +719,7 @@ class SoundPage(Page):
 
     def card_output_row(self, o):
         """An output of a profile the card is not using now (often its HDMI output): choosing it switches the card over."""
-        detail=f"{o.card_label} · "+("switches the sound card to this output" if o.available else "nothing seems plugged in here, but it can be tried")
+        detail=f"{o.card_label} · switches the sound card to this output"
         def use(o=o):
             self.act(lambda:_outcome(sound.use_card_output(o),f"Could not switch {o.card_label} to {o.label}."),f"Switching to {o.label}…",
                      "Sound",after=lambda:setattr(self,"focus_after",f"sink:{sound.sink_for(o.card,o.output)}"))

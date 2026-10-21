@@ -10,6 +10,11 @@
 - The ⚙ Settings button and its option are gone: Settings is channel 000, and each status panel opens its own page.
 - The ⊞ Applications button has moved to the Quick Menu's bottom-right corner, after ⏻. It stays highlighted while Applications is open, and pressing it again closes them.
 
+## 3.5.3 — 2026-10-21
+
+- Settings > Sound folds outputs and inputs with nothing plugged in (an empty headphone jack, an HDMI port without a TV) under one "Not plugged in" row, closed until it is chosen. They can still be tried from there. The output or input in use is always shown.
+- On sway, Settings > Power and sleep no longer offers the screen saver, and swayidle no longer starts it: it was an ordinary fullscreen window there, which took fullscreen away from a video and moved focus. It comes back once it is drawn as an overlay (TODO.md).
+
 ## 3.5.2 — 2026-10-21
 
 - Settings > Features no longer turns the whole Storage page on or off: opening, closing and switching off drives is always there (udisks2 is always installed). In its place is **Network shares (Samba)**, which installs gvfs-backends (the Samba client and the other network-share back ends) and shows the Storage page's network shares. It is off until turned on, even after a full install, so the Samba client is not installed unless it is wanted.

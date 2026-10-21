@@ -472,3 +472,22 @@ stack than the default 8 MB memlock limit leaves. Since 3.4.3 TVWCS lifts greetd
 (`GREETD_DROPIN` in `package/tvwcs/loginscreen.py`) and leaves PAM as it is, so eCryptfs homes unlock as usual.
 Still to check once: a real login into an eCryptfs-encrypted home through the login screen (the home mounts, and
 logging out unmounts it).
+
+---
+
+## 5. The screen saver on sway (not started; hidden there since 3.5.3)
+
+**Why it is hidden:** `tvwcs screensaver` opens a plain fullscreen GTK window per monitor. On sway that window joins
+the workspace like any app, takes fullscreen away from whatever had it (a video) without giving it back, and moves
+focus. So on sway Settings > Power and sleep shows no screen saver rows, and `power.swayidle_argv` leaves it out.
+
+**Idle screen saver:** draw it on sway as a layer-shell surface in the overlay layer, one per output, through
+gtk4-layer-shell, with exclusive keyboard so any key ends it. The drawing code in `screensaver.py` stays the same.
+From Python the library must be preloaded (`LD_PRELOAD` of libgtk4-layer-shell.so) before GTK loads, so the command
+would re-exec itself with that set. Check which Debian release ships a recent enough gtk4-layer-shell, and add it to
+the screen saver feature's packages for sway. Effort about S to M.
+
+**Screen saver while locked:** swaylock only shows a still picture, and xsecurelock is X11 only. Options: a TVWCS
+locker on ext-session-lock (gtk4-layer-shell 1.1+ has it; the compositor keeps the screen locked if the locker
+crashes) that draws the saver and a password box checked through PAM (security-sensitive, effort L), or
+swaylock-plugin (not packaged for Debian, so against the apt/Flatpak-only rule).
