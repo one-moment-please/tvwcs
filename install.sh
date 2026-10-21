@@ -579,6 +579,11 @@ set_up_session_config() {   # TVWCS's own session config: the standard template 
     { echo "# TVWCS's own $1 session (\"TVWCS ($1)\" at the login screen): TVWCS runs here in TV mode. Written by TVWCS's"
       echo "# install.sh from the standard template; edit it as you like. Your usual $1 config is not used in this session."
       cat "$T"; echo; echo "# TVWCS: its hotkeys, window rules and autostart."; include_line; } > "$S"
+    # TV mode locks with TVWCS's lock screen: xss-lock (in i3's template) runs it instead of plain i3lock
+    if [ "$1" = i3 ] && grep -q "xss-lock" "$S"; then
+        XDG_CONFIG_HOME="$CONFIG_HOME" PYTHONPATH="$DEST" python3 -c 'import sys; from tvwcs.power import with_xss_locker; p=sys.argv[1]; t=open(p).read(); open(p,"w").write(with_xss_locker(t,sys.argv[2]))' \
+            "$S" "'$DEST/bin/tvwcs' lock --nofork" >/dev/null 2>&1 || warn "xss-lock in $S still runs i3lock, not TVWCS's lock screen."
+    fi
     say "Created TVWCS's $1 session config, $S."
 }
 set_up_usual() {   # set_up_usual <wm>: the usual session, as chosen

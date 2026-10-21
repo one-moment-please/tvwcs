@@ -7,15 +7,15 @@ def which_of(*names): return lambda n: f"/usr/bin/{n}" if n in names else None
 
 class LockScreenTests(unittest.TestCase):
     def test_used_only_when_chosen_and_its_locker_is_installed(self):
-        on={"tvwcs_lock_screen":True}
-        self.assertEqual(lockscreen.command(on,{},which_of("i3lock"))[1:],["lock"])
+        tv={"TVWCS_SESSION":"i3"}   # TV mode always locks with TVWCS's lock screen; a desktop session keeps its own locker
+        self.assertEqual(lockscreen.command({},tv,which_of("i3lock"))[1:],["lock"])
         self.assertIsNone(lockscreen.command({},{},which_of("i3lock")))
-        self.assertIsNone(lockscreen.command(on,{},which_of("xdg-screensaver")))
-        self.assertIsNone(lockscreen.command(on,{"SWAYSOCK":"/run/sway"},which_of("i3lock")))   # sway needs swaylock
+        self.assertIsNone(lockscreen.command({},tv,which_of("xdg-screensaver")))
+        self.assertIsNone(lockscreen.command({},{**tv,"SWAYSOCK":"/run/sway"},which_of("i3lock")))   # sway needs swaylock
     def test_screen_saver_while_locked_uses_xsecurelock_on_x_only(self):
         on={"screensaver_on_lock":True}
         self.assertTrue(lockscreen.saver_lock(on,{},which_of("xsecurelock")))
-        self.assertEqual(lockscreen.command(on,{},which_of("xsecurelock"))[1:],["lock"])   # even without TVWCS's lock screen chosen
+        self.assertEqual(lockscreen.command(on,{"TVWCS_SESSION":"i3"},which_of("xsecurelock"))[1:],["lock"])   # even without i3lock
         self.assertFalse(lockscreen.saver_lock(on,{},which_of("i3lock")))
         self.assertFalse(lockscreen.saver_lock(on,{"SWAYSOCK":"/run/sway"},which_of("xsecurelock")))
         self.assertFalse(lockscreen.saver_lock({},{},which_of("xsecurelock")))
@@ -23,7 +23,7 @@ class LockScreenTests(unittest.TestCase):
         self.assertEqual(env["XSECURELOCK_SAVER"],"/run/saver"); self.assertEqual(env["XSECURELOCK_AUTH_TIMEOUT"],"60")
         self.assertEqual(env["XSECURELOCK_BLANK_TIMEOUT"],"-1"); self.assertEqual(env["XSECURELOCK_SAVER_STOP_ON_BLANK"],"1")
     def test_the_power_menu_lock_uses_it(self):
-        cmd=system_actions.command_for("lock",{"tvwcs_lock_screen":True},{},which_of("i3lock"))
+        cmd=system_actions.command_for("lock",{},{"TVWCS_SESSION":"i3"},which_of("i3lock"))
         self.assertEqual(cmd[-1],"lock")
         self.assertEqual(system_actions.command_for("lock",{},{},which_of("i3lock")),["i3lock","-c","000000"])
     def test_locker_arguments(self):

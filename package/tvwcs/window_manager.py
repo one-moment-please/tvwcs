@@ -3,7 +3,7 @@ sway speaks i3's IPC and command language, so the same commands work through swa
 under the pointer differs (see focus_output_under_mouse)."""
 from __future__ import annotations
 import json, os, re, shutil, subprocess
-from tvwcs.model import LAUNCH_NEW_WORKSPACE, is_tvwcs_title
+from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, is_tvwcs_title
 
 TVWCS_CRITERIA='[title="^TVWCS$"]'
 _BAR_CLASSES={"i3bar","swaybar","waybar","polybar","tint2","xfce4panel","matepanel","gnomepanel","plasmashell","latte","cairodock","plank","cairo dock","eww"}
@@ -176,9 +176,10 @@ class I3WindowManager:
     def focus(self, con_id, mode):
         """Bring one window up. LAUNCH_NEW_WORKSPACE: it ends up alone on a workspace of its own (a window already
         alone is just shown, one that shares a workspace is split off to a new one). LAUNCH_SAME: it is tiled
-        into the current workspace."""
+        into the current workspace. LAUNCH_PLAIN: it is focused where it is, as i3 / sway would."""
         if not self.binary: return False
         con_id=int(con_id)
+        if mode==LAUNCH_PLAIN: return _all_ok(self._call(f"[con_id={con_id}] focus"))
         target=self.focus_output_under_mouse()
         windows=self._all_windows()
         win=next((w for w in windows if int(w["con_id"])==con_id),None)

@@ -27,19 +27,18 @@ class HotkeyTests(unittest.TestCase):
         self.assertIn("hide_edge_borders smart",conf); self.assertIn("default_border pixel 2",conf)
         self.assertTrue(all(l.startswith(("#","bind","default_border","hide_edge_borders")) for l in conf))
     def test_lone_modifiers_bind_their_own_keycode_on_release(self):
-        hk=clean_hotkeys({"keyboard":{"menu":"Mod4","guide":"Mod1"},"gamepad":{"menu":"Control"}})
+        hk=clean_hotkeys({"keyboard":{"menu":"Mod4"},"remote":{"menu":"Mod1"},"gamepad":{"menu":"Control"}})
         conf=render_i3(hk,"t",{"Mod4":134})   # the keyboard's real keycode wins over the default
         self.assertIn("bindcode --release 134 exec --no-startup-id t toggle",conf)
-        self.assertIn("bindcode --release 64 exec --no-startup-id t guide",conf); self.assertIn("bindcode --release 37 exec --no-startup-id t toggle",conf)
+        self.assertIn("bindcode --release 64 exec --no-startup-id t toggle",conf); self.assertIn("bindcode --release 37 exec --no-startup-id t toggle",conf)
         self.assertEqual(binding("Mod4+space"),"bindsym Mod4+space")
         # GTK names a remote's multimedia keys without XF86; i3 rejects them that way
         self.assertEqual(binding("Mail"),"bindsym XF86Mail"); self.assertEqual(binding("Shift+Search"),"bindsym Shift+XF86Search")
         self.assertEqual(binding("XF86Tools"),"bindsym XF86Tools"); self.assertEqual(binding("F2"),"bindsym F2")
-    def test_remote_fullscreen_key_toggles_the_focused_app_but_never_tvwcs(self):
-        hk=clean_hotkeys({"remote":{"fullscreen":"F11"},"keyboard":{"fullscreen":"F12"}})   # only the remote has one
-        self.assertEqual((hk["remote"]["fullscreen"],"fullscreen" in hk["keyboard"]),("F11",False))
-        conf=render_i3(hk,"t")
-        self.assertIn('bindsym F11 [con_id="__focused__" title="^(?!TVWCS$|TVWCS · )"] fullscreen toggle',conf); self.assertNotIn("F12",conf)
+    def test_only_the_quick_menu_has_device_hotkeys(self):
+        hk=clean_hotkeys({"remote":{"menu":"F2","fullscreen":"F11","guide":"F3"}})   # the Applications and Fullscreen keys before 4.0
+        self.assertEqual(hk["remote"],{"menu":"F2"}); conf=render_i3(hk,"t")
+        self.assertNotIn("F11",conf); self.assertNotIn("F3",conf)
     def test_application_hotkeys_launch_their_profile(self):
         conf=render_i3(clean_hotkeys(None),"/opt/tvwcs",app_keys=[("Mod4+f","3f2a-b1","Fire\nfox"),("F2","x","Taken"),("F9","bad id","Odd"),("F7","ok","")])
         self.assertIn("bindsym Mod4+f exec --no-startup-id /opt/tvwcs launch 3f2a-b1",conf); self.assertIn("# Application: Fire fox (Super + F)",conf)

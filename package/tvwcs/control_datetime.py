@@ -163,6 +163,11 @@ def clock_text(when=None, hours24=False):
     if hours24: return f"{t.tm_hour:02d}:{t.tm_min:02d}"
     return f"{t.tm_hour%12 or 12}:{t.tm_min:02d} {'AM' if t.tm_hour<12 else 'PM'}"
 
+def short_date_text(when=None):
+    """'Sat, Oct 17': the Quick Menu's date, under the time."""
+    t=time.localtime(when)
+    return f"{('Mon','Tue','Wed','Thu','Fri','Sat','Sun')[t.tm_wday]}, {('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec')[t.tm_mon-1]} {t.tm_mday}"
+
 def date_text(when=None):
     """'Thursday, October 15': day and month names in English, as the rest of TVWCS."""
     t=time.localtime(when)

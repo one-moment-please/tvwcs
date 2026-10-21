@@ -11,13 +11,13 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from pathlib import Path
-from tvwcs import __version__, cursor, features, loginscreen, power, privilege, selfupdate
+from tvwcs import __version__, features, power, privilege, selfupdate
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (APPS_OPEN, DEFAULT_SETTINGS, MARGIN_CHOICES, PASSWORD_KEYBOARDS, SCALE_LABELS, SCREENSAVER_LOGOS, STARTUP_LABELS, STARTUP_MODES,
-                         THEMES, WALLPAPERS, ConfigStore, accent_name, apply_use, apps_open, is_4k, scale_choices, set_apps_open, startup_choices)
+from tvwcs.model import (SCALE_LABELS, SCREENSAVER_LOGOS, THEMES, WALLPAPERS, ConfigStore, accent_name, is_4k, scale_choices,
+                         scale_key, tv_mode)
 from tvwcs.session import runtime_dir
-from tvwcs.system_actions import command_for, login_manager_installed
+from tvwcs.system_actions import command_for
 from tvwcs.ui_control import StreamedRun, colour_swatch, in_background
 from tvwcs.widgets import METRO_COLORS, NavGroup, S, clear_box, glyph, muted_label, section_title, usable
 
@@ -68,9 +68,9 @@ class Page:
         return GLib.SOURCE_CONTINUE
     def read(self): return None
     def feature_off(self):
-        """The feature this page belongs to (features.py) is turned off: the page only offers to turn it on."""
+        """The software this page needs (features.py) is not installed: the page only offers to install it."""
         key=features.PAGE_FEATURE.get(self.key)
-        return key is not None and not features.enabled(ConfigStore().settings,key)
+        return key is not None and not features.installed(features.BY_KEY[key])
     def refresh(self, quiet=False):
         if self.feature_off():
             if not quiet or self.state is not None: self.state=None; self.redraw()
@@ -132,13 +132,10 @@ class Page:
     def draw(self, state): pass
     def draw_feature_off(self):
         f=features.BY_KEY[features.PAGE_FEATURE[self.key]]
-        self.section("TURNED OFF")
-        self.note(f"{f.label} is turned off. {f.what}")
-        missing=features.missing_packages(f) if not features.installed(f) else []
-        self.row("Turn it on","",lambda:turn_feature_on(self,f),icon="list-add-symbolic",fallback="+",ident="feature:on",
-                 detail=f"Installs {', '.join(missing)} first. It asks for your password." if missing else "Its software is already installed")
-        self.row("All features","",lambda:self.win.select_tab("features") or self.win.enter_page(),icon="view-list-symbolic",fallback="☰",
-                 ident="feature:all",detail="Turn features on or off, and install or uninstall their software")
+        self.section("NOT INSTALLED")
+        self.note(f"{f.what} It needs software that is not installed yet.")
+        self.row(f"Install {f.label}","",lambda:install_feature(self,f),icon="list-add-symbolic",fallback="+",ident="feature:on",
+                 detail=f"Installs {', '.join(f.packages)}. It asks for your password.")
 
     def add(self, widget): self.body.append(widget); return widget
     def section(self, text): return self.add(section_title(text))
@@ -190,7 +187,7 @@ def _outcome(result, otherwise):
     """A control_cmd.Result as act() wants it: "" when it worked, else why not."""
     return "" if result.ok else (result.message or otherwise)
 
-# ====================================================================== Options (TVWCS's own)
+# ====================================================================== Appearance (TVWCS's own)
 def tell_tvwcs(request):
     """Ask the running TVWCS to read its options again ("reload") or to restart ("restart PATH"); False when it is not running.
     The same files and signal as main.send_request, written here rather than imported: after an update, main.py on disk
@@ -223,88 +220,33 @@ class _ConfigPage(Page):
     def note(self, text, css=None):
         l=super().note(text,css); l.set_margin_bottom(S(6)); return l
 
-class OptionsPage(_ConfigPage):
-    """TVWCS's options: the Quick Menu's buttons, how it looks (size, colour, edge margin, motion), where apps open and
-    what opens at login. Hotkeys have their own page; TVWCS's own updates are on Software updates."""
-    key="options"; title="Options"; icon="preferences-other-symbolic"; fallback="⚙"
+class AppearancePage(_ConfigPage):
+    """How TVWCS looks (size, colours) and the few choices left in 4.0: closing when it loses focus and the screen edge
+    margin. What depends on the mode is fixed: in TV mode (a TVWCS session) apps open in a workspace of their own, the
+    pointer hides after 3 seconds, the bar is off and the Quick Menu stays open; in desktop mode none of that changes
+    the desktop. Hotkeys have their own page, the application to open at login is on User, and TVWCS's own updates are
+    on Software updates."""
+    key="appearance"; title="Appearance"; icon="preferences-desktop-appearance-symbolic"; fallback="◐"
 
     def draw(self, store):
         st=store.settings
-        self.section("QUICK MENU")
-        self.option("Close button (✕)","quick_close_button","Esc and the remote's Back key close the Quick Menu too.")
-        self.option("Options buttons on rows (⋮)","hide_options_buttons","Even hidden, a row's options open by pressing ← on it, or by right-clicking it.",invert=True)
-        self.option("Button hints","button_hints","Shows what a button with only an icon does when it has been selected for 3 seconds, for 6 seconds.")
-        locker=command_for("lock",st)
-        self.note("The power menu (⏻ at the bottom of the Quick Menu) has Lock, Sleep, Reboot and Shut down"+(", and Log out, as this computer has a login screen." if login_manager_installed() else
-                  ". It has no Log out here: without a login screen, logging out would only leave a text console.")
-                  +("" if locker else " No screen locker is installed (such as i3lock, or swaylock on sway), so Lock does not work yet."))
-
-        self.section("DISPLAY")
-        self.row("Used on",{"tv":"A TV","desktop":"A desktop monitor"}.get(st["use"],"Not chosen"),self.choose_use,ident="opt:use")
-        self.note("A TV: TV Mode size, every app opens full screen in a workspace of its own, and button hints are on. "
-                  "A desktop monitor: Desktop size, and apps open side by side. Each can still be changed below.")
-        has_4k=self.has_4k()
-        self.row("Interface size",SCALE_LABELS[st["scale"]],lambda:self.win.choose_option("Interface size",scale_choices(st["scale"],has_4k),st["scale"],self.pick_scale),ident="opt:scale")
-        self.note("Desktop for a monitor at arm's length; TV Mode for a TV across the room"+("; 4K TV Mode for a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
-        self.row("Appearance",THEMES[st["theme"]],self.choose_theme,ident="opt:theme")
+        self.section("LOOK")
+        has_4k=self.has_4k(); tv=tv_mode(); size=st["scale"] or ""
+        label=SCALE_LABELS.get(size) or f"Automatic ({SCALE_LABELS[scale_key(st,tv)]})"
+        self.row("Interface size",label,lambda:self.win.choose_option("Interface size",scale_choices(size,has_4k,tv),size,self.pick_scale),ident="opt:scale")
+        self.note("Automatic is TV Mode in a TVWCS session and Desktop otherwise"+("; 4K TV Mode suits a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
+        self.row("Theme",THEMES[st["theme"]],self.choose_theme,ident="opt:theme")
         self.note("Dark or light, for TVWCS and Settings. Applications that follow the desktop's colour scheme (most GTK apps, "
                   "and Flatpak apps and browsers through the desktop portal) switch with it.")
         self.row("Accent colour",accent_name(st["accent"]),self.choose_accent,ident="opt:accent",swatch=st["accent"])
-        self.note("The colour of the selection, of switched-on things and of the tiles.")
         self.row("Background colour","",self.choose_wallpaper,ident="opt:wallpaper",swatch=st["wallpaper"])
         self.note("Shown where no application is open, and behind the Quick Menu.")
-        self.row("Screen edge margin",f"{st['margin']} px",self.choose_margin,ident="opt:margin")
-        self.note("Space between the Quick Menu and the edges of the screen. Many TVs cut off the edges of the picture "
-                  "(overscan): if the edges of TVWCS are missing, make this larger, or turn overscan off in the TV's own picture settings.")
-        self.option("Reduce motion","reduce_motion","On: pages change at once, without fading. Suits a slow TV box.")
-        hide=cursor.hide_enabled(st); seconds=cursor.hide_seconds(st)
-        pointer=features.BY_KEY["cursor"]
-        if features.applies(pointer) and not (features.enabled(st,"cursor") and features.installed(pointer)):   # X11 without unclutter
-            self.row("Hide the mouse pointer","Off",lambda:turn_feature_on(self,pointer,after=lambda:self.change(lambda s:s.settings.update(cursor_hide=True))),
-                     ident="opt:cursor_hide",detail=f"Needs {', '.join(pointer.packages)}. Choose this to install it")
-        else: self.row("Hide the mouse pointer",_on_off(hide),self.toggle_cursor_hide,ident="opt:cursor_hide",value_css="state-on" if hide else "setting-value")
-        if hide:
-            lo,hi=cursor.SECONDS_RANGE
-            less=self.button("list-remove-symbolic","−","Sooner",lambda:self.change_cursor_seconds(-1)) if seconds>lo else None
-            more=self.button("list-add-symbolic","+","Later",lambda:self.change_cursor_seconds(1)) if seconds<hi else None
-            self.row("Hide it after",f"{seconds} second{'s' if seconds!=1 else ''}",None,ident="opt:cursor_seconds",indent=44,extras=[less,more])
-        self.note(("Hidden after that long without moving, and back as soon as it moves. " if hide else "")+
-                  "By default it is hidden on a TV and not at a desk.")
-        if st["use"]=="tv":
-            self.option("Hide the i3 bar","tv_hide_bar","On a TV the bottom of the Quick Menu shows the time, the network, the volume, "
-                        "Bluetooth and waiting updates instead. Off: the bar shows as your i3 or sway config sets it.")
-            self.option("Keep the Quick Menu open","tv_keep_menu_open","While no application is open, the Quick Menu stays on screen "
-                        "(Esc does not close it) and comes back when the last application closes.")
-
-        self.section("PASSWORDS")
-        self.row("Password keyboard",PASSWORD_KEYBOARDS[st["password_keyboard"]],self.choose_password_keyboard,ident="opt:password_keyboard")
-        self.note("What the on-screen keyboard shows first when a password is asked: the one a password was last typed on "
-                  "(the full keyboard at first). A key on it switches to the other, for a password of only digits.")
-        if st["password_keyboard"]=="digits":
-            self.note("A password of digits only is easy to guess. If the SSH server is on, set System information › "
-                      "Sign in with to Keys only, so nobody can sign in over the network with it.","error")
 
         self.section("BEHAVIOR")
-        self.option("Close when clicking outside","close_on_click_outside")
-        where=apps_open(st)
-        self.row("Where apps open",APPS_OPEN[where],self.choose_apps_open,ident="opt:apps_open")
-        self.note({"fullscreen":"Every app, opened or selected while it is open, gets a workspace of its own, full screen.",
-                   "side":"Apps open beside what is on screen, sharing it.",
-                   "profile":"Each app opens where its own setting says: “Always launch in a new workspace”, under ✎ Edit on it in Applications."}[where])
-
-        self.section("AT LOGIN")
-        names={p.id:p.name for p in store.profiles}
-        mode=st["startup"]["mode"]
-        self.row("Open at login",STARTUP_LABELS[mode],lambda:self.win.choose_option("Open at login",[(m,STARTUP_LABELS[m]) for m in STARTUP_MODES],
-                 mode,lambda m:self.pick_startup(store,m)),ident="opt:startup")
-        if mode=="app":
-            self.row("Application",names.get(st["startup"]["profile_id"],"Not chosen"),lambda:self.choose_app(store),ident="opt:startup-app")
-        self.note({"none":"Nothing opens by itself when you log in.","menu":"The Quick Menu opens when you log in.",
-                   "last":"Whichever application you used most recently opens when you log in.",
-                   "app":"The application chosen above opens when you log in."}[mode]+" It happens once per login, a moment after TVWCS starts.")
-        self.note("Some applications, such as Steam, have their own option to start when you log in. If you use one of those, "
-                  "set Open at login to None, so the two do not both open something.")
-        self.note("Hotkeys and the remote's keys are under Remote and hotkeys; TVWCS's own updates under Software updates.")
+        self.option("Close TVWCS when it loses focus","close_on_click_outside","Clicking another window, or another window opening, closes the Quick Menu.")
+        self.row("Screen edge margin",f"{st['margin']} px",self.choose_margin,ident="opt:margin")
+        self.note("Many TVs cut off the edges of the picture (overscan). This opens a full-screen preview: move the slider until the "
+                  "Quick Menu and Applications are fully on screen.")
 
     # ---------------------------------------------------------- choices
     def has_4k(self):
@@ -313,45 +255,23 @@ class OptionsPage(_ConfigPage):
             m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
             if is_4k(g.width*f,g.height*f): return True
         return False
-    def toggle_cursor_hide(self):
-        def edit(store): store.settings["cursor_hide"]=not cursor.hide_enabled(store.settings)
-        self.change(edit)
-    def change_cursor_seconds(self, by):
-        def edit(store): store.settings["cursor_hide_seconds"]=cursor.clamp_seconds(cursor.hide_seconds(store.settings)+by)
-        self.change(edit)
     def pick_scale(self, key): self.change(lambda s:s.settings.update(scale=key))   # settings_changed redraws Settings at it
-    def choose_use(self):
-        self.win.choose_option("Used on",[("tv","A TV, across the room"),("desktop","A desktop monitor, at arm's length")],self.state.settings["use"],
-                               lambda use:self.change(lambda s:apply_use(s.settings,use)))
-    def choose_apps_open(self):
-        self.win.choose_option("Where apps open",list(APPS_OPEN.items()),apps_open(self.state.settings),
-                               lambda choice:self.change(lambda s:set_apps_open(s.settings,choice)))
     def choose_accent(self):
         current=self.state.settings["accent"].lower()
         options=[(c,accent_name(c)) for c in METRO_COLORS]+([] if current in METRO_COLORS else [(current,f"{current} (set in config.json)")])
         self.win.choose_option("Accent colour",options,current,lambda c:self.change(lambda s:s.settings.update(accent=c)),swatches=True)
     def choose_theme(self):
-        self.win.choose_option("Appearance",list(THEMES.items()),self.state.settings["theme"],lambda t:self.change(lambda s:s.settings.update(theme=t)))
+        self.win.choose_option("Theme",list(THEMES.items()),self.state.settings["theme"],lambda t:self.change(lambda s:s.settings.update(theme=t)))
     def choose_wallpaper(self):
         self.win.choose_swatch("Background colour","Six greys, six colours and the same colours darker.",WALLPAPERS,self.state.settings["wallpaper"],
                                lambda c:self.change(lambda s:s.settings.update(wallpaper=c)))
-    def choose_password_keyboard(self):
-        self.win.choose_option("Password keyboard",list(PASSWORD_KEYBOARDS.items()),self.state.settings["password_keyboard"],
-                               lambda k:self.change(lambda s:s.settings.update(password_keyboard=k)))
     def choose_margin(self):
-        m=self.state.settings["margin"]; choices=sorted(set(MARGIN_CHOICES)|{m})
-        self.win.choose_option("Screen edge margin",[(str(v),f"{v} px"+(" (none)" if v==0 else " (the default)" if v==DEFAULT_SETTINGS["margin"] else "")) for v in choices],
-                               str(m),lambda v:self.change(lambda s:s.settings.update(margin=int(v))))
-    def pick_startup(self, store, mode):
-        if mode=="app" and store.get(store.settings["startup"]["profile_id"]) is None: self.choose_app(store); return   # pick which one first
-        self.change(lambda s:s.settings["startup"].update(mode=mode))
-    def choose_app(self, store):
-        options=[]
-        for heading,profiles in startup_choices(store.profiles):
-            for p in profiles: options.append((p.id,(f"{p.channel:03d}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
-        if not options: self.win.notice("Chosen application","There are no applications to choose from yet."); return
-        def picked(pid): self.change(lambda s:s.settings["startup"].update(profile_id=pid,mode="app"))
-        self.win.choose_option("Open at login",options,store.settings["startup"]["profile_id"],picked)
+        from tvwcs.ui_margin import MarginPreview
+        st=self.state.settings
+        def done(margin):
+            if margin is not None and margin!=st["margin"]: self.change(lambda s:s.settings.update(margin=int(margin)))
+            GLib.idle_add(lambda:(self._ids.get("opt:margin") is not None and self._ids["opt:margin"].grab_focus(),GLib.SOURCE_REMOVE)[1])
+        MarginPreview(self.win,st["margin"],st["quick_width"],self.win.app.scale,st["accent"],done)
 
 # ====================================================================== Remote and hotkeys
 class HotkeysPage(_ConfigPage):
@@ -362,40 +282,35 @@ class HotkeysPage(_ConfigPage):
 
     def draw(self, store):
         st=store.settings
-        hints={"keyboard":"A modifier tapped on its own (such as Super) triggers when it is released, so Super combinations keep working.",
-               "remote":"Most remotes send ordinary keys; F2 suits many of them. Fullscreen switches the app you are using in and out of fullscreen.",
-               "gamepad":"A gamepad needs a mapper such as AntiMicroX to turn its buttons into keys; then choose those keys here."}
+        self.section("QUICK MENU HOTKEYS")
         for device in DEVICES:
-            self.section(f"{DEVICE_LABELS[device].upper()} HOTKEYS")
             for name in DEVICE_ACTIONS[device]:
-                self.row(ACTION_LABELS[name],describe(st["hotkeys"][device][name]),lambda d=device,n=name:self.change_hotkey(store,d,n),ident=f"key:{device}:{name}")
-            self.note(hints[device])
-        self.row("Reset all hotkeys","Defaults",self.reset_hotkeys,ident="key:reset")
-        self.note("Keyboard: tap Super. Remote: F2. Gamepad: none. Application hotkeys are kept, unless one uses a default key.")
+                self.row(DEVICE_LABELS[device],describe(st["hotkeys"][device][name]),lambda d=device,n=name:self.change_hotkey(store,d,n),ident=f"key:{device}:{name}")
+        self.note("Keyboard: a modifier tapped on its own (such as Super) triggers when it is released, so Super combinations keep working. "
+                  "Remote: most remotes send ordinary keys; F2 suits many of them. Gamepad: a mapper such as AntiMicroX turns its buttons into keys.")
         self.section("APPLICATION HOTKEYS")
-        n=len(store.hotkey_profiles())
-        self.row("Applications with a hotkey","None" if n==0 else f"{n} mapped",self.app_hotkeys,ident="key:apps")
-        self.note(APP_HOTKEY_HINT+" Open this to change or remove them.")
+        profiles=store.hotkey_profiles()
+        if not profiles: self.note("No application has a hotkey. "+APP_HOTKEY_HINT)
+        for p in profiles:
+            remove=self.button("window-close-symbolic","✕",f"Remove the hotkey for {p.name}",lambda pid=p.id:self.change(lambda s:s.set_profile_hotkey(pid,"")),danger=True)
+            self.row(p.name,describe(p.hotkey),lambda pid=p.id,name=p.name:self.change_app_hotkey(store,pid,name),ident=f"key:app:{p.id}",extras=[remove])
+        if profiles: self.note(APP_HOTKEY_HINT)
+        self.row("Reset all hotkeys","Defaults",self.reset_hotkeys,ident="key:reset",
+                 detail="Keyboard: tap Super. Remote: F2. Gamepad: none. Removes every application hotkey")
 
     def change_hotkey(self, store, device, name):
         label=f"{DEVICE_LABELS[device]}: {ACTION_LABELS[name]}"
         self.win.assign_hotkey(store,("slot",device,name),label,lambda spec:self.change(lambda s:s.set_slot_hotkey(device,name,spec)))
+    def change_app_hotkey(self, store, pid, name):
+        self.win.assign_hotkey(store,("profile",pid),name,lambda spec:self.change(lambda s:s.set_profile_hotkey(pid,spec)))
     def reset_hotkeys(self):
         def edit(s):
             for device in DEVICES:
                 for name in DEVICE_ACTIONS[device]: s.set_slot_hotkey(device,name,DEFAULT_HOTKEYS[device][name])
-        self.change(edit)
-    def app_hotkeys(self):
-        store=ConfigStore(); profiles=store.hotkey_profiles()
-        if not profiles:
-            self.win.notice("Application hotkeys","No application has a hotkey yet. "+APP_HOTKEY_HINT); return
-        def chosen(pid):
-            p=store.get(pid)
-            def set_key(spec): self.change(lambda s:s.set_profile_hotkey(pid,spec)); self.app_hotkeys()
-            self.win.choose_option(p.name,[("change","Change the hotkey"),("remove","Remove the hotkey")],None,
-                                   lambda what:self.win.assign_hotkey(store,("profile",pid),p.name,set_key,back=self.app_hotkeys) if what=="change" else set_key(""),
-                                   back=self.app_hotkeys)
-        self.win.choose_option("Application hotkeys",[(p.id,f"{p.name}  ·  {describe(p.hotkey)}") for p in profiles],None,chosen)
+            for p in s.hotkey_profiles(): s.set_profile_hotkey(p.id,"")
+        n=len(ConfigStore().hotkey_profiles())
+        self.win.confirm("Reset all hotkeys?","The Quick Menu hotkeys go back to their defaults"+(f", and the {n} application hotkey{'s' if n!=1 else ''} are removed." if n else "."),
+                         "Reset",lambda:self.change(edit))
 
 APP_HOTKEY_HINT="Give an app a hotkey with ✎ Edit on it in Applications."
 
@@ -486,7 +401,6 @@ class _SelfUpdate:
         in_background(lambda:selfupdate.install_downloaded(folder,target,migrate=moving),done,failed)
 
 # ====================================================================== Power and sleep
-LOCK_SCREENS={True:"TVWCS lock screen",False:"The system's screen locker"}
 class PowerPage(Page):
     """After how long without input the screen turns off, the computer locks and it sleeps (TVWCS keeps these times,
     see power.py), and what the system does by itself: X's blanking and DPMS, logind's idle action and the lid."""
@@ -513,35 +427,33 @@ class PowerPage(Page):
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
         st=ConfigStore().settings
-        saver=features.BY_KEY["screensaver"]
+        saver=features.BY_KEY["screensaver"]; tv=tv_mode()
         if s.session=="sway": pass   # the screen saver is a plain fullscreen window, which sway handles badly: hidden there for now
-        elif not features.enabled(st,"screensaver"):
+        elif not features.installed(saver):
             self.section("SCREEN SAVER")
-            self.row("Screen saver","Off",lambda:turn_feature_on(self,saver),icon="video-display-symbolic",fallback="▭",ident="saver:feature",
-                     detail="Turned off in Features"+("" if features.installed(saver) else f". Turning it on installs {', '.join(saver.packages)}"))
+            self.row("Install the screen saver","",lambda:install_feature(self,saver),icon="video-display-symbolic",fallback="▭",ident="saver:feature",
+                     detail=f"Installs {', '.join(saver.packages)}")
         else:
             self.section("SCREEN SAVER")
             logo=st["screensaver_logo"]
             self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
-            on_lock=bool(st["screensaver_on_lock"]) and features.enabled(st,"lock_saver")
-            lock_saver=features.BY_KEY["lock_saver"]; ready=features.enabled(st,"lock_saver") and features.installed(lock_saver)
-            if not ready: why=f"Needs {', '.join(lock_saver.packages)}, which locks the screen while the screen saver shows. Choose this to install it"
-            else: why="A key shows the password box; after a minute without one, the screen saver comes back"
-            action=self.toggle_saver_on_lock if ready else lambda:turn_feature_on(self,lock_saver,after=self.saver_on_lock_on)
-            self.row("Show it when the computer locks",_on_off(on_lock),action,detail=why,
-                     icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
+            if tv:   # a desktop session's lock screen is its own
+                lock_saver=features.BY_KEY["lock_saver"]; ready=features.installed(lock_saver)
+                on_lock=bool(st["screensaver_on_lock"]) and ready
+                why=("Any key or button shows the lock screen; after a minute without input, the screen saver comes back. "
+                     "Once the screen has turned off, it stays off instead") if ready else f"Needs {', '.join(lock_saver.packages)}. Choose this to install it"
+                action=self.toggle_saver_on_lock if ready else lambda:install_feature(self,lock_saver,after=self.saver_on_lock_on)
+                self.row("Show it when the computer locks",_on_off(on_lock),action,detail=why,
+                         icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
             self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
                      icon="media-playback-start-symbolic",fallback="▶")
             self.note("A logo drifts across a black screen and changes colour each time it bounces off an edge. "
-                      "The TVWCS logo is drawn in the same style as the DVD one; a picture of your own can be any PNG, JPEG or SVG.")
+                      "A picture of your own can be any PNG, JPEG or SVG.")
         self.section("LOCKING")
-        own=bool(ConfigStore().settings["tvwcs_lock_screen"])
-        self.row("Lock screen",LOCK_SCREENS[own],self.choose_lock_screen,icon="system-lock-screen-symbolic",fallback="🔒",ident="lock:screen")
-        self.note("TVWCS's lock screen says the TV is locked and asks for your password. It uses i3lock (or swaylock on sway), "
-                  "and xss-lock uses it too when it locks the screen."
-                  if own else "Lock (after the time above, or from the power menu) uses the screen locker the system has, such as i3lock or swaylock.")
-        if st["screensaver_on_lock"] and features.enabled(st,"lock_saver") and s.session!="sway":
-            self.note("While “Show it when the computer locks” is on, xsecurelock locks the screen instead, with its own password box.")
+        self.note("In a TVWCS session, TVWCS's lock screen locks the computer: it says the TV is locked and asks for your password. "
+                  "In another session, Lock uses that desktop's own screen locker." if tv else
+                  "This is not a TVWCS session, so Lock uses this desktop's own screen locker, such as i3lock or swaylock. "
+                  "TVWCS's lock screen is used in a TVWCS session.")
         if not s.idle_works and any(times[a] for a in power.ACTIONS):
             self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
                       "TVWCS cannot tell how long the computer has been idle: install libxss1, or xprintidle.","error")
@@ -573,7 +485,7 @@ class PowerPage(Page):
     def idle_rows(self, s, times, option, heading):
         """The four times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
         self.section(heading); tag="" if option=="idle" else "bat"
-        if features.enabled(ConfigStore().settings,"screensaver") and s.session!="sway":   # not on sway yet (see power.swayidle_argv)
+        if features.installed(features.BY_KEY["screensaver"]) and s.session!="sway":   # not on sway yet (see power.swayidle_argv)
             self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
                      icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
         screen=times["screen_off"]
@@ -620,12 +532,6 @@ class PowerPage(Page):
                          f"{os.path.basename(path)}.before-tvwcs) and stop it now. “Lock after” still locks when you choose a time.",
                          "Stop it",lambda:self.act(lambda:power.stop_xss_lock(path),"Stopping xss-lock…","Power and sleep"),danger=False)
 
-    def choose_lock_screen(self):
-        def picked(key):
-            store=ConfigStore(); store.settings["tvwcs_lock_screen"]=key=="tvwcs"; store.save(); tell_tvwcs("reload")
-            self.point_xss_lock(store.settings); self.redraw()
-        self.win.choose_option("Lock screen",[("tvwcs",LOCK_SCREENS[True]),("system",LOCK_SCREENS[False])],
-                               "tvwcs" if ConfigStore().settings["tvwcs_lock_screen"] else "system",picked)
     def toggle_saver_on_lock(self, on=None):
         store=ConfigStore(); on=not store.settings["screensaver_on_lock"] if on is None else on
         store.settings["screensaver_on_lock"]=on; store.save(); tell_tvwcs("reload")
@@ -638,8 +544,7 @@ class PowerPage(Page):
         if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
         if path and path!="?":
             from tvwcs.lockscreen import launcher
-            use=settings["tvwcs_lock_screen"] or settings["screensaver_on_lock"]
-            why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if use else "")
+            why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if tv_mode() else "")
             if why: self.win.notice("Lock screen",why)
 
     @staticmethod
@@ -1618,10 +1523,9 @@ class StoragePage(Page):
         self.note("Each drive's partitions are listed under it. Mounting a partition makes its files readable, in the folder shown "
                   "under it. Unmount it, or switch the drive off with ⏏, before unplugging it.")
         self.section("NETWORK SHARES")
-        if not features.enabled(ConfigStore().settings,"samba"):
-            self.row("Network shares are off","Off",lambda:turn_feature_on(self,features.BY_KEY["samba"]),icon="folder-remote-symbolic",fallback="⇄",
-                     ident="share:feature",detail="Turn on Network shares (Samba) in Features to connect to Windows, Samba, NFS or SSH shares. "
-                     "Turning it on installs "+", ".join(features.BY_KEY["samba"].packages)+".")
+        if not features.installed(features.BY_KEY["samba"]):
+            self.row("Install network shares","",lambda:install_feature(self,features.BY_KEY["samba"]),icon="folder-remote-symbolic",fallback="⇄",
+                     ident="share:feature",detail="To connect to Windows, Samba, NFS or SSH shares. Installs "+", ".join(features.BY_KEY["samba"].packages))
             return
         missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
         if missing: self.note("Connecting to network shares needs "+" and ".join(missing)+". Install it with sudo apt install "
@@ -1860,87 +1764,36 @@ class DateTimePage(Page):
             store=ConfigStore(); store.settings["clock_24h"]=key=="24"; store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
         self.win.choose_option("Quick Menu clock",[("12","12-hour (2:05 PM)"),("24","24-hour (14:05)")],"24" if self.state[1] else "12",picked)
 
-# ====================================================================== Features
-def turn_feature_on(page, f, after=None):
-    """Install the feature's missing packages (asking first), then turn it on; TVWCS and the page read it again."""
-    def switch_on():
-        store=ConfigStore(); features.choose(store.settings["features"],f.key,True); store.save(); tell_tvwcs("reload")
+# ====================================================================== installing what a page needs
+def install_feature(page, f, after=None):
+    """Install the software a page needs (features.py), asking first; then the page reads again. after() runs once it is
+    installed (Apps adds Flathub, say)."""
+    def installed():
+        tell_tvwcs("reload")
         if after: after()
         page.refresh(quiet=True)
-    if features.installed(f): switch_on(); return
-    missing=features.missing_packages(f)
+    if features.installed(f): installed(); return
+    missing=features.missing_packages(f) or list(f.packages)
     if not shutil.which("apt-get"):
-        page.win.notice(f.label,f"{f.label} needs {', '.join(f.packages)} (the Debian names). Install them with your package manager, then turn it on here.")
+        page.win.notice(f.label,f"{f.label} needs {', '.join(f.packages)} (the Debian names). Install them with your package manager.")
         return
     lines=[]
     def done(code, tail):
         page.set_status("")
         if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be installed.").strip()); return
-        switch_on()
+        installed()
     def go():
         page.set_status(f"Installing {', '.join(missing)}…")
         page.win.run_as_root(features.install_argv(missing),f"Installing {f.label}",lines.append,done)
-    page.win.confirm(f"Turn on {f.label}?",f"{f.what} It needs {', '.join(missing)}, which will be installed now. It asks for your password.",
+    page.win.confirm(f"Install {f.label}?",f"{f.what} It needs {', '.join(missing)}, which will be installed now. It asks for your password.",
                      "Install",go,danger=False)
-
-def turn_feature_off(page, f, uninstall):
-    def switch_off():
-        store=ConfigStore(); features.choose(store.settings["features"],f.key,False); store.save(); tell_tvwcs("reload"); page.refresh(quiet=True)
-    if not uninstall: switch_off(); return
-    page.set_status("Checking what else needs it…")
-    def check(): return features.removable(f,ConfigStore().settings)
-    def checked(result):
-        packages,why=result; page.set_status("")
-        if why: page.win.notice(f"Uninstall {f.label}",why+" It can still be turned off without uninstalling."); return
-        lines=[]
-        def done(code, tail):
-            page.set_status("")
-            if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be uninstalled.").strip())
-            switch_off()
-        def go():
-            page.set_status(f"Uninstalling {', '.join(packages)}…")
-            page.win.run_as_root(features.remove_argv(packages),f"Uninstalling {f.label}",lines.append,done)
-        page.win.confirm(f"Uninstall {f.label}?",f"This turns {f.label} off and uninstalls {', '.join(packages)}. Nothing else installed "
-                         "needs them, and their settings files are kept. Turning it on again installs them again.","Uninstall",go)
-    in_background(check,checked,lambda exc:(page.set_status(""),page.win.notice(f.label,str(exc))))
-
-class FeaturesPage(Page):
-    """The features that need extra software (features.py): on or off, with their software installed or uninstalled."""
-    key="features"; title="Features"; icon="view-list-symbolic"; fallback="☰"
-    def read(self):
-        st=ConfigStore().settings
-        return ([(f,features.enabled(st,f.key),features.installed(f)) for f in features.FEATURES if features.applies(f)],
-                loginscreen.status(__version__,st))
-    def summary(self):
-        if not self.state: return ""
-        rows=self.state[0]; on=sum(1 for _f,e,_i in rows if e); return f"{on} of {len(rows)} on"
-    def draw(self, state):
-        rows,login=state
-        login_ui.draw_login_screen(self,login)
-        self.section("FEATURES")
-        for f,on,have in rows:
-            if on and have: value,detail="On",f.what
-            elif on: value,detail="Needs installing",f"{f.what} Needs {', '.join(f.packages)}."
-            else: value,detail="Off",f.what+("" if have else f" Turning it on installs {', '.join(f.packages)}.")
-            self.row(f.label,value,lambda f=f,on=on,have=have:self.change(f,on and have),detail=detail,ident=f"feature:{f.key}",
-                     value_css="state-on" if on and have else "setting-value")
-        self.note("A minimal install starts with the features whose software is not installed turned off, and Network shares (Samba) "
-                  "is off until you turn it on, even after a full install. A feature that is off "
-                  "keeps its Settings page, which only offers to turn it on. Uninstalling removes only its own packages, and only "
-                  "when nothing else installed needs them; it never removes other software.")
-    def change(self, f, on):
-        if not on: turn_feature_on(self,f); return
-        def picked(key):
-            if key=="off": turn_feature_off(self,f,False)
-            elif key=="uninstall": turn_feature_off(self,f,True)
-        self.win.choose_option(f.label,[("keep","Keep it on"),("off","Turn it off"),("uninstall","Turn it off and uninstall its software")],"keep",picked)
 
 # ====================================================================== User
 class UserPage(Page):
     """This user's account (name, password) and logging in: the login screen in use and the automatic login."""
     key="user"; title="User"; icon="avatar-default-symbolic"; fallback="☺"
     def read(self): return login_ui.read_user()
-    def summary(self): return self.state[0].login if self.state else ""
+    def summary(self): return login_ui.role(self.state[0]) if self.state else ""   # "Administrator" or "Standard User", small and grey beside "User"
     def draw(self, state): login_ui.draw_user(self,state)
 
-PAGES=(OptionsPage,UserPage,FeaturesPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)
+PAGES=(AppearancePage,UserPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)

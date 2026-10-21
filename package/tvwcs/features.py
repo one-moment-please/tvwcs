@@ -1,19 +1,11 @@
-"""TVWCS's features that need extra software (Settings > Features), for a minimal install. No GTK dependency.
+"""The software each part of TVWCS needs beyond a basic install. No GTK dependency.
 
-A minimal install (install.sh) has the Quick Menu, the applications list and the Settings pages that need nothing
-more. Each feature below needs packages of its own; it can be turned on (its packages are installed first) or off
-(its Settings page then only offers to turn it on, and its Quick Menu icon is not shown). Turning one off can also
-uninstall its packages, but only those nothing else needs: TVWCS itself, another feature that is on, or any other
-installed package (apt is asked what removing them would remove, and nothing else may go).
-
-The choices are the "features" option: {key: False} for the features turned off and {key: True} for those turned on
-that are off unless chosen (Samba, which is not installed even by a full install, as it lets the computer talk to
-file servers on the network); anything not listed is as its default.
-
-`python3 -m tvwcs.features minimal` (run by install.sh) turns off the features whose software is missing;
-`python3 -m tvwcs.features off` prints the features turned off, one per line."""
+The installer installs what the Quick Menu, the applications list and Settings need. Each entry below needs packages
+of its own; a Settings page whose software is missing offers to install it (Sound installs PipeWire, Apps installs
+Flatpak and adds Flathub, and so on), and its Quick Menu icon is not shown until then. There is no on/off switch: what
+is installed is used. (Before 4.0 there was a Features page with one.)"""
 from __future__ import annotations
-import os, re, shutil, subprocess, sys
+import os, re, shutil, subprocess
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
@@ -25,8 +17,6 @@ class Feature:
     probes: tuple               # ("cmd", name) | ("gi", namespace, version) | ("cairo",) | ("libexec", name): all must pass
     pages: tuple = ()           # the Settings pages it brings
     x11_only: bool = False
-    in_use: tuple = ()          # processes that, while running, mean its packages cannot be uninstalled from here
-    default_on: bool = True     # False: off until turned on, even after a full install (Samba)
 
 FEATURES=(
     Feature("sound","Sound","Volume, and the speakers, headphones and microphones to use (the Sound page and the Quick Menu's volume).",
@@ -34,7 +24,7 @@ FEATURES=(
     Feature("bluetooth","Bluetooth","Pairing and connecting Bluetooth remotes, headphones and game controllers.",
             ("bluez",),(("cmd","bluetoothctl"),),("bluetooth",)),
     Feature("samba","Network shares (Samba)","Connecting to Windows and Samba shares, and NFS, SSH and FTP ones, on the Storage page.",
-            ("gvfs-backends",),(("libexec","gvfsd-smb"),),default_on=False),
+            ("gvfs-backends",),(("libexec","gvfsd-smb"),)),
     Feature("terminal","Terminal","A terminal inside Settings.",("gir1.2-vte-3.91",),(("gi","Vte","3.91"),),("terminal",)),
     Feature("apps","Apps from Flathub","Finding, installing and removing apps from Flathub.",("flatpak",),(("cmd","flatpak"),),("apps",)),
     Feature("screensaver","Screen saver","The bouncing logo after a time without input.",("python3-gi-cairo",),(("cairo",),)),
@@ -45,27 +35,6 @@ FEATURES=(
 )
 BY_KEY={f.key:f for f in FEATURES}
 PAGE_FEATURE={p:f.key for f in FEATURES for p in f.pages}
-# Packages TVWCS itself needs, even in a minimal install: never uninstalled from here
-CORE_PACKAGES={"python3-gi","gir1.2-gtk-4.0","i3","sway","xdotool","x11-xserver-utils","xsettingsd","libxss1","swayidle","libglib2.0-bin",
-               "adwaita-icon-theme","fonts-open-sans","xdg-desktop-portal","xdg-desktop-portal-gtk","xserver-xorg","xinit"}
-
-def clean(raw):
-    """The "features" option: only known keys, only the choices that differ from the feature's default kept."""
-    if not isinstance(raw,dict): return {}
-    return {k:v for k,v in raw.items() if k in BY_KEY and isinstance(v,bool) and v!=BY_KEY[k].default_on}
-
-def enabled(settings, key):
-    value=(settings.get("features") or {}).get(key)
-    return value if isinstance(value,bool) else BY_KEY[key].default_on
-
-def choose(chosen, key, on):
-    """Turn a feature on or off in the "features" option (a dict, changed in place)."""
-    chosen.pop(key,None)
-    if on!=BY_KEY[key].default_on: chosen[key]=on
-
-def page_enabled(settings, page_key):
-    key=PAGE_FEATURE.get(page_key)
-    return key is None or enabled(settings,key)
 
 def sway(env=None):
     env=os.environ if env is None else env
@@ -117,70 +86,3 @@ def install_argv(packages, run=subprocess.run):
     states=package_states(unwanted,run) if unwanted else {}
     skip=[f"{u}-" for u in unwanted if states.get(u) is False]
     return ["env","DEBIAN_FRONTEND=noninteractive","sh","-c",'apt-get update -q && apt-get install -y "$@"',"sh",*packages,*skip]
-
-def remove_argv(packages):
-    """apt-get remove: only these packages (never autoremove or purge; their settings stay)."""
-    if not packages or not all(VALID_PACKAGE.fullmatch(p) for p in packages): raise ValueError("Unexpected package name.")
-    return ["env","DEBIAN_FRONTEND=noninteractive","apt-get","remove","-y",*packages]
-
-def parse_simulated_removal(text):
-    """`apt-get -s remove ...` -> the packages it would remove ("Remv name [version]" lines)."""
-    return [line.split()[1] for line in text.splitlines() if line.startswith("Remv ") and len(line.split())>1]
-
-def running(names, proc="/proc"):
-    """The ones of `names` running now (by process name)."""
-    found=set()
-    try: pids=[e.name for e in os.scandir(proc) if e.name.isdigit()]
-    except OSError: return []
-    for pid in pids:
-        try:
-            with open(f"{proc}/{pid}/comm",encoding="utf-8",errors="replace") as f: comm=f.read().strip()
-        except OSError: continue
-        if comm in names: found.add(comm)
-    return sorted(found)
-
-def removable(feature, settings, run=subprocess.run, proc="/proc"):
-    """(packages that can be uninstalled, "" or why nothing can be). Only installed packages of the feature that TVWCS
-    and the other features that are on do not need, and that nothing else installed depends on."""
-    if not shutil.which("apt-get"): return [],"Uninstalling needs apt (Debian and its family)."
-    states=package_states(feature.packages,run)
-    mine=[p for p in feature.packages if states.get(p)]
-    if not mine: return [],"Its packages are not installed (or were installed some other way)."
-    shared={p for f in FEATURES if f.key!=feature.key and enabled(settings,f.key) for p in f.packages}
-    keep=[p for p in mine if p in CORE_PACKAGES or p in shared]
-    mine=[p for p in mine if p not in keep]
-    if not mine: return [],f"{', '.join(keep)} {'is' if len(keep)==1 else 'are'} needed by TVWCS or by another feature that is on."
-    busy=running(feature.in_use,proc)
-    if busy: return [],(f"{busy[0]} is running, and it may be what keeps this computer connected. Uninstalling it from here "
-                        "could cut the connection, so it is not offered.")
-    try: done=run(["apt-get","-s","remove",*mine],capture_output=True,text=True,timeout=60,env={**os.environ,"LC_ALL":"C"})
-    except (OSError,subprocess.SubprocessError) as exc: return [],f"apt could not be asked: {exc}"
-    if done.returncode: return [],(done.stderr or done.stdout or "apt could not work out what would be removed.").strip()[-400:]
-    others=[p for p in parse_simulated_removal(done.stdout) if p.split(":")[0] not in mine]
-    if others:
-        shown=", ".join(others[:6])+(f" and {len(others)-6} more" if len(others)>6 else "")
-        return [],f"Other software needs them: uninstalling would also remove {shown}. Nothing was changed."
-    return mine,""
-
-# ---------------------------------------------------------------------- install.sh's helpers
-def _store():
-    from tvwcs.model import ConfigStore
-    return ConfigStore()
-
-def main(argv):
-    if argv==["minimal"]:   # a minimal install: the features whose software is missing start off
-        store=_store(); off=dict(store.settings.get("features") or {})
-        for f in FEATURES:
-            if applies(f) and not installed(f): off[f.key]=False
-        store.settings["features"]=clean(off); store.save()
-        for key,on in store.settings["features"].items():
-            if not on: print(f"Turned off: {BY_KEY[key].label} (turn it on in Settings > Features)")
-        return 0
-    if argv==["off"]:
-        st=_store().settings
-        for f in FEATURES:
-            if not enabled(st,f.key): print(f.key)
-        return 0
-    print("Usage: python3 -m tvwcs.features minimal|off",file=sys.stderr); return 2
-
-if __name__=="__main__": sys.exit(main(sys.argv[1:]))

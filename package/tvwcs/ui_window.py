@@ -8,16 +8,14 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk
 
 from tvwcs import control_bluetooth, control_network, control_sound, power, quick_status
-from tvwcs.control_datetime import clock_text, date_text
+from tvwcs.control_datetime import clock_text, short_date_text
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
-from tvwcs import cursor, features
-from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, icon_only, Marquee, muted_label, scroll_to_show, section_title, usable)
+from tvwcs import cursor
+from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, Marquee, muted_label, scroll_to_show, section_title, usable)
 
-FOCUS_TIP_DELAY=3000                     # ms a selected icon-only button waits before showing its tooltip (Settings > Options > Button hints)
-FOCUS_TIP_DURATION=6000                  # ms the tooltip then stays up
 CHANNEL_DIGITS=3                         # typing this many digits of a channel number ...
 CHANNEL_DELAY=1000                       # ... and nothing else for this many ms launches that channel
 
@@ -31,7 +29,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.app=app; self.guide_open=False; self.options_open=False
         self.guide_pane=None; self.options_pane=None; self.guide_scroll=None; self.guide_button=None; self.quick_content=None
         self.apps_title=None; self.apps_subtitle=None
-        self._focus_tip=None; self._focus_tip_source=0; self._channel_source=0; self._capture_cancel=None
+        self._channel_source=0; self._capture_cancel=None
         self._provider=None; self._expanded={"Media","Internet","Games"}; self._guide_scroll=0.0
         self._popovers=0; self._was_active=False; self._capture=None; self._capture_cb=None; self._pin=None
         self._panel_token=0; self._volume_target={}; self._volume_busy=set()
@@ -63,7 +61,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         overlay.set_child(self.panes)
         self.modal_layer=Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.modal_layer.add_css_class("modal-scrim")
         self.modal_reveal=Gtk.Revealer(); self.modal_reveal.set_transition_type(Gtk.RevealerTransitionType.CROSSFADE)
-        self.modal_reveal.set_transition_duration(0 if self.app.store.settings.get("reduce_motion") else 120)
+        self.modal_reveal.set_transition_duration(120)
         self.modal_reveal.set_child(self.modal_layer); self.modal_reveal.set_can_target(False); self.modal_reveal.set_visible(False)
         self.modal_card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(6)); self.modal_card.add_css_class("modal-card")
         self.modal_card.set_halign(Gtk.Align.CENTER); self.modal_card.set_valign(Gtk.Align.CENTER); self.modal_card.set_hexpand(True); self.modal_card.set_vexpand(True)
@@ -95,18 +93,18 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def _build_quick_pane(self,width):
         pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_size_request(width,-1); pane.set_hexpand(False)
-        header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_end(S(20)); header.set_margin_bottom(S(10))
-        title=Gtk.Label(label="TVWCS"); title.add_css_class("brand"); title.set_xalign(0); title.set_hexpand(True); header.append(title)
-        # Only ✕ close is up here (it can be hidden in Options): power and Applications are at the bottom, after the
-        # status icons.
+        # Desktop mode: "TVWCS" and ✕ close at the top (power and Applications are at the bottom, after the status
+        # icons). TV mode has no header: the remote's Back key closes the Quick Menu.
         buttons=[]
-        if self.app.store.settings.get("quick_close_button",True):
+        if not self.app.tv:
+            header=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); header.set_margin_top(S(14)); header.set_margin_start(S(20)); header.set_margin_end(S(20)); header.set_margin_bottom(S(10))
+            title=Gtk.Label(label="TVWCS"); title.add_css_class("brand"); title.set_xalign(0); title.set_hexpand(True); header.append(title)
             close_btn=icon_button("window-close-symbolic","✕","Close"); close_btn.add_css_class("close-button"); close_btn.add_css_class("square"); close_btn.connect("clicked",lambda *_:self.app.hide_window()); buttons.append(close_btn)
-        if buttons:
             controls=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); controls.add_css_class("window-controls")
             for b in buttons: controls.append(b)
-            header.append(controls)
-        pane.append(header); self._header_group=buttons
+            header.append(controls); pane.append(header)
+        else: pane.set_margin_top(S(14))
+        self._header_group=buttons
         # Everything below the header sits at the bottom, nearest the search field: favorites, open applications, the
         # search results, the search field, then the status row. The space left over (on a TV, or with Applications
         # open) is above them. At a desk the window is only as tall as all this (main.fit_quick_menu).
@@ -139,14 +137,15 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _shape_search(self):
         """TV: a narrow channel field with its hint while the text could still be a channel number (empty, or up to
         three digits); the full width otherwise. Desktop: always the full width, without the hint."""
-        e=self.search_entry; q=e.get_text(); tv=self.app.store.settings.get("use")=="tv"
+        e=self.search_entry; q=e.get_text(); tv=self.app.tv
         narrow=tv and (q=="" or (q.isdigit() and len(q)<=CHANNEL_DIGITS))
         if getattr(self,"_search_narrow",None)==narrow: return
         self._search_narrow=narrow
         e.set_hexpand(not narrow); e.set_halign(Gtk.Align.START if narrow else Gtk.Align.FILL)
-        e.set_width_chars(CHANNEL_DIGITS+1 if narrow else -1); e.set_max_width_chars(CHANNEL_DIGITS+1 if narrow else -1)   # + the ✕ that clears it
+        e.set_width_chars(2*CHANNEL_DIGITS+2 if narrow else -1); e.set_max_width_chars(2*CHANNEL_DIGITS+2 if narrow else -1)   # "# _ _ _", + the ✕ that clears it
         (e.add_css_class if narrow else e.remove_css_class)("channel-entry")
-        e.set_placeholder_text("000" if narrow else "Search, or type a channel number")
+        (e.add_css_class if tv else e.remove_css_class)("tv-search")   # the app buttons' fill, no magnifier
+        e.set_placeholder_text("# "+" ".join("_"*CHANNEL_DIGITS) if narrow else "Search, or type a channel number")
         self.channel_hint.set_visible(narrow)
 
     # ---------------------------------------------------------- the bottom: clock, status icons and power
@@ -178,7 +177,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         return bar
     def tick_clock(self):
         if getattr(self,"clock_time",None) is None: return
-        t=clock_text(None,self.app.store.settings.get("clock_24h",False)); d=date_text()
+        t=clock_text(None,self.app.store.settings.get("clock_24h",False)); d=short_date_text()
         if self.clock_time.get_text()!=t: self.clock_time.set_text(t)
         if self.clock_date.get_text()!=d: self.clock_date.set_text(d)
     def show_status(self,status):
@@ -188,9 +187,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         looks={"network":quick_status.network_icon(status),"volume":quick_status.volume_icon(status),
                "bluetooth":quick_status.bluetooth_icon(status),"updates":quick_status.updates_icon(status),
                "battery":quick_status.battery_icon(status)}
-        st=self.app.store.settings   # a feature turned off (Settings > Features) shows no icon
-        shown={"network":True,"volume":status.volume is not None and features.enabled(st,"sound"),
-               "bluetooth":bool(status.bluetooth) and features.enabled(st,"bluetooth"),"updates":status.updates>0,
+        shown={"network":True,"volume":status.volume is not None,
+               "bluetooth":bool(status.bluetooth),"updates":status.updates>0,
                "battery":status.battery is not None}
         for key,(icon,fallback,tip) in looks.items():
             b=buttons[key]
@@ -511,7 +509,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         panel=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); panel.add_css_class("row-options"); panel.set_visible(False)
         panel.set_margin_start(S(16)); panel.set_margin_end(S(16)); panel.set_margin_top(S(6)); panel.set_margin_bottom(S(2))
         row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4))
-        hide=self.app.store.settings.get("hide_options_buttons",False)
+        hide=False
         toggle=Gtk.Button(); toggle.add_css_class("options-toggle"); toggle.add_css_class("square"); toggle.set_visible(not hide)
         toggle.set_child(glyph("view-more-symbolic","⋯")); toggle.set_tooltip_text("Options")
         group=NavGroup([toggle,main],entry=main); group.toggle=toggle if not hide else None; group.line=row
@@ -794,7 +792,6 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         w=self.get_focus()
         if w is not None: self._last_focus[self._pane_of(w)]=w
         self._fold_options(w)
-        self._schedule_focus_tip(w)
     def _fold_options(self,focused):
         """Fold a Quick Menu row's options (or a status panel) away once the selection has left them and their row (or
         icon). Not while a pop-up or a dialog opened from one of them is up, nor while a panel is redrawn."""
@@ -805,29 +802,6 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._open_row=None
         if row.expanded(): row.collapse()
 
-    # ---------------------------------------------------------- tooltips for selected icon-only buttons
-    # A remote has no pointer to hover with, so a button with no text shows its tooltip once it has been selected for a moment.
-    def _schedule_focus_tip(self,w):
-        self._hide_focus_tip()
-        if w is not None and icon_only(w) and self.app.store.settings.get("button_hints",False):
-            self._focus_tip_source=GLib.timeout_add(FOCUS_TIP_DELAY,self._show_focus_tip,w)
-    def _show_focus_tip(self,button):
-        self._focus_tip_source=0
-        hovered=self.pointer.active and button.get_state_flags() & Gtk.StateFlags.PRELIGHT   # the pointer is on it: GTK's own tooltip is showing
-        if self.get_focus() is not button or not usable(button) or hovered or self._focus_tip is not None: return GLib.SOURCE_REMOVE
-        tip=Gtk.Label(label=button.get_tooltip_text()); tip.set_wrap(True); tip.set_max_width_chars(48)
-        pop=Gtk.Popover(); pop.add_css_class("focus-tip"); pop.set_autohide(False); pop.set_can_focus(False); pop.set_has_arrow(False)
-        pop.set_position(Gtk.PositionType.BOTTOM); pop.set_child(tip); pop.set_parent(button); pop.popup()
-        self._focus_tip=pop; self._focus_tip_source=GLib.timeout_add(FOCUS_TIP_DURATION,self._expire_focus_tip)
-        return GLib.SOURCE_REMOVE
-    def _expire_focus_tip(self):
-        self._focus_tip_source=0; self._hide_focus_tip(); return GLib.SOURCE_REMOVE
-    def _hide_focus_tip(self):
-        if self._focus_tip_source: GLib.source_remove(self._focus_tip_source); self._focus_tip_source=0
-        pop=self._focus_tip; self._focus_tip=None
-        if pop is not None:
-            pop.popdown()
-            if pop.get_parent() is not None: pop.unparent()
     def _pane_of(self,widget):
         for name,pane in (("options",self.options_pane),("guide",self.guide_pane)):
             if widget is not None and pane is not None and (widget is pane or widget.is_ancestor(pane)): return name
@@ -945,7 +919,6 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def _key_pressed(self,_controller,keyval,_keycode,state):
         if self._capture is not None and self._capture_key(keyval,state): return True
-        self._hide_focus_tip()   # any key press dismisses it; the next selection schedules a fresh one
         focused=self.get_focus(); editable=isinstance(focused,Gtk.Editable); typing=self._in_search(focused)
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self._escape(); return True   # the remote's Back key (XF86Back) is Esc
         if self._pin is not None and self._pin_key(keyval): return True
@@ -1018,7 +991,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _dismiss_dialogs_if_active(self):
         if self.is_visible() and self.is_active(): self.app.dismiss_dialogs()   # still in front: not a passing focus change
         return GLib.SOURCE_REMOVE
-    def note_shown(self): self._was_active=False; self._hide_focus_tip()
+    def note_shown(self): self._was_active=False
 
     # ---------------------------------------------------------- dialogs (drawn over the panels, remote-navigable)
     def _begin_modal(self):
@@ -1179,22 +1152,25 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def ask_password(self,action_label,on_ok,message=""):
         """The administrator (sudo) password for a power action, typed on a keyboard (such as the one on the back of a
-        remote) or on the on-screen keyboard: the full one, or the number pad when Settings > Options > Password
-        keyboard says: the one a password was last typed on (the full one at first). Either can switch to the other.
+        remote) or on the on-screen keyboard, shown as it was last left (hidden, full or the number pad).
         on_ok(password) runs on OK; the field is emptied when it closes."""
         def got(password):
             if password: on_ok(password)
         self.ask_text(f"Password for {action_label}",got,"",f"{action_label} needs administrator rights. Enter your password (the one sudo asks for). "
-                      "It is used once and never stored.",digits=self.app.store.settings.get("password_keyboard")=="digits",secret=True,switchable=True,error=message)
+                      "It is used once and never stored.",secret=True,error=message)
 
     # ---------------------------------------------------------- the on-screen keyboard (typing with a remote)
     KEYS={"lower":("1234567890","qwertyuiop","asdfghjkl'","zxcvbnm,.-"),
           "upper":("1234567890","QWERTYUIOP","ASDFGHJKL\"","ZXCVBNM;:_"),
           "symbols":("!@#$%^&*()","~`+=[]{}\\|","/?<>€£¥§°¿","…·•×÷¡«»¢¤")}
-    def ask_text(self,title,callback,initial="",message="",back=None,digits=False,secret=False,ok_label="OK",max_len=0,switchable=False,error=""):
-        """Type a piece of text with the D-pad: a full keyboard (letters, capitals, symbols) or, with digits, a number
-        keypad. A real keyboard types into it too. callback(text) runs on OK or Enter; Cancel or Back runs back()
-        (or just closes). With switchable (passwords), a key changes between the two keyboards, keeping what is typed."""
+    def ask_text(self,title,callback,initial="",message="",back=None,digits=False,secret=False,ok_label="OK",max_len=0,error="",keyboard=None):
+        """Type a piece of text with the D-pad or a real keyboard. callback(text) runs on OK or Enter; Cancel or Back
+        runs back() (or just closes). With digits (a PIN), only the number pad is offered. Otherwise the on-screen
+        keyboard is hidden, full (letters, capitals, symbols) or a number pad, as it was last left (settings
+        "keyboard"), and buttons change between them, keeping what is typed."""
+        st=self.app.store.settings
+        kind="digits" if digits else (keyboard or st.get("keyboard","hidden"))
+        if kind not in ("hidden","full","digits"): kind="hidden"
         self._begin_modal(); self._title(title)
         if message:
             m=muted_label(message); m.set_margin_bottom(S(8)); self.modal_card.append(m)
@@ -1202,19 +1178,17 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             e=Gtk.Label(label=error); e.add_css_class("error"); e.set_wrap(True); e.set_xalign(0); e.set_margin_bottom(S(8)); self.modal_card.append(e)
         entry=Gtk.PasswordEntry() if secret else Gtk.Entry()
         if secret: entry.set_show_peek_icon(True)
-        entry.add_css_class("pin-display" if digits else "text-display"); entry.set_text(initial or ""); entry.set_margin_bottom(S(8))
+        entry.add_css_class("pin-display" if kind=="digits" else "text-display"); entry.set_text(initial or ""); entry.set_margin_bottom(S(8))
         if max_len and not secret: entry.set_max_length(max_len)
         self.modal_card.append(entry)
         cancelled=back or self.close_modal
         def submit(*_):
-            text=entry.get_text(); self.close_modal()
-            if secret and switchable: self._remember_keyboard(digits)
-            callback(text)
+            text=entry.get_text(); self.close_modal(); callback(text)
         entry.connect("activate",submit)
-        self._text={"entry":entry,"submit":submit,"layer":"lower","keys":[],"digits":digits,"max":max_len,"secret":secret}
-        def switch():   # the other keyboard, with what is typed so far
-            typed=entry.get_text()
-            self.ask_text(title,callback,typed,message,back,not digits,secret,ok_label,max_len,switchable,error)
+        self._text={"entry":entry,"submit":submit,"layer":"lower","keys":[],"digits":kind=="digits" and digits,"max":max_len,"secret":secret}
+        def switch(to):   # another keyboard, with what is typed so far; remembered for next time
+            typed=entry.get_text(); self._remember_keyboard(to)
+            self.ask_text(title,callback,typed,message,back,digits,secret,ok_label,max_len,error,keyboard=to)
         groups=[NavGroup([entry])]
         def key(text,handler,css=None):
             b=Gtk.Button(label=text); b.add_css_class("pin-key")
@@ -1224,16 +1198,17 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             box=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); box.set_homogeneous(True); box.set_margin_bottom(S(4))
             for b in buttons: box.append(b)
             self.modal_card.append(box); g=NavGroup(buttons); g.column=True; groups.append(g)
-        if digits:
+        if kind=="hidden":
+            show=key("⌨  Show keyboard",lambda:switch("full")); ok=key(ok_label,submit,"active")
+            line([show,ok])
+        elif kind=="digits":
             for row in (("1","2","3"),("4","5","6"),("7","8","9")): line([key(d,lambda d=d:self._type(d)) for d in row])
             line([key("⌫",self._erase),key("0",lambda:self._type("0")),key(ok_label,submit,"active")])
-            if switchable: line([key("ABC  Full keyboard",switch)])
+            if not digits: line([key("ABC  Full keyboard",lambda:switch("full")),key("Hide keyboard",lambda:switch("hidden"))])
         else:
             for r in range(4):
                 buttons=[key("",lambda r=r,c=c:self._type(self.KEYS[self._text["layer"]][r][c]),"kb-key") for c in range(10)]
                 self._text["keys"].append(buttons); line(buttons)
-            if switchable:   # passwords: the number pad, for a password of digits only
-                pad=key("123  Number pad",switch); pad.add_css_class("kb-key"); self.modal_card.append(pad); groups.append(NavGroup([pad]))
             shift=key("⇧",lambda:self._layer("lower" if self._text["layer"]=="upper" else "upper"))
             symbols=key("&123",lambda:self._layer("lower" if self._text["layer"]=="symbols" else "symbols"))
             space=key("Space",lambda:self._type(" ")); erase=key("⌫",self._erase); ok=key(ok_label,submit,"active")
@@ -1242,16 +1217,18 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             space.set_hexpand(True)
             for b,w in ((shift,56),(symbols,64),(erase,56),(ok,88)): b.set_size_request(S(w),-1)
             self.modal_card.append(box); g=NavGroup([shift,symbols,space,erase,ok]); groups.append(g)
+            pad=key("123  Number pad",lambda:switch("digits"),"kb-key"); hide=key("Hide keyboard",lambda:switch("hidden"),"kb-key")
+            line([pad,hide])
             self._text["shift"]=shift; self._text["symbols"]=symbols; self._label_keys()
         cancel=Gtk.Button(label="Cancel"); cancel.set_margin_top(S(6)); cancel.connect("clicked",lambda *_:cancelled()); self.modal_card.append(cancel); groups.append(NavGroup([cancel]))
         self._modal_groups=groups; self._modal_back=cancelled
-        first=groups[1][0]; first.grab_focus()
+        first=entry if kind=="hidden" else groups[1][0]; first.grab_focus()
         GLib.timeout_add(150,lambda:(self._text is not None and self._text["entry"] is entry and self.get_focus() is None and first.grab_focus(),GLib.SOURCE_REMOVE)[1])
-    def _remember_keyboard(self,digits):
-        """A password was typed on this keyboard: the next password dialog opens with it (Settings > Options > Password keyboard)."""
-        store=self.app.store; kind="digits" if digits else "full"
-        if store.settings.get("password_keyboard")!=kind:
-            store.settings["password_keyboard"]=kind
+    def _remember_keyboard(self,kind):
+        """The on-screen keyboard was changed: the next text dialog opens with it."""
+        store=self.app.store
+        if store.settings.get("keyboard")!=kind:
+            store.settings["keyboard"]=kind
             try: store.save()
             except OSError: pass
     def _label_keys(self):

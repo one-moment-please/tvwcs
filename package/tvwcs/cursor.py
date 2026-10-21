@@ -1,8 +1,8 @@
-"""Hiding the mouse pointer (Settings > Options > Hide the mouse pointer). No GTK dependency.
+"""Hiding the mouse pointer in TV mode. No GTK dependency.
 
-The pointer is hidden after a few seconds without moving and comes back as soon as it moves. TVWCS does this itself
-(it used to be a line in tvwcs.conf): on sway with `seat * hide_cursor`, on X11 (i3) with unclutter. By default it is
-on in TV mode (3 seconds) and off at a desk.
+In TV mode (a TVWCS session) the pointer is hidden after 3 seconds without moving and comes back as soon as it moves;
+in desktop mode TVWCS leaves it alone. TVWCS does this itself: on sway with `seat * hide_cursor`, on X11 (i3) with
+unclutter.
 
 A hidden pointer still rests over something, and applications keep showing that hover (a highlighted button, a
 tooltip). sway takes the pointer's focus away when it hides it. On X11 TVWCS moves the hidden pointer out of the way
@@ -17,27 +17,18 @@ from __future__ import annotations
 import ctypes, ctypes.util, os, shutil, subprocess
 
 DEFAULT_SECONDS=3
-SECONDS_RANGE=(1,60)
 
-def hide_enabled(settings, env=None):
-    """cursor_hide None follows the use: on for a TV, off at a desk. On X11 it needs the "cursor" feature (unclutter)."""
-    from tvwcs.features import enabled
-    if not sway(env) and not enabled(settings,"cursor"): return False
-    v=settings.get("cursor_hide")
-    return settings.get("use")=="tv" if v is None else bool(v)
+def hide_enabled(settings=None, env=None, which=shutil.which):
+    """On in TV mode only; on X11 it needs unclutter."""
+    from tvwcs.model import tv_mode
+    if not tv_mode(env): return False
+    return sway(env) or bool(which("unclutter"))
 
-def hide_seconds(settings):
-    v=settings.get("cursor_hide_seconds",DEFAULT_SECONDS)
-    lo,hi=SECONDS_RANGE
-    return v if isinstance(v,int) and not isinstance(v,bool) and lo<=v<=hi else DEFAULT_SECONDS
+def hide_seconds(settings=None): return DEFAULT_SECONDS
 
 def hide_ms(settings):
     """The hiding time in ms, or None when the pointer is never hidden."""
     return hide_seconds(settings)*1000 if hide_enabled(settings) else None
-
-def clamp_seconds(v):
-    lo,hi=SECONDS_RANGE
-    return max(lo,min(hi,int(v)))
 
 def sway(env=None):
     env=os.environ if env is None else env
@@ -102,7 +93,7 @@ class CursorHider:
     def __init__(self, run=subprocess.run, popen=subprocess.Popen, which=shutil.which):
         self.run,self.popen,self.which=run,popen,which; self.proc=None; self.applied=None
     def apply(self, settings, env=None):
-        on,seconds=hide_enabled(settings,env),hide_seconds(settings)
+        on,seconds=hide_enabled(settings,env,lambda n:True),hide_seconds(settings)
         if (on,seconds)==self.applied and (not on or sway(env) or (self.proc is not None and self.proc.poll() is None)): return ""
         self.applied=(on,seconds)
         if sway(env):
@@ -110,11 +101,11 @@ class CursorHider:
             except (OSError,subprocess.SubprocessError): pass
             return ""
         self.stop()
+        if not on: return ""   # desktop mode: the pointer is left as the session has it
         # an unclutter started by an older tvwcs.conf (or by hand) would keep hiding the pointer on its own timing
         if self.which("pkill"):
             try: self.run(["pkill","-u",str(os.getuid()),"-x","unclutter"],capture_output=True,timeout=3)
             except (OSError,subprocess.SubprocessError): pass
-        if not on: return ""
         if not self.which("unclutter"): return "unclutter is not installed, so the mouse pointer cannot be hidden. Install unclutter-xfixes."
         try: self.proc=self.popen(unclutter_argv(seconds),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
                                   start_new_session=True,preexec_fn=_end_with_parent)

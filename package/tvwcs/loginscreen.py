@@ -1,4 +1,4 @@
-"""TVWCS's login screen (Settings > Features > Login screen), and the computer's automatic login. No GTK dependency.
+"""TVWCS's login screen (Settings > User > Login screen), and the computer's automatic login. No GTK dependency.
 
 The login screen is greetd (the login daemon) running TVWCS's greeter (ui_greeter.py) full screen in cage, a kiosk
 Wayland compositor. greetd checks the password and starts the session; the greeter only draws the screen. It starts
@@ -261,7 +261,7 @@ PAM_MARK="# Written by TVWCS"
 def write_greetd_config(user, autologin=None, vt=GREETD_VT) -> str:
     """greetd's config for TVWCS's login screen. autologin: (user, session) for the initial session, which logs that
     user in at start-up (the login screen then shows after logging out)."""
-    lines=["# Written by TVWCS (Settings > Features > Login screen). Turning that off puts back the config from before.",
+    lines=["# Written by TVWCS (Settings > User > Login screen). Removing it puts back the config from before.",
            "[terminal]",f"vt = {vt}","","[default_session]",f"command = {json.dumps(greeter_command())}",f"user = {json.dumps(user)}"]
     if autologin:
         who,session=autologin
@@ -479,7 +479,7 @@ class Changer:
         self.out(f"From the next start, the computer uses {name(to)}." if to else "From the next start, the computer has no login screen.")
         if not to and autologin_to:
             self.out(f"{autologin_to[0]} is logged in on the first console; to start i3 or sway there, their shell's login file needs TVWCS's start "
-                     "lines (Settings > Features writes them when it turns the login screen off).")
+                     "lines (Settings writes them when it removes the login screen).")
 
     def _getty_is_tvwcs(self):
         return "TVWCS" in _read(GETTY_OVERRIDE)
