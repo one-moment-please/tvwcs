@@ -1,9 +1,12 @@
 """TVWCS's screen saver (Settings > Power and sleep > Screen saver): a logo drifting across a black screen, bouncing off
 the edges and changing colour at each bounce, like a DVD player left alone. `tvwcs screensaver` shows it until a key,
-the remote, a click or a mouse movement; TVWCS starts it after the "Screen saver after" time (not on sway yet: see power.swayidle_argv).
+the remote, a click or a mouse movement; TVWCS starts it after the "Screen saver after" time (on sway, swayidle does).
 
-The logo is the DVD Video logo, TVWCS's own in the same style, or a picture the user chose. The movement has no GTK
-dependency (step, logo_size) and is unit-tested; the window is GTK and is only imported when it runs."""
+On i3 it is a fullscreen window per monitor. On sway a fullscreen window would take fullscreen away from what had it (a
+video), so there it is a layer-shell surface over everything instead (gtk4-layer-shell, see LAYER_SHELL).
+
+The logo is TVWCS's own (a word over a disc, in the style of a DVD player's) or a picture the user chose. The movement
+has no GTK dependency (step, logo_size) and is unit-tested; the window is GTK and is only imported when it runs."""
 from __future__ import annotations
 import os, random, signal, sys
 
@@ -47,12 +50,39 @@ def running(env=None):
         pid=int((runtime_dir(env)/PID_NAME).read_text().strip()); os.kill(pid,0); return pid
     except (OSError,ValueError): return None
 
-def start(launcher, env=None):
-    """Start `tvwcs screensaver` unless one is showing. Returns "" or why not."""
+# ---------------------------------------------------------------------- sway: a layer-shell overlay
+# gtk4-layer-shell must be loaded before libwayland-client, which GTK loads as soon as it is imported; from Python
+# that means LD_PRELOAD, set when TVWCS starts the screen saver (launch_env).
+LAYER_SHELL_LIB="libgtk4-layer-shell.so.0"
+LAYER_SHELL_TYPELIB="Gtk4LayerShell-1.0.typelib"
+MISSING_LAYER_SHELL="On sway the screen saver needs gir1.2-gtk4layershell-1.0. Install it in Settings > Power and sleep."
+TYPELIB_DIRS=("/usr/lib/x86_64-linux-gnu/girepository-1.0","/usr/lib/aarch64-linux-gnu/girepository-1.0","/usr/lib/girepository-1.0",
+              "/usr/lib64/girepository-1.0","/usr/local/lib/girepository-1.0")
+def _sway(env): return bool((os.environ if env is None else env).get("SWAYSOCK"))
+
+def layer_shell_missing(env=None, dirs=TYPELIB_DIRS):
+    """True on sway when gtk4-layer-shell's introspection data is not installed (the check does not load it)."""
+    if not _sway(env): return False
+    import glob
+    return not any(os.path.exists(os.path.join(d,LAYER_SHELL_TYPELIB)) for d in dirs) and not glob.glob(f"/usr/lib/*/girepository-1.0/{LAYER_SHELL_TYPELIB}")
+
+def launch_env(env=None):
+    """The environment to start `tvwcs screensaver` in: on sway, with gtk4-layer-shell preloaded."""
+    env=dict(os.environ if env is None else env)
+    if _sway(env):
+        preload=env.get("LD_PRELOAD","").split()
+        if LAYER_SHELL_LIB not in preload: env["LD_PRELOAD"]=" ".join([LAYER_SHELL_LIB]+preload)
+    return env
+
+def start(launcher, env=None, preview=False):
+    """Start `tvwcs screensaver` (--preview: shown even when the screen is off, as Settings asks) unless one is
+    showing. Returns "" or why not."""
     import subprocess
-    if running(env): return ""
+    if running(env) and not preview: return ""
     if cairo_missing(): return MISSING_CAIRO
-    try: subprocess.Popen([str(launcher),"screensaver"],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    if layer_shell_missing(env): return MISSING_LAYER_SHELL
+    try: subprocess.Popen([str(launcher),"screensaver"]+(["--preview"] if preview else []),start_new_session=True,stdin=subprocess.DEVNULL,
+                          stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env=launch_env(env))
     except OSError as exc: return f"Could not start the screen saver: {exc}"
     return ""
 
@@ -99,9 +129,9 @@ def qr_modules(cols, rows=QR_ROWS, finder_col=None, seed=7):
 
 def _rgb(colour): return tuple(int(colour[i:i+2],16)/255 for i in (1,3,5))
 
-def _draw_disc_logo(cr, Pango, PangoCairo, w, h, colour, word, disc_word):
-    """The DVD Video logo's shape: a wide italic word over a flat disc with a smaller word cut out of it. TVWCS's own
-    (disc_word None) has a smaller oval of the same shape in the disc instead, filled with a QR code."""
+def _draw_disc_logo(cr, Pango, PangoCairo, w, h, colour, word):
+    """TVWCS's logo: a wide italic word over a flat disc, with a smaller oval of the same shape in the disc filled with
+    a QR code."""
     cr.set_source_rgb(*_rgb(colour))
     layout=PangoCairo.create_layout(cr)
     font=Pango.FontDescription.from_string(f"Sans Bold Italic {max(8,int(h*0.5))}px")
@@ -113,36 +143,30 @@ def _draw_disc_logo(cr, Pango, PangoCairo, w, h, colour, word, disc_word):
     top=h*0.64; dh=h*0.34; cx=w/2; cy=top+dh/2; rx,ry=w*0.46,dh/2
     cr.save(); cr.translate(cx,cy); cr.scale(rx,ry); cr.arc(0,0,1,0,6.2832); cr.restore(); cr.fill()
     cr.set_source_rgb(0,0,0)
-    if disc_word is None:
-        # an oval half the size, the same shape, and a QR code's squares cut out of the disc inside it, with its finder
-        # pattern far enough left that the oval's curve does not cut into it
-        irx,iry=rx*0.5,ry*0.5
-        cr.save(); cr.translate(cx,cy); cr.scale(irx,iry); cr.arc(0,0,1,0,6.2832); cr.restore()
-        cr.save(); cr.clip()
-        unit=2*iry/QR_ROWS; cols=max(QR_ROWS,int(2*irx/unit)); x0=cx-cols*unit/2
-        finder=int(((cx-irx*0.55)-x0)/unit)
-        for c,r in qr_modules(cols,QR_ROWS,finder): cr.rectangle(x0+c*unit,cy-iry+r*unit,unit,unit)
-        cr.fill(); cr.restore()
-        return
-    small=PangoCairo.create_layout(cr)
-    small.set_font_description(Pango.FontDescription.from_string(f"Sans Bold {max(6,int(dh*0.5))}px")); small.set_text(disc_word,-1)
-    _ink,sl=small.get_pixel_extents()
-    cr.move_to(cx-sl.width/2,cy-sl.height/2); PangoCairo.show_layout(cr,small)
+    # an oval half the size, the same shape, and a QR code's squares cut out of the disc inside it, with its finder
+    # pattern far enough left that the oval's curve does not cut into it
+    irx,iry=rx*0.5,ry*0.5
+    cr.save(); cr.translate(cx,cy); cr.scale(irx,iry); cr.arc(0,0,1,0,6.2832); cr.restore()
+    cr.save(); cr.clip()
+    unit=2*iry/QR_ROWS; cols=max(QR_ROWS,int(2*irx/unit)); x0=cx-cols*unit/2
+    finder=int(((cx-irx*0.55)-x0)/unit)
+    for c,r in qr_modules(cols,QR_ROWS,finder): cr.rectangle(x0+c*unit,cy-iry+r*unit,unit,unit)
+    cr.fill(); cr.restore()
 
-LOGO_WORDS={"dvd":("DVD","VIDEO"),"tvwcs":("TVWCS",None)}
+LOGO_WORD="TVWCS"
 def logo_aspect(kind, picture=None):
     if picture is not None: return picture.get_width()/max(1,picture.get_height())
-    return 2.0 if kind=="dvd" else 2.4
+    return 2.4
 
 def paint_logo(cr, kind, w, h, colour, picture=None):
-    """The logo, w x h at cr's origin: a picture (a cairo surface), else the DVD or TVWCS logo in `colour`."""
+    """The logo, w x h at cr's origin: a picture (a cairo surface), else TVWCS's logo in `colour`."""
     if picture is not None:
         cr.save(); cr.scale(w/picture.get_width(),h/picture.get_height()); cr.set_source_surface(picture,0,0); cr.paint(); cr.restore()
         return
     import gi
     gi.require_version("PangoCairo","1.0")
     from gi.repository import Pango, PangoCairo
-    _draw_disc_logo(cr,Pango,PangoCairo,w,h,colour,*LOGO_WORDS.get(kind,LOGO_WORDS["dvd"]))
+    _draw_disc_logo(cr,Pango,PangoCairo,w,h,colour,LOGO_WORD)
 
 def picture_surface(path):
     """A cairo surface with the picture at `path` (PNG, JPEG, SVG...), or None when it cannot be read."""
@@ -185,10 +209,10 @@ password box timing out turns the screen off instead."""
     width,height=W.value,H.value
     if depth.value not in (24,32): print(f"The screen saver needs a 24-bit display, not {depth.value}-bit.",file=sys.stderr); return 1
     gc=x11.XCreateGC(dpy,window_id,0,None); x11.XSetForeground(dpy,gc,0); x11.XFillRectangle(dpy,window_id,gc,0,0,width,height)
-    kind=settings.get("screensaver_logo","dvd"); picture=None
+    kind=settings.get("screensaver_logo","tvwcs"); picture=None
     if kind=="image":
         picture=picture_surface(settings.get("screensaver_image",""))
-        if picture is None: kind="dvd"
+        if picture is None: kind="tvwcs"
     w,h=logo_size(width,height,logo_aspect(kind,picture))
     speed=SPEED*max(1.0,height/1080); pad=math.ceil(speed)+2   # the black edge round the logo wipes where it was
     surface=cairo.ImageSurface(cairo.FORMAT_ARGB32,w+2*pad,h+2*pad); stride=surface.get_stride()
@@ -245,19 +269,28 @@ def saver_script(launcher, env=None):
 
 # ---------------------------------------------------------------------- the window (GTK)
 def run(settings, preview=False):
+    if layer_shell_missing(): print(MISSING_LAYER_SHELL,file=sys.stderr); return 1
+    if _sway(None) and LAYER_SHELL_LIB not in os.environ.get("LD_PRELOAD","").split():   # started by hand: again, with it preloaded
+        os.execvpe(sys.executable,[sys.executable,"-m","tvwcs.main","screensaver"]+(["--preview"] if preview else []),launch_env())
     import gi
     gi.require_version("Gtk","4.0"); gi.require_version("Gdk","4.0"); gi.require_version("PangoCairo","1.0")
     from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo
     if cairo_missing(): print(MISSING_CAIRO,file=sys.stderr); return 1
+    layer=None
+    if _sway(None):   # an overlay over every window, never a fullscreen window (see the top of this file)
+        try:
+            gi.require_version("Gtk4LayerShell","1.0")
+            from gi.repository import Gtk4LayerShell as layer
+        except (ImportError,ValueError): print(MISSING_LAYER_SHELL,file=sys.stderr); return 1
     pid_file=runtime_dir()/PID_NAME
     if running() and not preview: return 0
     try: pid_file.parent.mkdir(parents=True,exist_ok=True); pid_file.write_text(str(os.getpid()))
     except OSError: pass
-    kind=settings.get("screensaver_logo","dvd"); image=None
+    kind=settings.get("screensaver_logo","tvwcs"); image=None
     if kind=="image":
         try: image=Gdk.Texture.new_from_filename(os.path.expanduser(settings.get("screensaver_image","")))
-        except Exception: image=None   # an unreadable picture: the DVD logo instead
-        if image is None: kind="dvd"
+        except Exception: image=None   # an unreadable picture: TVWCS's logo instead
+        if image is None: kind="tvwcs"
     def fresh(): return {"x":None,"y":40.0,"dx":SPEED,"dy":SPEED,"colour":COLOURS[0],"pointer":None}
 
     focused=_i3_focused_workspace()
@@ -284,7 +317,7 @@ def run(settings, preview=False):
                 x,y,dx,dy,bounced=step(state["x"],state["y"],state["dx"],state["dy"],w,h,width,height)
                 state.update(x=x,y=y,dx=dx,dy=dy)
                 if bounced: state["colour"]=next_colour(state["colour"])
-                cr.save(); cr.translate(x,y); paint_logo(cr,kind if image is None else "dvd",w,h,state["colour"],pix); cr.restore()
+                cr.save(); cr.translate(x,y); paint_logo(cr,kind,w,h,state["colour"],pix); cr.restore()
             area.set_draw_func(draw)
             keys=Gtk.EventControllerKey(); keys.connect("key-pressed",quit_); win.add_controller(keys)
             click=Gtk.GestureClick(); click.set_button(0); click.connect("pressed",quit_); win.add_controller(click)
@@ -293,14 +326,19 @@ def run(settings, preview=False):
                 last=state["pointer"]; state["pointer"]=(x,y)
                 if last is not None and abs(x-last[0])+abs(y-last[1])>8: app.quit()
             motion.connect("motion",moved); win.add_controller(motion)
-            if monitor is None: win.fullscreen()
+            if layer is not None:
+                layer.init_for_window(win); layer.set_namespace(win,"tvwcs-screensaver"); layer.set_layer(win,layer.Layer.OVERLAY)
+                for edge in (layer.Edge.TOP,layer.Edge.BOTTOM,layer.Edge.LEFT,layer.Edge.RIGHT): layer.set_anchor(win,edge,True)
+                layer.set_exclusive_zone(win,-1); layer.set_keyboard_mode(win,layer.KeyboardMode.EXCLUSIVE)
+                if monitor is not None: layer.set_monitor(win,monitor)
+            elif monitor is None: win.fullscreen()
             else: win.fullscreen_on_monitor(monitor)
             win.present(); placed.append((win,monitor))
         monitors=Gdk.Display.get_default().get_monitors()
-        if monitors.get_n_items()>1:
+        if monitors.get_n_items()>1 or (layer is not None and monitors.get_n_items()):
             for i in range(monitors.get_n_items()): saver_window(monitors.get_item(i))
         else: saver_window(None)   # one screen: a plain fullscreen (i3 left a fullscreen_on_monitor window floating)
-        if len(placed)>1: GLib.timeout_add(150,lambda:(_i3_spread(placed,focused),GLib.SOURCE_REMOVE)[1])
+        if len(placed)>1 and layer is None: GLib.timeout_add(150,lambda:(_i3_spread(placed,focused),GLib.SOURCE_REMOVE)[1])
         def tick():
             for area in areas: area.queue_draw()
             return GLib.SOURCE_CONTINUE

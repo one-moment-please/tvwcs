@@ -415,13 +415,12 @@ def use_tvwcs_locker(path, tvwcs_locker):
     return ""
 
 # ---------------------------------------------------------------------- sway: swayidle
-def swayidle_argv(settings, launcher):
+def swayidle_argv(settings, launcher, saver=True):
     """swayidle with one timeout per action; each calls `tvwcs idle <action>` back, which checks sound and inhibitors.
-    The screen saver is left out: it is a plain fullscreen window, which takes fullscreen away from what had it on sway
-    (a layer-shell overlay would be needed), so Settings hides it there for now."""
+    The screen saver is left out without `saver` (it needs gtk4-layer-shell on sway: see screensaver.py)."""
     argv=["swayidle","-w"]
     for a in ACTIONS:
-        if settings.get(a) and a!="screensaver":
+        if settings.get(a) and (saver or a!="screensaver"):
             argv+=["timeout",str(settings[a]),f"'{launcher}' idle {a}"]
             if a=="screen_off": argv+=["resume",f"'{launcher}' idle resume"]
     return argv if len(argv)>2 else None
@@ -430,7 +429,8 @@ class SwayIdle:
     """The swayidle process TVWCS runs on sway; restarted when the times change."""
     def __init__(self): self.proc=None; self.argv=None
     def apply(self, settings, launcher):
-        argv=swayidle_argv(settings,launcher)
+        from tvwcs import screensaver
+        argv=swayidle_argv(settings,launcher,not screensaver.cairo_missing() and not screensaver.layer_shell_missing({"SWAYSOCK":"1"}))
         if argv==self.argv and self.proc is not None and self.proc.poll() is None: return ""
         self.stop(); self.argv=argv
         if argv is None: return ""

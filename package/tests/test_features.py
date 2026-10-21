@@ -24,5 +24,16 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(F.install_argv(["unclutter-xfixes"],run=lambda *a,**k:Done())[-2:],["unclutter-xfixes","unclutter-startup-"])
         Done.stdout="unclutter-startup\tii \n"   # installed already (by its owner): left alone
         self.assertEqual(F.install_argv(["unclutter-xfixes"],run=lambda *a,**k:Done())[-1],"unclutter-xfixes")
+    def test_the_screen_saver_on_sway_also_needs_gtk4_layer_shell(self):
+        self.assertEqual(F.screensaver({}).packages,("python3-gi-cairo",))
+        self.assertEqual(F.screensaver({"SWAYSOCK":"/run/sway"}).packages,("python3-gi-cairo","gir1.2-gtk4layershell-1.0"))
+        self.assertFalse(F.applies(F.BY_KEY["sway_saver"],{})); self.assertTrue(F.applies(F.BY_KEY["sway_saver"],{"SWAYSOCK":"/run/sway"}))
+    def test_removing_a_feature_names_what_goes_with_it(self):
+        self.assertEqual(F.remove_argv(["gvfs-backends"])[-3:],["remove","-y","gvfs-backends"])
+        with self.assertRaises(ValueError): F.remove_argv(["gvfs-backends; reboot"])
+        sim="Reading package lists...\nThe following packages will be REMOVED:\n  gvfs-backends nautilus\nRemv nautilus [1:43.2-1]\nRemv gvfs-backends [1.50.3-1]\n"
+        self.assertEqual(F.parse_removals(sim),["nautilus","gvfs-backends"])
+        class Done: stdout=sim
+        self.assertEqual(F.removals(["gvfs-backends"],run=lambda *a,**k:Done()),["gvfs-backends","nautilus"])
 
 if __name__=="__main__": unittest.main()
