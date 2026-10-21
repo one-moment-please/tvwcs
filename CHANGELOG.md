@@ -10,6 +10,10 @@
 - The ✕ at the top of the tabs is gone. Esc (or Back) from the tabs closes Settings, as does the window manager.
 - In a text field on a page, ← at its start and → at its end move to the button beside it, so a remote can reach Search's ⌨ button.
 
+## 4.0.2 — 2026-10-21
+
+- The Quick Menu no longer flickers when a status panel (Wi-Fi, volume, Bluetooth, battery or ⏻) or an app's options open or close at a desk. It now grows and shrinks upwards with the clock and status row held still, instead of first growing off the bottom of the screen and then jumping into place.
+
 ## 4.0.1 — 2026-10-21
 
 - Settings > User no longer says the login screen "needs updating" right after an upgrade from 3.x. The installer and Settings now read the interface size the same way, and Automatic gives the login screen its TV size.
