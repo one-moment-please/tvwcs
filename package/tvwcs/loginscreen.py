@@ -192,10 +192,11 @@ def start_session_argv(session) -> list:
     return [f"{GREETER_LIB}/start-session",session["kind"],desktop,*session["exec"]]
 
 def default_session(available, wm=""):
-    """The session to start when nobody chose one: TVWCS's own session for `wm` (i3 or sway), else that window
-    manager, else TVWCS's i3 session, i3, TVWCS's sway session, sway, else the first one."""
+    """The session to start when nobody chose one: TVWCS's own session for `wm` (i3 or sway), else TVWCS's sway
+    session, TVWCS's i3 session (TVWCS's sessions are TV mode, what its login screen is for; sway first when both are
+    there), then sway, i3, else the first one."""
     ids=[s["id"] for s in available]
-    for sid in ([f"tvwcs-{wm}",wm] if wm else [])+["tvwcs-i3","i3","tvwcs-sway","sway"]:
+    for sid in ([f"tvwcs-{wm}"] if wm else [])+["tvwcs-sway","tvwcs-i3"]+([wm] if wm else [])+["sway","i3"]:
         if sid in ids: return sid
     return ids[0] if ids else ""
 
@@ -426,6 +427,14 @@ class Changer:
         else: self.remove("/etc/X11/default-display-manager")
         if unit: self.systemctl("set-default","graphical.target")   # greetd is only started by graphical.target
 
+    def remember_session(self, user, session):
+        """Make `session` the one the login screen picks for `user` until they choose another."""
+        from tvwcs.greeter import Memory
+        m=Memory(path(STATE_DIR)); m.remember(user,session)
+        if not os.environ.get("TVWCS_ROOT"):
+            try: d=path(STATE_DIR).stat(); os.chown(m.file,d.st_uid,d.st_gid)
+            except OSError: pass
+
     def enable(self, settings, version="", source=None, autologin_to=None, before=None):
         """Turn TVWCS's login screen on: copy it, write greetd's config (keeping greetd's old one), remember the login
         screen in use and switch to greetd. autologin_to: (user, session id) to log in at start-up, or None. before: the
@@ -527,14 +536,9 @@ def root_command(args, packages=()) -> list:
     if not all(re.fullmatch(r"[a-z0-9][a-z0-9+.-]*",p) for p in packages): raise ValueError("Unexpected package name.")
     return ["sh","-c",INSTALL_THEN,"sh",str(len(packages)),*packages,*run]
 
-def tvwcs_session(available, wm, setup="", where=""):
-    """The session that starts TVWCS with `wm`: TVWCS's own one (set up next to other desktops), else plain i3 / sway
-    (whose config includes TVWCS, set up for TVWCS only). where is install.sh's answer to where TVWCS starts: usual
-    (plain i3 / sway), sessions (TVWCS's own only) or both."""
-    ids=[s["id"] for s in available]
-    usual_first=where=="usual" or (where!="sessions" and setup=="dedicated")
-    order=[wm,f"tvwcs-{wm}"] if usual_first else [f"tvwcs-{wm}",wm]
-    return next((i for i in order if i in ids),default_session(available,wm))
+def tvwcs_session(available, wm=""):
+    """The session that starts TVWCS in TV mode: TVWCS's own session for `wm` (sway first when there is no choice)."""
+    return default_session(available,wm)
 
 def _version(source):
     for f in (Path(source).parent/"VERSION",Path(source).parent.parent/"VERSION"):
@@ -547,8 +551,9 @@ def _settings(config_file):
     except (OSError,ValueError,AttributeError): return {}
 
 USAGE="""Usage (as root): python3 -m tvwcs.loginscreen <command>
-  enable [--config FILE] [--autologin USER SESSION] [--previous UNIT]
-                                                     turn TVWCS's login screen on (from the next start)
+  enable [--config FILE] [--autologin USER SESSION] [--previous UNIT] [--session USER SESSION]
+                                                     turn TVWCS's login screen on (from the next start); with
+                                                     --session, it starts SESSION for USER until they pick another
   update [--config FILE]                             update its copy of TVWCS and its look (from FILE: a config.json)
   disable [--to UNIT] [--autologin USER SESSION]     turn it off: back to UNIT (default: the one before), or none ("");
                                                      with none, USER logs in on the first console (their start lines
@@ -574,7 +579,9 @@ def main(argv):
     c=Changer(); config=opt("--config"); auto=opt("--autologin",2)
     try:
         if cmd=="enable":
-            before=opt("--previous"); c.enable(_settings(config),autologin_to=tuple(auto) if auto else None,before=before)
+            before=opt("--previous"); chosen=opt("--session",2)
+            c.enable(_settings(config),autologin_to=tuple(auto) if auto else None,before=before)
+            if chosen: c.remember_session(*chosen)
         elif cmd=="update": c.update(_settings(config))
         elif cmd=="disable":
             to=opt("--to"); c.disable(fallback() if to is None else to,tuple(auto) if auto else None)
