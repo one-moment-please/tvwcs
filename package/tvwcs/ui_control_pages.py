@@ -430,7 +430,7 @@ class PowerPage(Page):
         if not s.idle_works and any(s.settings[a] or s.battery_settings[a] for a in power.ACTIONS):
             self.note("These times need swayidle. Install it, then sign out and in again.","error")
         self.section("LOCKING")
-        self.note("In a TVWCS session the computer locks with swaylock on a dark screen: type your password and press Enter. "
+        self.note("In a TVWCS session the computer locks with swaylock, in TVWCS's theme: type your password and press Enter. "
                   "In another session, Lock uses that desktop's own screen locker." if tv_mode() else
                   "This is not a TVWCS session, so Lock uses this desktop's own screen locker, such as swaylock.")
         l=s.logind

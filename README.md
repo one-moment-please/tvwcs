@@ -10,7 +10,7 @@ It works with normal desktop apps. It is not a media center and needs no plugins
 
 TVWCS has two modes:
 
-- **TV mode** is the **TVWCS** session you pick at the login screen. It is made for a remote: every app opens full screen in a workspace of its own, the sway bar is off (the Quick Menu shows the time and status instead), the mouse pointer hides after 3 seconds, the Quick Menu stays open while nothing else is, and the computer locks with a simple swaylock screen in TVWCS's colours.
+- **TV mode** is the **TVWCS** session you pick at the login screen. It is made for a remote: every app opens full screen in a workspace of its own, the sway bar is off (the Quick Menu shows the time and status instead), the mouse pointer hides after 3 seconds, the Quick Menu stays open while nothing else is, and the computer locks with a swaylock screen in TVWCS's theme.
 - **Desktop mode** is TVWCS inside your usual sway session. The Quick Menu is a launcher and switcher; apps open the way sway opens them, and your bar, pointer and lock screen are left as they are.
 
 <table>
@@ -141,7 +141,7 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 
 A page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth BlueZ, and so on). When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.
 
-**Locking in TV mode:** the TVWCS session locks with swaylock, on a dark screen with a ring in your accent colour. A desktop session's own lock screen is not changed. `tvwcs lock` locks by hand. If the computer logs in automatically, **Settings › User › Lock the screen when TVWCS starts** has the session start locked, so your password is still needed after a restart.
+**Locking in TV mode:** the TVWCS session locks with swaylock. The lock screen follows your theme (Modern light or dark with your accent colour, or Retro with its colour, pixel fonts and background) and says it's locked and how to unlock it. A desktop session's own lock screen is not changed. `tvwcs lock` locks by hand. If the computer logs in automatically, **Settings › User › Lock the screen when TVWCS starts** has the session start locked, so your password is still needed after a restart.
 
 ## Update and uninstall
 
