@@ -55,16 +55,19 @@ def running(env=None):
 # that means LD_PRELOAD, set when TVWCS starts the screen saver (launch_env).
 LAYER_SHELL_LIB="libgtk4-layer-shell.so.0"
 LAYER_SHELL_TYPELIB="Gtk4LayerShell-1.0.typelib"
-MISSING_LAYER_SHELL="On sway the screen saver needs gir1.2-gtk4layershell-1.0. Install it in Settings > Power and sleep."
+MISSING_LAYER_SHELL="On sway the screen saver needs gir1.2-gtk4layershell-1.0 and libgtk4-layer-shell0. Install them in Settings > Power and sleep."
 TYPELIB_DIRS=("/usr/lib/x86_64-linux-gnu/girepository-1.0","/usr/lib/aarch64-linux-gnu/girepository-1.0","/usr/lib/girepository-1.0",
               "/usr/lib64/girepository-1.0","/usr/local/lib/girepository-1.0")
 def _sway(env): return bool((os.environ if env is None else env).get("SWAYSOCK"))
 
 def layer_shell_missing(env=None, dirs=TYPELIB_DIRS):
-    """True on sway when gtk4-layer-shell's introspection data is not installed (the check does not load it)."""
+    """True on sway when gtk4-layer-shell's introspection data or its library is not installed (Debian's
+    gir1.2-gtk4layershell-1.0 does not bring the library). The check does not load either."""
     if not _sway(env): return False
     import glob
-    return not any(os.path.exists(os.path.join(d,LAYER_SHELL_TYPELIB)) for d in dirs) and not glob.glob(f"/usr/lib/*/girepository-1.0/{LAYER_SHELL_TYPELIB}")
+    typelib=any(os.path.exists(os.path.join(d,LAYER_SHELL_TYPELIB)) for d in dirs) or glob.glob(f"/usr/lib/*/girepository-1.0/{LAYER_SHELL_TYPELIB}")
+    library=any(os.path.exists(os.path.join(os.path.dirname(d),LAYER_SHELL_LIB)) for d in dirs) or glob.glob(f"/usr/lib/*/{LAYER_SHELL_LIB}")
+    return not (typelib and library)
 
 def launch_env(env=None):
     """The environment to start `tvwcs screensaver` in: on sway, with gtk4-layer-shell preloaded."""

@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.2.2 — 2026-10-22
+
+- The screen saver on sway failed to start on Debian: its gtk4-layer-shell package (gir1.2-gtk4layershell-1.0) does not bring the library itself. Settings > Power and sleep now installs libgtk4-layer-shell0 with it, and checks for both before offering the screen saver.
+
+## 4.2.1 — 2026-10-21
+
+- Picking a page of an open Settings window (or another open app's shortcut) from its ⋯ menu shows that window on the page, on sway too. Before, sway left you on a new, empty workspace with a "Starting TVWCS Settings…" card, because the open window doesn't flag itself there.
+
+## 4.2.0 — 2026-10-21
+
+**Quick Menu**
+- Favorites and open applications are one list, without the "Favorites" and "Open applications" headings: favorites first, in their order, then the other open apps. A favorite that is open stays in its place, shown as the open app with ★.
+- In TV mode the channel search field is three characters wide and shows **___** (no "#").
+- While an app starts, a spinner turns in place of its icon in its button, instead of the large "Starting…" notice. The notice only shows when the app was started with no button of it on screen (by its hotkey, say). Selecting the button again while it spins does nothing.
+- A row's options list the app's own shortcuts at the top (such as each Settings page), then opening it the other way, then **Close this application** at the bottom, nearest the row. The selection lands on the option just above Close.
+- Picking one of an open app's shortcuts (such as a Settings page) shows that app, instead of leaving you on a new, empty workspace when the app only flags its window.
+
 ## 4.1.0 — 2026-10-21
 
 **Settings**

@@ -1,6 +1,7 @@
 import unittest
 from tvwcs.applications import Application
-from tvwcs.workspaces import build_entries, short_app_name, workspace_label
+from tvwcs.model import LaunchProfile
+from tvwcs.workspaces import build_entries, quick_list, short_app_name, workspace_label
 
 def app(name,wm_class): return Application(wm_class+".desktop",name,None,None,None,("Other",),"/x","x",(),wm_class)
 APPS=[app("Brave Web Browser","brave-browser"),app("Text Editor","gedit"),app("Files","nautilus")]
@@ -31,3 +32,17 @@ class WorkspaceTests(unittest.TestCase):
         names=[e.name for e in build_entries([win(1,"gedit","10"),win(2,"gedit","2"),win(3,"gedit","web")],[],match)]
         self.assertEqual(names,["2","10","web"])
 if __name__=="__main__": unittest.main()
+
+class QuickListTests(unittest.TestCase):
+    def test_one_list_open_favorites_in_their_place(self):
+        wins=[win(1,"gedit","2"),win(2,"nautilus","3"),win(3,"mystery-app","3"),win(4,"vlc","4")]
+        entries=build_entries(wins,[],match)
+        fav=[LaunchProfile("b","brave-browser.desktop","Brave"),LaunchProfile("g","gedit.desktop","Editor"),LaunchProfile("n","nautilus.desktop","Files"),
+             LaunchProfile("c","brave-browser.desktop","Private",desktop_action="new-private-window")]
+        opened={"gedit.desktop":wins[0],"nautilus.desktop":wins[1],"brave-browser.desktop":{"con_id":99}}
+        rows,starred=quick_list(fav,entries,opened)
+        got=[(k,x.name if k=="favorite" else x.name) for k,x in rows]
+        # Brave's window is not in any entry: listed as the favorite. The editor, open alone, stands in its place.
+        # Files shares workspace 3, so that workspace's row (in the open list) has it. A desktop action is always listed.
+        self.assertEqual(got,[("favorite","Brave"),("entry","2"),("favorite","Private"),("entry","3"),("entry","4")])
+        self.assertEqual(starred,{1,2,99})
