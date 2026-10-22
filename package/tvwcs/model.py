@@ -78,8 +78,14 @@ CORNERS={"bottom-left":"Bottom left","bottom-right":"Bottom right","top-left":"T
 DEFAULT_CORNER="bottom-left"
 def corner_right(corner) -> bool: return str(corner or "").endswith("right")
 def corner_top(corner) -> bool: return str(corner or "").startswith("top")
-# Settings > Appearance > Theme: TVWCS's light or dark look; applications that follow the desktop's colour scheme follow it.
+# Settings > Appearance > Theme: the Modern (Metro) look or the Retro one, green, amber or white text on black like an
+# old CRT television's menus, in pixel fonts with pixel icons and no application icons.
+STYLES={"modern":"Modern","retro":"Retro"}
+PHOSPHORS={"green":"Green","amber":"Amber","white":"White"}
+# Settings > Appearance > Light or dark (Modern): TVWCS's light or dark look; applications that follow the desktop's
+# colour scheme follow it. The Retro theme is always dark.
 THEMES={"dark":"Dark","light":"Light"}
+def dark_look(settings) -> bool: return settings.get("style")=="retro" or settings.get("theme")!="light"
 # Settings > Appearance > Background colour: what shows where no application is open, and behind the Quick Menu.
 # Six greys from white to black, six bright colours and the same six darkened. Shown as swatches without names.
 WALLPAPER_GREYS=("#ffffff","#c8c8c8","#969696","#646464","#323232","#000000")
@@ -87,6 +93,12 @@ WALLPAPER_COLOURS=("#e81123","#ff8c00","#ffd800","#107c10","#0078d7","#881798")
 WALLPAPER_DARK=("#740912","#804600","#806c00","#083e08","#003c6c","#440c4c")
 WALLPAPERS=WALLPAPER_GREYS+WALLPAPER_COLOURS+WALLPAPER_DARK
 DEFAULT_WALLPAPER="#323232"   # dark grey
+# The Retro theme's backgrounds: a CRT grey, the primary blue of a TV with no signal, or TV static (retro/static.png).
+RETRO_WALLPAPERS={"gray":"#808080","blue":"#0000ff","static":"static"}
+RETRO_WALLPAPER_LABELS={"gray":"Gray","blue":"Blue","static":"TV static"}
+def wallpaper_of(settings) -> str:
+    """The background to paint: a colour, or "static" for the TV static picture."""
+    return RETRO_WALLPAPERS[settings.get("retro_wallpaper","gray")] if settings.get("style")=="retro" else settings.get("wallpaper",DEFAULT_WALLPAPER)
 # The on-screen keyboard: hidden (a button shows it), the full keyboard, or a number pad. The one last used comes back.
 KEYBOARDS={"hidden":"Hidden","full":"Full keyboard","digits":"Number pad"}
 
@@ -106,7 +118,10 @@ DEFAULT_SETTINGS={
     "update_prereleases":False,     # TVWCS's updater also offers prereleases (releases not yet tested and marked latest)
     "clock_24h":False,              # the Quick Menu's clock shows 14:05 instead of 2:05 PM
     "quick_corner":DEFAULT_CORNER,  # CORNERS: where the Quick Menu sits, its layout mirrored to match
-    "theme":"dark",                 # THEMES: TVWCS's look, passed on to applications that follow the desktop's colour scheme
+    "style":"modern",               # STYLES: the Modern or the Retro theme
+    "phosphor":"green",             # PHOSPHORS: the Retro theme's colour
+    "retro_wallpaper":"gray",       # RETRO_WALLPAPERS: the Retro theme's background (Modern keeps its own in wallpaper)
+    "theme":"dark",                 # THEMES: the Modern theme's light or dark, passed on to applications that follow the desktop's colour scheme
     "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
     "keyboard":"hidden",            # KEYBOARDS: the on-screen keyboard as it was last left (hidden, full or the number pad)
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
@@ -156,6 +171,8 @@ def _clean_settings(raw) -> dict:
     # Before 4.0, "Used on" (use) set the size along with it: a size that only followed it now follows the mode
     if raw.get("use") in ("tv","desktop") and raw.get("scale")==AUTO_SCALE[raw["use"]=="tv"]: s["scale"]=""
     if raw.get("theme") in THEMES: s["theme"]=raw["theme"]
+    for key,allowed in (("style",STYLES),("phosphor",PHOSPHORS),("retro_wallpaper",RETRO_WALLPAPERS)):
+        if raw.get(key) in allowed: s[key]=raw[key]
     if raw.get("quick_corner") in CORNERS: s["quick_corner"]=raw["quick_corner"]
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
     if raw.get("keyboard") in KEYBOARDS: s["keyboard"]=raw["keyboard"]

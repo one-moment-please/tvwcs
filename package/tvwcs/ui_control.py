@@ -20,7 +20,7 @@ from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints, scale_key, tv_mode
 from tvwcs.theme import render_css
 from tvwcs import cursor
-from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, screen_height, scroll_into_view, scroll_to_show, set_scale, usable
+from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, screen_height, scroll_into_view, scroll_to_show, set_scale, usable, use_retro
 
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
@@ -78,10 +78,17 @@ button.ampm { padding: 6px 14px; margin-bottom: 26px; }
 """
 
 def colour_swatch(colour):
-    """A square of `colour` (a Metro colour, or the current accent): theme.render_css paints .tile-N in METRO_COLORS[N]."""
-    from tvwcs.model import WALLPAPERS
+    """A square of `colour` (a Metro colour, a background colour, a Retro background's key or the current accent):
+    theme.render_css paints .tile-N in METRO_COLORS[N], .wall-N in WALLPAPERS[N] and .retro-wall-<key>."""
     c=(colour or "").lower(); box=Gtk.Box(); box.add_css_class("accent-swatch"); box.set_valign(Gtk.Align.CENTER)
-    box.add_css_class(f"tile-{METRO_COLORS.index(c)}" if c in METRO_COLORS else f"wall-{WALLPAPERS.index(c)}" if c in WALLPAPERS else "accent-current"); return box
+    box.add_css_class(swatch_class(c) or "accent-current"); return box
+
+def swatch_class(colour):
+    from tvwcs.model import RETRO_WALLPAPERS, WALLPAPERS
+    if colour in METRO_COLORS: return f"tile-{METRO_COLORS.index(colour)}"
+    if colour in WALLPAPERS: return f"wall-{WALLPAPERS.index(colour)}"
+    if colour in RETRO_WALLPAPERS: return f"retro-wall-{colour}"
+    return None
 
 def in_background(work, done, failed=None):
     """work() on a worker thread, so a slow tool never freezes the remote; then done(result) (or failed(error))
@@ -142,15 +149,20 @@ class ControlWindow(Gtk.ApplicationWindow):
         self._load_css(); self._build()
 
     def _load_css(self):
-        self._provider.load_from_data(render_css(self.app.accent,self.app.scale,CONTROL_CSS,theme=self.app.theme).encode("utf-8"))
+        retro=self.app.style=="retro"; use_retro(retro)
+        self._provider.load_from_data(render_css(self.app.accent,self.app.scale,CONTROL_CSS,theme=self.app.theme,style=self.app.style,
+                                                 phosphor=self.app.phosphor).encode("utf-8"))
         gtk_settings=Gtk.Settings.get_default()
-        if gtk_settings is not None: gtk_settings.set_property("gtk-application-prefer-dark-theme",self.app.theme!="light")
+        if gtk_settings is not None: gtk_settings.set_property("gtk-application-prefer-dark-theme",retro or self.app.theme!="light")
 
     def settings_changed(self, settings):
         """Options saved a change: draw this window with its accent, size, key names and motion too."""
-        app=self.app; scale=effective_scale(scale_key(settings),screen_height()); resized=scale!=app.scale
+        app=self.app; scale=effective_scale(scale_key(settings),screen_height())
+        restyled=settings.get("style","modern")!=app.style   # the icons change too: built again, like a new size
+        resized=scale!=app.scale or restyled
         app.accent=settings.get("accent",app.accent)
         app.theme=settings.get("theme","dark"); app.keyboard=settings.get("keyboard","hidden")
+        app.style=settings.get("style","modern"); app.phosphor=settings.get("phosphor","green")
         if resized and self._running():   # rebuilding would lose the run's output: the new size waits for the next time
             self._load_css(); self._apply_settings()
             self.notice("Interface size","TVWCS uses the new size now. Settings uses it the next time it opens, once what is running here has finished."); return
@@ -415,10 +427,11 @@ class ControlWindow(Gtk.ApplicationWindow):
         self._finish_modal(groups,cancel_action,focus)
         if focus is not None and holder is not self.modal_card: GLib.timeout_add(80,lambda:(scroll_into_view(scroll,focus),GLib.SOURCE_REMOVE)[1])
 
-    def choose_swatch(self, title, message, colours, current, callback, per_row=6):
+    def choose_swatch(self, title, message, colours, current, callback, per_row=6, names=None):
         """Colours as a grid of squares without names (Appearance > Background colour); the current one has a ✓.
-        The arrows move around the grid, OK chooses."""
-        from tvwcs.model import WALLPAPERS
+        The arrows move around the grid, OK chooses. A colour may be a Retro background's key (RETRO_WALLPAPERS),
+        named in `names`."""
+        from tvwcs.model import RETRO_WALLPAPERS
         self._begin_modal(title)
         if message: self._message(message)
         groups=[]; focus=None
@@ -426,12 +439,13 @@ class ControlWindow(Gtk.ApplicationWindow):
             line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_margin_bottom(S(6)); made=[]
             for colour in colours[start:start+per_row]:
                 b=Gtk.Button(); b.add_css_class("wallpaper-swatch")
-                if colour in WALLPAPERS: b.add_css_class(f"wall-{WALLPAPERS.index(colour)}")
+                if swatch_class(colour): b.add_css_class(swatch_class(colour))
                 if colour==current:
                     mark=Gtk.Label(label="✓"); mark.add_css_class("pane-title"); b.set_child(mark); focus=b
-                    dark=sum(int(colour[i:i+2],16) for i in (1,3,5))<380
+                    hexa=RETRO_WALLPAPERS.get(colour,colour); hexa=hexa if hexa.startswith("#") else "#000000"   # TV static: dark enough
+                    dark=sum(int(hexa[i:i+2],16) for i in (1,3,5))<380
                     mark.set_markup(f"<span foreground='{'#ffffff' if dark else '#000000'}'>✓</span>")
-                b.set_tooltip_text(colour)
+                b.set_tooltip_text((names or {}).get(colour,colour))
                 b.connect("clicked",lambda _b,c=colour:(self.close_modal(),callback(c))); line.append(b); made.append(b)
             self.modal_card.append(line); g=NavGroup(made); g.column=True; groups.append(g)
         cancel,=self._buttons(("Cancel",self.close_modal,None)); groups.append([cancel])
@@ -629,6 +643,7 @@ class ControlPanelApp(Gtk.Application):
         settings=ConfigStore().settings   # TVWCS's interface size, accent colour, use and motion; Options changes them (settings_changed)
         self.scale_key=scale_key(settings); self.scale=SCALE_PRESETS.get(self.scale_key,1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
         self.theme=settings.get("theme","dark"); self.keyboard=settings.get("keyboard","hidden")
+        self.style=settings.get("style","modern"); self.phosphor=settings.get("phosphor","green")
     def do_startup(self):
         Gtk.Application.do_startup(self); self.scale=effective_scale(self.scale_key,screen_height()); set_scale(self.scale)   # fitted to the screen, now there is one
     def do_command_line(self, command_line):

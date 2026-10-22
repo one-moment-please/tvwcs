@@ -7,12 +7,13 @@ Applications that follow the desktop's colour scheme read it from different plac
   that do not read GNOME's settings.
 Qt applications keep their own look.
 
-The background colour is set as sway's output background."""
+The background colour (or the Retro theme's TV static picture, retro/static.png) is set as sway's output background."""
 from __future__ import annotations
 import configparser, io, os, re, shutil
 from pathlib import Path
 
 from tvwcs.control_cmd import have, run
+from tvwcs.retro import STATIC_PICTURE
 
 GTK_INI_KEY="gtk-application-prefer-dark-theme"
 
@@ -77,6 +78,9 @@ def portal_missing(which=shutil.which, exists=os.path.exists):
 
 # ---------------------------------------------------------------------- the background colour
 def wallpaper_argv(colour):
+    """A colour, or "static": the TV static picture, stretched over each screen (its grains are the same size on a
+    1080p and a 4K screen)."""
+    if colour=="static": return ["swaymsg",f'output * bg "{STATIC_PICTURE}" fill']
     return ["swaymsg",f"output * bg {colour} solid_color"]
 
 def apply_wallpaper(colour, env=None):

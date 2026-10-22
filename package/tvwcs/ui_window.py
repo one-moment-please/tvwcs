@@ -15,7 +15,7 @@ from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
 from tvwcs import cursor
 from tvwcs.workspaces import quick_list
-from tvwcs.widgets import (KEEP_LTR, NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, flip_children, glyph, held_modifiers, icon_button, Marquee, mirror, muted_label, scroll_to_show, section_title, usable)
+from tvwcs.widgets import (KEEP_LTR, NO_ICON, NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, flip_children, glyph, held_modifiers, icon_button, Marquee, mirror, muted_label, scroll_to_show, section_title, usable, use_retro)
 
 NAME_SCROLL_DELAY=3000                   # ms a selected Quick Menu row waits before a name too long to fit scrolls by
 CHANNEL_DIGITS=3                         # typing this many digits of a channel number ...
@@ -103,8 +103,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if self._provider is None:
             self._provider=Gtk.CssProvider()
             if display: Gtk.StyleContext.add_provider_for_display(display,self._provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        settings=self.app.store.settings
-        self._provider.load_from_data(render_css(settings["accent"],self.app.scale_factor,theme=settings.get("theme","dark")).encode("utf-8"))
+        settings=self.app.store.settings; use_retro(settings.get("style")=="retro")   # before the widgets: their icons depend on it
+        self._provider.load_from_data(render_css(settings["accent"],self.app.scale_factor,theme=settings.get("theme","dark"),
+                                                 style=settings.get("style","modern"),phosphor=settings.get("phosphor","green")).encode("utf-8"))
 
     def set_panels(self,guide,options=None):
         """Show or hide the Applications pane, built once and kept, so closing and opening it again never disturbs
@@ -659,7 +660,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._show_launching(icon,spinner,p.id in self.launching)
     @staticmethod
     def _show_launching(icon,spinner,on):
-        icon.set_visible(not on); spinner.set_visible(on); (spinner.start if on else spinner.stop)()
+        icon.set_visible(not on and not icon.has_css_class(NO_ICON)); spinner.set_visible(on); (spinner.start if on else spinner.stop)()
     def set_launching(self,profile_id,on):
         """Show (or stop) the spinner on every button of a profile that is starting. -> whether one is on screen."""
         (self.launching.add if on else self.launching.discard)(profile_id)
