@@ -144,8 +144,13 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         return pane
 
     def quick_height(self,width):
-        """How tall the Quick Menu needs to be, at `width`, to show everything in it without scrolling."""
-        return self.quick_pane.measure(Gtk.Orientation.VERTICAL,width)[1]
+        """How tall the Quick Menu needs to be, at `width`, to show everything in it without scrolling, or a card
+        drawn over it (the on-screen keyboard), whichever is taller."""
+        height=self.quick_pane.measure(Gtk.Orientation.VERTICAL,width)[1]
+        if self.modal_reveal.get_visible():
+            card=self.modal_card.measure(Gtk.Orientation.VERTICAL,self._card_width)[1]
+            height=max(height,card+2*S(24))   # with a little of the scrim around it
+        return height
 
     def _shape_search(self):
         """TV: a narrow channel field with its hint while the text could still be a channel number (empty, or up to
@@ -165,31 +170,36 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     # ---------------------------------------------------------- the bottom: clock, status icons and power
     STATUS_KEYS=("updates","network","volume","bluetooth","battery")
     def _build_status_bar(self):
-        """The time and date, then icons for waiting updates, the network, the volume, Bluetooth and the battery (with
-        its charge, and whether it is charging; only on a computer with a battery), then ⏻ and, in the corner, ⊞ Applications.
+        """Two rows. Above: icons for waiting updates, the network, the volume, Bluetooth and the battery (with its
+        charge, and whether it is charging; only on a computer with a battery), and ⏻ at the far right. Below: the time
+        and date, and ⊞ Applications in the corner. Each row keeps its width whatever the icons show (an update count).
         The clock and the updates icon open their page of the Settings app; the others, and ⏻, unfold a panel above the
-        row (toggle_status_panel).
+        rows (toggle_status_panel).
         The icons are refreshed by main.StatusWatcher."""
-        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); bar.add_css_class("quick-status")
-        clock=Gtk.Button(); clock.add_css_class("clock-button"); clock.set_hexpand(True); clock.set_tooltip_text("Date and time")
-        text=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); text.set_halign(Gtk.Align.START)
-        self.clock_time=Gtk.Label(); self.clock_time.add_css_class("clock-time"); self.clock_time.set_xalign(0); text.append(self.clock_time)
-        self.clock_date=Gtk.Label(); self.clock_date.add_css_class("clock-date"); self.clock_date.set_xalign(0); text.append(self.clock_date)
-        clock.set_child(text); clock.connect("clicked",lambda *_:self.app.open_settings("datetime")); bar.append(clock)
+        bar=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); bar.add_css_class("quick-status")
+        icons=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); bar.append(icons)
         self._status_buttons={}
         for key in self.STATUS_KEYS:
             b=Gtk.Button(); b.add_css_class("square"); b.add_css_class("status-icon"); b.set_valign(Gtk.Align.CENTER)
             if key=="updates": b.connect("clicked",lambda *_:self.app.open_settings("updates"))
             else: b.connect("clicked",lambda _b,k=key:self.toggle_status_panel(k))
-            bar.append(b); self._status_buttons[key]=b
+            icons.append(b); self._status_buttons[key]=b
+        gap=Gtk.Box(); gap.set_hexpand(True); icons.append(gap)
         power=Gtk.Button(); power.set_child(glyph("system-shutdown-symbolic","⏻",22)); power.set_tooltip_text("Lock, sleep, reboot or shut down"); power.add_css_class("square"); power.add_css_class("status-icon"); power.set_valign(Gtk.Align.CENTER)
-        power.connect("clicked",lambda *_:self.toggle_status_panel("power")); bar.append(power); self._status_buttons["power"]=power
+        power.connect("clicked",lambda *_:self.toggle_status_panel("power")); icons.append(power); self._status_buttons["power"]=power
+        line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); bar.append(line)
+        clock=Gtk.Button(); clock.add_css_class("clock-button"); clock.set_hexpand(True); clock.set_tooltip_text("Date and time")
+        text=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); text.set_halign(Gtk.Align.START)
+        self.clock_time=Gtk.Label(); self.clock_time.add_css_class("clock-time"); self.clock_time.set_xalign(0); text.append(self.clock_time)
+        self.clock_date=Gtk.Label(); self.clock_date.add_css_class("clock-date"); self.clock_date.set_xalign(0); text.append(self.clock_date)
+        clock.set_child(text); clock.connect("clicked",lambda *_:self.app.open_settings("datetime")); line.append(clock)
         guide=Gtk.Button(); guide.set_child(glyph("view-grid-symbolic","⊞",22)); guide.add_css_class("square"); guide.add_css_class("status-icon"); guide.set_valign(Gtk.Align.CENTER)
         # ⊞ is on screen when it is clicked: open or close Applications here and now (show_mode would first ask the
         # window manager where TVWCS is, and an answer from before the click showed it again instead of closing it)
         guide.connect("clicked",lambda *_:self.app.show_panels(not self.guide_open,False,focus="guide" if not self.guide_open else "quick"))
-        bar.append(guide); self.guide_button=guide
-        self._status_group=NavGroup([clock,*self._status_buttons.values(),guide]); pointer_only(*self._status_group)
+        line.append(guide); self.guide_button=guide
+        self._status_group=NavGroup(list(self._status_buttons.values())); self._clock_group=NavGroup([clock,guide])
+        pointer_only(*self._status_group,*self._clock_group)
         self._status_shown=None; self.tick_clock(); self.show_status(self.app.status)
         return bar
     def tick_clock(self):
@@ -508,6 +518,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             ch=Gtk.Label(label=f"{p.channel:03d}"); ch.add_css_class("channel-number"); inner.append(ch)
         inner.append(Marquee(self.app.profile_name(p,app),delay=NAME_SCROLL_DELAY).follow(main))
         if p.pin_hash: inner.append(self._lock_mark())
+        inner.append(self._star_mark())
         main.set_child(inner)
         main.connect("clicked",lambda _b,profile=p:self.app.launch_profile(profile))
         box,group=self._options_row(main,lambda profile=p,a=app:self._profile_items(profile,a))
@@ -517,11 +528,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         """An application on a workspace of its own (or one app inside an expanded workspace)."""
         title,badge=extract_badge(w["title"],w.get("urgent",False))
         app=self.app.match_application_window(w)
-        main=Gtk.Button(); main.add_css_class("launch-row"); main.set_hexpand(True)
+        main=Gtk.Button(); main.add_css_class("launch-row"); main.add_css_class("open-app"); main.set_hexpand(True)
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); inner.append(self.app.window_icon(w,32,badge))
         inner.append(Marquee(title,delay=NAME_SCROLL_DELAY).follow(main))
-        if w["con_id"] in getattr(self,"_starred",()):
-            star=Gtk.Label(label="★"); star.add_css_class("favorite-mark"); star.set_tooltip_text("A favorite"); inner.append(star)
+        if w["con_id"] in getattr(self,"_starred",()): inner.append(self._star_mark())
         main.set_child(inner)
         main.connect("clicked",lambda _b,con=w["con_id"]:self.app.focus_window(con))
         box,group=self._options_row(main,lambda win=w,a=app:self._window_items(win,a))
@@ -531,7 +541,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
     def _workspace_row(self,entry,outputs):
         """Apps that share a workspace, grouped under a name built from what is in it. Its apps unfold above it."""
         box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4))
-        main=Gtk.Button(); main.add_css_class("launch-row"); main.set_hexpand(True); main.set_tooltip_text("Open this workspace and everything on it")
+        main=Gtk.Button(); main.add_css_class("launch-row"); main.add_css_class("open-app"); main.set_hexpand(True); main.set_tooltip_text("Open this workspace and everything on it")
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); icons=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(2))
         for w in entry.windows[:3]: icons.append(self.app.window_icon(w,24,extract_badge(w["title"],w.get("urgent",False))[1]))
         inner.append(icons)
@@ -637,6 +647,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         for pid,_icon,spinner in self._launch_slots:
             if pid==profile_id: spinner.set_tooltip_text(f"{name} has not opened a window yet. It may still be starting, or it may not have started.")
 
+    @staticmethod
+    def _star_mark():
+        """The grey ★ of a favorite in the Quick Menu (an open one also has the band of an open app)."""
+        star=Gtk.Label(label="★"); star.add_css_class("favorite-mark"); star.set_tooltip_text("A favorite"); return star
     @staticmethod
     def _lock_mark():
         mark=glyph("changes-prevent-symbolic","🔒",16); mark.set_tooltip_text("Protected by a PIN"); return mark
@@ -907,7 +921,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             for g in groups: out+=getattr(g,"options",None) or []; out.append(g)
             return out
         return ([self._header_group]+unfolded(self._groups["quick"])+unfolded(reversed(self._result_groups))
-                +[[self.search_entry]]+list(getattr(self,"_panel_groups",[]))+[getattr(self,"_status_group",[])])
+                +[[self.search_entry]]+list(getattr(self,"_panel_groups",[]))+[getattr(self,"_status_group",[]),getattr(self,"_clock_group",[])])
     @staticmethod
     def _contains(widget,focused): return focused is not None and (focused is widget or focused.is_ancestor(widget))
     def _in_search(self,focused): return self._contains(self.search_entry,focused)   # focus sits on the entry's inner text widget
@@ -1090,10 +1104,12 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not self._modal_groups: self._return_focus=self.get_focus()
         clear_box(self.modal_card); self.modal_card.set_size_request(self._card_width,-1)
         self.modal_reveal.set_visible(True); self.modal_reveal.set_can_target(True); self.modal_reveal.set_reveal_child(True)
+        GLib.idle_add(lambda:(self.app.fit_quick_menu(),GLib.SOURCE_REMOVE)[1])   # once filled: taller for a keyboard
     def close_modal(self):
         if self._text is not None and self._text.get("secret"): self._text["entry"].set_text("")   # a typed password is never left in the widget
         self._modal_groups=[]; self._modal_back=None; self._capture=None; self._pin=None; self._text=None; self._chan=None
         self.modal_reveal.set_can_target(False); self.modal_reveal.set_reveal_child(False); self.modal_reveal.set_visible(False)
+        self.app.fit_quick_menu()   # back to the Quick Menu's own height
         back=self._return_focus
         if back is not None and usable(back): back.grab_focus()
         else: self.focus_pane("quick")
