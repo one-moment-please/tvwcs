@@ -525,7 +525,7 @@ choose_extras() {
 # needs snapd brings it back.
 UBUNTU_EXTRAS="snap|Snap (snapd)|snapd|Ubuntu's second app store. Every Snap app goes with it; Flatpak apps (Settings > Apps) stay.
 cloud-init|cloud-init|cloud-init cloud-init-base cloud-initramfs-copymods cloud-initramfs-dyn-netconf|Sets up cloud servers on their first start; at home it only slows start-up.
-pro|Ubuntu Pro client|ubuntu-pro-client ubuntu-pro-client-l10n ubuntu-advantage-tools ubuntu-pro-auto-attach|Ubuntu Pro's subscription tool and its adverts in apt; security updates keep coming without it."
+pro|Ubuntu Pro client|ubuntu-pro-client ubuntu-pro-client-l10n ubuntu-advantage-tools ubuntu-pro-auto-attach|Ubuntu Pro's subscription tool and its adverts in apt; security updates keep coming without it. update-notifier-common and update-manager-core go with it (do-release-upgrade stays)."
 snap_apps() { have snap || return 0; snap list 2>/dev/null | awk 'NR > 1 && $NF != "base" && $NF != "snapd" && $1 !~ /^(core[0-9]*|snapd|bare|gnome-|gtk-|mesa-|kf[56]-)/ { printf "%s ", $1 }' | sed 's/ $//'; }
 PURGE=""; PURGE_NAMES=""
 choose_ubuntu_extras() {

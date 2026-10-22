@@ -28,7 +28,8 @@ EXTRAS=(
           "it only adds to the start-up time. The network settings it wrote in /etc/netplan are kept."),
     Extra("pro","Ubuntu Pro client",("ubuntu-pro-client","ubuntu-pro-client-l10n","ubuntu-advantage-tools","ubuntu-pro-auto-attach"),
           "Ubuntu's subscription tool (the pro command) and its adverts for Ubuntu Pro in apt and at log-in. Ubuntu's "
-          "security updates keep coming without it; only Ubuntu Pro's extra ones (ESM) need it."),
+          "security updates keep coming without it; only Ubuntu Pro's extra ones (ESM) need it. "
+          "Ubuntu's update notices (update-notifier-common, update-manager-core) go with it; do-release-upgrade stays."),
 )
 BY_KEY={e.key:e for e in EXTRAS}
 
