@@ -6,6 +6,7 @@
 - The status icons (updates, network, volume, Bluetooth, battery, ⏻) have a row of their own, and the clock and date a row below them with ⊞ Applications at its right. An update count no longer pushes the buttons past the edge of the menu.
 - Favorites have a grey ★, and open apps (and workspaces) a thin band down their left side, so a favorite that is open has both.
 - The menu grows to fit the on-screen keyboard while it is open, and goes back to its size after.
+- New README screenshots and demo videos.
 
 ## 4.2.1 — 2026-10-21
 

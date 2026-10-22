@@ -51,7 +51,7 @@ The apps in these videos are mockups made for the demo (a window with a still pi
     <td valign="top"><a href="assets/demo-desktop-mode.mp4"><img src="assets/demo-desktop-mode.jpg" alt="Play the desktop mode demo video" width="100%"></a></td>
   </tr>
   <tr>
-    <td valign="top">With the remote: open an app by its channel number, open a second one by channel, go back to the first from <b>Open applications</b>, and open a third by searching its name. Each app gets a workspace of its own.</td>
+    <td valign="top">With the remote: open an app by its channel number, open a second one by channel, go back to the first from the Quick Menu's list, and open a third by searching its name. Each app gets a workspace of its own.</td>
     <td valign="top">With the keyboard and mouse, in the light theme: open apps by name so they tile side by side, fill a second workspace, switch between workspaces from the Quick Menu, then close one app and a whole workspace, unfold the power options above ⏻, and open Applications from ⊞ in the corner.</td>
   </tr>
 </table>
