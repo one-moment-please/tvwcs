@@ -37,6 +37,18 @@ if [ ! -f "$HK" ]; then
       echo "# Keyboard: Quick Menu (Super (tap))"; echo "bindcode --release 133 exec /usr/bin/tvwcs toggle"
       echo "# Remote: Quick Menu (F2)"; echo "bindsym F2 exec /usr/bin/tvwcs toggle"; } > "$HK"
 fi
+# Wait (up to 5 s) until logind says this login is the active one. LightDM switches from its login screen's console to
+# the session's a moment after starting the session, and the libseat in Ubuntu 24.04 and Linux Mint 22 (0.8.0) checks
+# only once, when sway starts: it misses the switch, waits 10 s and gives up ("Timeout waiting session to become
+# active"), back at the login screen. Quick when the session is already active, or without logind.
+if [ -n "${XDG_SESSION_ID:-}" ] && command -v loginctl >/dev/null 2>&1; then
+    i=0
+    while [ "$i" -lt 50 ]; do
+        ACTIVE=$(loginctl show-session "$XDG_SESSION_ID" -p Active --value 2>/dev/null) || break
+        [ "$ACTIVE" != yes ] || break
+        sleep 0.1; i=$((i+1))
+    done
+fi
 XDG_SESSION_TYPE=wayland; XDG_CURRENT_DESKTOP=sway; XDG_SESSION_DESKTOP=sway
 TVWCS_SESSION=sway; TVWCS_SESSION_CONFIG=$CFG
 export XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP TVWCS_SESSION TVWCS_SESSION_CONFIG
