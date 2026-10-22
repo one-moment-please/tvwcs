@@ -15,7 +15,7 @@ DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"
 LAUNCH_SAME="same"                  # tile alongside whatever is on the current workspace
 LAUNCH_NEW_WORKSPACE="new_workspace"  # always get a workspace of its own
 LAUNCH_MODES=(LAUNCH_SAME,LAUNCH_NEW_WORKSPACE)
-LAUNCH_PLAIN="plain"                # desktop mode: as i3 / sway places it (opened where it opens, focused where it is)
+LAUNCH_PLAIN="plain"                # desktop mode: as sway places it (opened where it opens, focused where it is)
 
 # TVWCS's own windows are recognised by title. The prefix is deliberately unusual: a document called
 # "tvwcs notes" in a text editor must never be mistaken for one of them (it would vanish from Open applications).
@@ -103,7 +103,6 @@ DEFAULT_SETTINGS={
     "keyboard":"hidden",            # KEYBOARDS: the on-screen keyboard as it was last left (hidden, full or the number pad)
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
     "audio_boost":False,            # Settings > Sound: volumes may go over 100% (else they stop there)
-    "flatpak_unverified":False,     # Settings > Apps: also list Flathub apps whose developer is not verified
     "idle":{"screen_off":0,"lock":0,"sleep":0},   # seconds without input before each (0 never), see power.py
     "idle_battery":{"screen_off":0,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
     "battery_critical":{"action":"shutdown","percent":5},   # what to do when the battery is nearly empty (power.CRITICAL_ACTIONS)
@@ -152,7 +151,7 @@ def _clean_settings(raw) -> dict:
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
     if raw.get("keyboard") in KEYBOARDS: s["keyboard"]=raw["keyboard"]
     for key in ("close_on_click_outside","update_prereleases","clock_24h","channel_zero_done",
-                "audio_boost","flatpak_unverified"):
+                "audio_boost"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))
@@ -309,7 +308,7 @@ class ConfigStore:
         """Profiles that have a hotkey, by name."""
         return sorted((p for p in self.profiles if p.hotkey),key=lambda p:p.name.casefold())
     def app_hotkeys(self):
-        """(spec, profile id, name) of every profile hotkey, for hotkeys.render_i3."""
+        """(spec, profile id, name) of every profile hotkey, for hotkeys.render_bindings."""
         return [(p.hotkey,p.id,p.name) for p in self.hotkey_profiles()]
     def _deduplicate_hotkeys(self):
         """A profile cannot have a key a device slot or an earlier profile already has (only a hand-edited file does that)."""
@@ -367,7 +366,7 @@ _BADGE_PATTERNS=(re.compile(r"^\s*\((\d{1,4})\+?\)\s*"),re.compile(r"^\s*\[(\d{1
 
 def extract_badge(title, urgent=False):
     """Return (display_title, badge_text_or_None). Many apps (mail, chat) put an unread count at
-    the start of the window title, e.g. '(3) Inbox'; i3 also flags windows as urgent."""
+    the start of the window title, e.g. '(3) Inbox'; sway also flags windows as urgent."""
     t=title or ""
     for pattern in _BADGE_PATTERNS:
         m=pattern.match(t)

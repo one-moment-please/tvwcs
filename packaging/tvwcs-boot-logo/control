@@ -1,0 +1,12 @@
+Package: tvwcs-boot-logo
+Version: @VERSION@
+Architecture: all
+Maintainer: TVWCS <https://github.com/one-moment-please/tvwcs>
+Section: misc
+Priority: optional
+Homepage: https://github.com/one-moment-please/tvwcs
+Depends: plymouth, plymouth-label
+Installed-Size: @SIZE@
+Description: The TVWCS logo while the computer starts, instead of the start-up text
+ A Plymouth theme that shows the TVWCS logo on a black screen while the computer starts and shuts down. Installing it
+ makes it the default theme and turns on GRUB's "splash" option; removing it puts the start-up text back.

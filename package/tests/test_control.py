@@ -242,9 +242,6 @@ class UpdatesTests(unittest.TestCase):
     def test_apt(self):
         text="Listing...\nbash/noble-updates,noble-security 5.2.21-2ubuntu4.1 amd64 [upgradable from: 5.2.21-2ubuntu4]\nfirefox/noble 129.0 amd64\n"
         self.assertEqual(upd.parse_apt(text),[upd.Update("bash","5.2.21-2ubuntu4.1","5.2.21-2ubuntu4","noble-updates"),upd.Update("firefox","129.0","","noble")])
-    def test_flatpak(self):
-        self.assertEqual(upd.parse_flatpak("org.mozilla.firefox\t129.0\tflathub\norg.gnome.Platform\t\tflathub\n"),
-                         [upd.Update("org.mozilla.firefox","129.0","","flathub"),upd.Update("org.gnome.Platform","","","flathub")])
     def test_detect_uses_the_first_manager_found(self):
         self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("apt-get","flatpak") else None).id,"apt")
         self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","pacman","dnf","xbps-install","apk") else None))   # not supported (TODO.md)

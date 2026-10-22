@@ -31,7 +31,7 @@ def workspace_label(windows, match, limit=3):
 
 @dataclass
 class WorkspaceEntry:
-    name: str                      # the i3 workspace name (what i3-msg needs)
+    name: str                      # the sway workspace name (what swaymsg needs)
     label: str                     # what TVWCS shows
     windows: list = field(default_factory=list)
     output: str = ""

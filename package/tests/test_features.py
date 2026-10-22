@@ -9,7 +9,7 @@ class FeatureTests(unittest.TestCase):
         self.which=mock.patch.object(F.shutil,"which",side_effect=lambda n:f"/usr/bin/{n}"); self.which.start()
     def tearDown(self): self.which.stop()
     def test_each_page_knows_the_software_it_needs(self):
-        self.assertEqual(F.PAGE_FEATURE["sound"],"sound"); self.assertEqual(F.PAGE_FEATURE["apps"],"apps")
+        self.assertEqual(F.PAGE_FEATURE["sound"],"sound"); self.assertNotIn("apps",F.PAGE_FEATURE)
         self.assertNotIn("storage",F.BY_KEY); self.assertNotIn("network",F.BY_KEY)
         self.assertFalse(hasattr(F,"enabled"))   # 4.0: no on/off switch, what is installed is used
     def test_5_0_drops_the_screen_saver_terminal_and_network_shares(self):

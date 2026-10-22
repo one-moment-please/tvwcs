@@ -14,7 +14,7 @@ class Status:
     volume: int|None=None    # the default output's volume in percent; None without a sound server
     muted: bool=False
     bluetooth: str=""        # "" (no adapter), "off", "on" or "connected"
-    updates: int=0           # updates waiting (system packages and Flatpak), from the last check
+    updates: int=0           # updates waiting (system packages), from the last check
     battery: int|None=None   # the computer's battery in percent; None without one
     power: str=""            # "battery" (running on it), "charging", or "plugged" (plugged in, not charging: full)
 

@@ -21,8 +21,7 @@ class AppearanceTests(unittest.TestCase):
         self.assertTrue(appearance.gtk_prefers_dark("[Settings]\ngtk-application-prefer-dark-theme=true\n"))
     def test_colour_scheme_and_wallpaper_commands(self):
         self.assertEqual(appearance.color_scheme("dark"),"prefer-dark"); self.assertEqual(appearance.color_scheme("light"),"default")
-        self.assertEqual(appearance.wallpaper_argv("#323232"),["xsetroot","-solid","#323232"])
-        self.assertEqual(appearance.wallpaper_argv("#323232",sway=True),["swaymsg","output * bg #323232 solid_color"])
+        self.assertEqual(appearance.wallpaper_argv("#323232"),["swaymsg","output * bg #323232 solid_color"])
     def test_apply_theme_writes_both_gtk_files(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(appearance,"have",return_value=False):
             self.assertEqual(appearance.apply_theme("light",env={"XDG_CONFIG_HOME":d}),"")

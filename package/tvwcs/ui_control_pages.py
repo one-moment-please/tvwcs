@@ -2,15 +2,14 @@
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
-import os, shutil, signal, subprocess, time
+import os, shutil, signal, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
 from tvwcs import control_storage as storage
-from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
-from pathlib import Path
+from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
 from tvwcs import __version__, features, power, privilege, selfupdate
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
@@ -230,7 +229,7 @@ class AppearancePage(_ConfigPage):
         self.note("Automatic is TV Mode in a TVWCS session and Desktop otherwise"+("; 4K TV Mode suits a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
         self.row("Theme",THEMES[st["theme"]],self.choose_theme,ident="opt:theme")
         self.note("Dark or light, for TVWCS and Settings. Applications that follow the desktop's colour scheme (most GTK apps, "
-                  "and Flatpak apps and browsers through the desktop portal) switch with it.")
+                  "and browsers through the desktop portal) switch with it.")
         self.row("Accent colour",accent_name(st["accent"]),self.choose_accent,ident="opt:accent",swatch=st["accent"])
         self.row("Background colour","",self.choose_wallpaper,ident="opt:wallpaper",swatch=st["wallpaper"])
         self.note("Shown where no application is open, and behind the Quick Menu.")
@@ -345,62 +344,39 @@ class _SelfUpdate:
             self.updating=False; self.update_text=""; self.redraw()
             if selfupdate.parse_version(release.version)==selfupdate.parse_version(__version__):
                 self.win.notice("TVWCS updates",f"This is already the latest release, TVWCS {__version__}."); return
-            dest=selfupdate.install_dir(Path(selfupdate.__file__).parent)
-            if dest is None: self.win.notice("TVWCS updates","This copy runs from a source checkout: change its version with git."); return
-            target=selfupdate.update_target(dest)
-            self.win.confirm("Roll back TVWCS?",f"Install TVWCS {release.version}, the latest release, in place of {__version__}? "
+            if not selfupdate.packaged(): self.win.notice("TVWCS updates","This copy runs from a source checkout: change its version with git."); return
+            self.win.confirm("Roll back TVWCS?",f"Install TVWCS {release.version}, the latest release, in place of {__version__}? It asks for your password. "
                              "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install "+release.version,
-                             lambda:self.install(release,target,target!=dest),danger=False)
+                             lambda:self.install(release),danger=False)
         in_background(selfupdate.latest_release,found,failed)
     def checked(self, release):
         self.updating=False
         if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
         self.update_text=f"{release.version} available"; self.redraw()
-        dest=selfupdate.install_dir(Path(selfupdate.__file__).parent)
-        if dest is None:
+        if not selfupdate.packaged():
             self.win.notice("TVWCS updates",f"TVWCS {release.version} is available. This copy runs from a source checkout: update it with git pull."); return
-        target=selfupdate.update_target(dest); moving=target!=dest
-        move=(f" It also moves TVWCS from {dest} to {target} and updates the include line in your i3 / sway config to match "
-              "(the config is backed up first)." if moving else "")
         kind=" prerelease" if release.prerelease else ""
-        self.win.confirm("Update TVWCS?",f"TVWCS {release.version}{kind} is available (you have {__version__}). Download and install it now?{move} "
-                         "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
-                         lambda:self.install(release,target,moving),danger=False)
-    def install(self, release, target, moving):
-        """Download the release, install the packages it needs that are missing here (asked first), then install it."""
+        self.win.confirm("Update TVWCS?",f"TVWCS {release.version}{kind} is available (you have {__version__}). Download and install it now? "
+                         "It asks for your password. TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
+                         lambda:self.install(release),danger=False)
+    def install(self, release):
+        """Download the release's packages (those installed here), then install them as root with apt."""
         self.updating=True; self.update_text="Downloading…"; self.redraw()
         def failed(exc): self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
         def downloaded(result):
-            folder,missing=result
-            if not missing: self.install_downloaded(release,folder,target,moving,""); return
-            listing="\n".join(f"• {packages}: {why}" for packages,why in missing)
-            def cancel(): self.win.close_modal(); selfupdate.discard(folder); self.updating=False; self.update_text=""; self.redraw()
-            def install_them():
-                try: argv=selfupdate.install_packages_argv([p for p,_w in missing])
-                except ValueError as exc: self.install_downloaded(release,folder,target,moving,str(exc)); return
-                self.update_text="Installing packages…"; self.redraw(); lines=[]
-                def after(code,tail):
-                    problem="" if code==0 else ("\n".join(lines[-3:]) or tail or "apt-get did not finish.").strip()
-                    self.install_downloaded(release,folder,target,moving,problem)
-                self.win.run_as_root(argv,"Installing packages",lines.append,after)
-            self.win.confirm(f"TVWCS {release.version} needs more packages",
-                             f"These packages are not installed yet:\n{listing}\n\nInstall them first? It asks for your password. "
-                             "Cancel stops the update.","Install and update",install_them,danger=False,back=cancel)
-        def fetch():
-            folder=selfupdate.download_release(release)
-            return folder,selfupdate.missing_packages(folder)
-        in_background(fetch,downloaded,failed)
-    def install_downloaded(self, release, folder, target, moving, package_problem):
-        self.updating=True; self.update_text="Installing…"; self.redraw()
-        def done(_out):
-            selfupdate.discard(folder)
-            self.updating=False; self.update_text=f"Installed {release.version}"; self.redraw()
-            restarted=tell_tvwcs(f"restart {target/'bin'/'tvwcs'}")
-            note=f" Some packages could not be installed: {package_problem}" if package_problem else ""
-            self.win.notice("TVWCS updated",f"TVWCS {release.version} is installed"+(" and has restarted." if restarted else ".")+
-                            " Close Settings and open it again to use the new version."+note)
-        def failed(exc): selfupdate.discard(folder); self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
-        in_background(lambda:selfupdate.install_downloaded(folder,target,migrate=moving),done,failed)
+            folder,files=result; lines=[]
+            self.update_text="Installing…"; self.redraw()
+            def done(code, tail):
+                selfupdate.discard(folder); self.updating=False
+                if code:
+                    self.update_text="Update failed"; self.redraw()
+                    self.win.notice("TVWCS updates","The update failed:\n"+("\n".join(lines[-4:]) or tail or "apt-get did not finish.").strip()); return
+                self.update_text=f"Installed {release.version}"; self.redraw()
+                restarted=tell_tvwcs("restart /usr/bin/tvwcs")
+                self.win.notice("TVWCS updated",f"TVWCS {release.version} is installed"+(" and has restarted." if restarted else ".")+
+                                " Close Settings and open it again to use the new version.")
+            self.win.run_as_root(selfupdate.install_argv(files),"Installing TVWCS "+release.version,lines.append,done)
+        in_background(lambda:selfupdate.download(release,selfupdate.installed_packages()),downloaded,failed)
 
 # ====================================================================== Power and sleep
 class PowerPage(Page):
@@ -785,7 +761,7 @@ class _Console:
         GLib.idle_add(lambda:(self.log_scroll.get_vadjustment().set_value(self.log_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
 
 class UpdatesPage(_SelfUpdate, _Console, Page):
-    """TVWCS's own updates, then the system's packages and Flatpak apps."""
+    """TVWCS's own updates, then the system's packages."""
     key="updates"; title="Software updates"; icon="software-update-available-symbolic"; fallback="⇩"
     MAX_ROWS=300
     def __init__(self, win):
@@ -806,7 +782,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             self.note("Leave this running until it finishes. Settings can be closed; the update carries on.")
             self.add(self.console()); return
         self.draw_self_update()
-        self.section("SYSTEM AND APPS")
+        self.section("SYSTEM")
         if not s.available: self.note(s.message); return
         self.row("Check for updates",f"{s.total} available" if s.total else "Up to date",self.refresh,ident="check",
                  icon="view-refresh-symbolic",fallback="⟳")
@@ -826,7 +802,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         if self.outcome: self.note(self.outcome,"state-on")
         if self.log is not None and self.log.get_buffer().get_char_count():
             self.section("LAST RUN"); self.add(self.console())
-        for title,items in ((f"{m.label.upper()} PACKAGES" if m else "PACKAGES",s.updates),("FLATPAK APPS",s.flatpak)):
+        for title,items in ((f"{m.label.upper()} PACKAGES" if m else "PACKAGES",s.updates),):
             if not items: continue
             self.section(f"{title} ({len(items)})")
             for u in items[:self.MAX_ROWS]:
@@ -847,10 +823,8 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
     def confirm_install(self):
         s=self.state; parts=[]
         if s.updates: parts.append(f"{len(s.updates)} package{'s' if len(s.updates)!=1 else ''} from {s.manager.label}")
-        if s.flatpak: parts.append(f"{len(s.flatpak)} Flatpak app{'s' if len(s.flatpak)!=1 else ''}")
         steps=[]
         if s.updates: steps.append((list(s.manager.install_argv),True))
-        if s.flatpak: steps.append((list(updates.FLATPAK.install_argv),False))
         self.win.confirm("Install updates?",f"Install {' and '.join(parts)} now? Apps being updated may need to be restarted afterwards.",
                          "Install",lambda:self.run_steps("Installing updates",steps),danger=False)
 
@@ -886,350 +860,6 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
                     elif code: self.win.notice("Restart",tail)
                 StreamedRun(command,lambda _l:None,done)
         self.win.confirm("Restart now?","Restart the computer now? Unsaved work in open applications may be lost.","Restart",go)
-
-# ====================================================================== Apps (Flatpak, from Flathub)
-def _shorten(text, limit):
-    """Text cut at a paragraph or sentence end near `limit` characters."""
-    if len(text)<=limit: return text
-    cut=text[:limit]; end=max(cut.rfind("\n\n"),cut.rfind(". ")+1)
-    return (cut[:end] if end>limit//2 else cut.rsplit(" ",1)[0]+" …").rstrip()
-
-class AppsPage(_Console, Page):
-    """A store of Flathub's apps, with tabs along the top: Search (a search bar to type in, with a keyboard button for
-    the on-screen keyboard), Categories (two rows of category buttons, Featured first, over a grid of tiles), Installed,
-    and Settings (where apps come from and what is shown, explained on the page). Selecting a tile shows the app, with
-    Install, or Open and Remove."""
-    key="apps"; title="Apps"; icon="system-software-install-symbolic"; fallback="▦"
-    COLUMNS=4; STEP=24; SEARCH_DELAY_MS=600
-    TABS=(("search","system-search-symbolic","🔍","Search"),("categories","view-grid-symbolic","▦","Categories"),
-          ("installed","emblem-ok-symbolic","✓","Installed"),("settings","emblem-system-symbolic","⚙","Settings"))
-    def __init__(self, win):
-        super().__init__(win); self.log=None; self.tab="categories"; self.category="featured"; self.query=""; self.limit=self.STEP
-        self.running=None; self.outcome=None; self.tiles_from=0; self.refresh_focus=None
-        self.entry=None; self._search_timer=0; self._filling=False
-    @property
-    def view(self):
-        """What the tiles show: "search", "installed" or a category's key."""
-        return self.category if self.tab=="categories" else self.tab
-    def read(self): return flatpak.read_state()
-    def redraw(self):
-        typing=self.entry is not None and self.win._in(self.win.get_focus(),self.entry)
-        super().redraw()
-        if typing and self.entry.get_root() is not None:   # still typing: no text selected, the cursor at the end
-            self.entry.grab_focus_without_selecting(); self.entry.set_position(-1)
-        if self.refresh_focus and not self.busy and not self.win.modal_open:
-            self.focus_tiles(self.refresh_focus); self.refresh_focus=None
-    def summary(self):
-        s=self.state
-        if not s or not s.flatpak: return ""
-        return (f"{len(s.catalog)} apps on Flathub · " if s.catalog else "")+f"{len(s.installed)} installed"
-
-    def draw(self, s):
-        self.tiles_from=0
-        if self.running:
-            self.row(self.running,"Working…",None,icon="emblem-synchronizing-symbolic",fallback="⟳",ident="running")
-            self.note("Leave this running until it finishes."); self.add(self.console()); return
-        if not s.flatpak:
-            argv=flatpak.install_flatpak_argv()
-            steps=[(argv,True)]+[(a,False) for a in flatpak.setup_argv()]
-            self.row("Install Flatpak and Flathub","",(lambda:self.run_steps("Installing Flatpak",steps,"Flatpak is installed and Flathub is set up.")) if argv else None,
-                     detail="Installs Flatpak with the package manager, then adds Flathub. Asks for your password.",icon="system-software-install-symbolic",fallback="⇩",ident="get-flatpak")
-            self.note("Apps here come from Flathub through Flatpak, which keeps each app with what it needs, apart from the system."
-                      +("" if argv else " No supported package manager was found to install Flatpak with."))
-            self.last_run(); return
-        if s.catalog is not None: self.toolbar(s)
-        if s.problem: self.note(s.problem,"error")
-        if self.outcome: self.note(self.outcome,"state-on")
-        if s.catalog is None:   # nothing to browse yet: setting Flathub up comes first; installed apps can still be removed
-            if "system" in s.remote:
-                self.row("Download Flathub's list of apps","",self.setup,detail="Flathub is set up on this computer, but its list of apps has not been downloaded.",
-                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
-                self.note("This also adds Flathub for you, so apps install for you without a password. Flathub is where most Linux apps are "
-                          "published, from Kodi and VLC to Steam and web browsers.")
-            else:
-                self.row("Set up Flathub","",self.setup,detail="Adds Flathub for you (no password needed) and downloads its list of apps.",
-                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
-                self.note("Flathub is where most Linux apps are published, from Kodi and VLC to Steam and web browsers.")
-            if s.installed: self.draw_apps(s,"installed")
-        elif self.tab=="settings": self.draw_settings(s)
-        elif self.tab=="search":
-            self.search_bar()
-            if self.query: self.draw_apps(s,"search")
-            else: self.note("Type an app's name, or what it does, such as “video player”. With a remote, choose ⌨ to type on the on-screen keyboard.")
-        elif self.tab=="categories":
-            self.category_buttons(); self.draw_apps(s,self.category)
-        else: self.draw_apps(s,"installed")
-        self.last_run()
-
-    def last_run(self):
-        if self.log is not None and self.log.get_buffer().get_char_count(): self.section("LAST RUN"); self.add(self.console())
-
-    # ---------------------------------------------------------- the tabs, and what is under them
-    def toolbar(self, s):
-        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bar.set_homogeneous(True); bar.set_margin_bottom(S(8))
-        made=[]
-        for key,icon,fallback,label in self.TABS:
-            if key=="installed": label=f"{label} ({len(s.installed)})"
-            b=Gtk.Button(); b.add_css_class("app-tool")
-            if key==self.tab: b.add_css_class("current")
-            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); line.set_halign(Gtk.Align.CENTER)
-            line.append(glyph(icon,fallback,20)); l=Gtk.Label(label=label); l.set_ellipsize(Pango.EllipsizeMode.END); line.append(l)
-            b.set_child(line); b.connect("clicked",lambda _b,k=key:self.pick_tab(k)); bar.append(b); made.append(b)
-        self.add(bar); g=self.register(*made,ident="tool"); g.entry=made[[k for k,*_ in self.TABS].index(self.tab)]   # ↑ lands on the open tab
-
-    def pick_tab(self, key):
-        """A tab's button stays selected; ↓ goes into what it shows. Search puts the selection in its search bar."""
-        if key==self.tab and key!="search": return
-        self.tab=key; self.limit=self.STEP; self.redraw()
-        if key=="search": GLib.idle_add(lambda:(self.focus_search(),GLib.SOURCE_REMOVE)[1])
-
-    def search_bar(self):
-        """The keyboard button (the on-screen keyboard, for a remote) and the search bar, which searches as you type.
-        The bar is kept from one drawing to the next, so typing in it is never interrupted."""
-        if self.entry is None:
-            self.entry=Gtk.Entry(); self.entry.set_hexpand(True); self.entry.add_css_class("search-bar")
-            self.entry.set_placeholder_text("Search Flathub")
-            self.entry.connect("changed",lambda *_:self._typed()); self.entry.connect("activate",lambda *_:self._search_now())
-        parent=self.entry.get_parent()
-        if parent is not None: parent.remove(self.entry)
-        if " ".join(self.entry.get_text().split())!=self.query: self._fill(self.query)
-        line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_margin_bottom(S(4))
-        keyboard=self.button("input-keyboard-symbolic","⌨","Type with the on-screen keyboard",self.ask_search); keyboard.add_css_class("square")
-        line.append(keyboard); line.append(self.entry); self.add(line)
-        g=self.register(keyboard,self.entry,ident="search"); g.entry=keyboard if tv_mode() else self.entry
-    def focus_search(self):
-        w=self._ids.get("search" if tv_mode() else "search#1")
-        if w is self.entry and w is not None: w.grab_focus_without_selecting(); w.set_position(-1)
-        elif w is not None: w.grab_focus()
-    def _fill(self, text):
-        self._filling=True; self.entry.set_text(text); self._filling=False
-    def _typed(self):
-        if self._filling: return
-        if self._search_timer: GLib.source_remove(self._search_timer)
-        self._search_timer=GLib.timeout_add(self.SEARCH_DELAY_MS,self._search_now)
-    def _search_now(self):
-        if self._search_timer: GLib.source_remove(self._search_timer); self._search_timer=0
-        text=" ".join(self.entry.get_text().split())
-        if text!=self.query: self.query=text; self.limit=self.STEP; self.redraw()
-        return GLib.SOURCE_REMOVE
-    def ask_search(self):
-        def search(text):
-            self.query=" ".join(text.split()); self.limit=self.STEP
-            if self.entry is not None: self._fill(self.query)
-            self.redraw(); GLib.idle_add(lambda:(self.focus_tiles(),GLib.SOURCE_REMOVE)[1])
-        self.win.ask_text("Search Flathub","Type an app's name, or what it does.",search,initial=self.query,ok_label="Search")
-
-    def category_buttons(self):
-        """Every category, as two rows of buttons; the one shown is marked."""
-        cats=flatpak.CATEGORIES; half=(len(cats)+1)//2
-        for start in (0,half):
-            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_homogeneous(True); line.set_margin_bottom(S(6)); made=[]
-            for key,label,_c in cats[start:start+half]:
-                b=Gtk.Button(label=label); b.add_css_class("app-tool")
-                if key==self.category: b.add_css_class("current")
-                b.connect("clicked",lambda _b,k=key:self.pick_category(k)); line.append(b); made.append(b)
-            for _ in range(len(made),half): line.append(Gtk.Box())   # the second row's buttons keep the first row's width
-            self.add(line); g=self.register(*made); g.column=True
-            for (key,_l,_c),b in zip(cats[start:start+half],made): self._ids[f"cat:{key}"]=b
-    def pick_category(self, key):
-        if key!=self.category: self.category=key; self.limit=self.STEP; self.redraw()
-
-    def listed(self, s, view):
-        if view=="installed":
-            known=s.catalog.by_id if s.catalog else {}
-            return sorted((known.get(i.id) or flatpak.App(i.id,i.name,version=i.version) for i in s.installed),key=lambda a:a.name.casefold())
-        if s.catalog is None: return []
-        apps=s.catalog.search(self.query) if view=="search" else s.catalog.category(view)
-        if not ConfigStore().settings["flatpak_unverified"]: apps=[a for a in apps if a.verified]   # Apps > Settings > Unverified apps
-        return apps
-
-    def draw_apps(self, s, view):
-        apps=self.listed(s,view)
-        if view=="installed": heading="INSTALLED"
-        elif view=="search": heading="RESULTS"
-        else: heading=flatpak.CATEGORY_LABELS[view].upper()
-        self.section(f"{heading} ({len(apps)})")
-        if not apps:
-            self.note({"installed":"No Flatpak apps are installed yet. Find one under Categories or Search.",
-                       "search":"Nothing on Flathub matches that. Try fewer or other words."}.get(view,"Nothing here yet.")); return
-        grid=Gtk.Grid(); grid.set_column_homogeneous(True); grid.set_row_spacing(S(8)); grid.set_column_spacing(S(8)); grid.set_margin_top(S(4))
-        shown=apps[:self.limit]; self.tiles_from=len(self.groups)
-        for start in range(0,len(shown),self.COLUMNS):
-            row=[]
-            for col,a in enumerate(shown[start:start+self.COLUMNS]):
-                t=self.tile(a,s.is_installed(a.id)); grid.attach(t,col,start//self.COLUMNS,1,1); row.append(t)
-            for col in range(len(row),self.COLUMNS): grid.attach(Gtk.Box(),col,start//self.COLUMNS,1,1)   # keeps the tiles their size
-            g=self.register(*row); g.column=True
-            for t,a in zip(row,shown[start:start+self.COLUMNS]): self._ids[f"app:{a.id}"]=t
-        self.add(grid)
-        if len(apps)>self.limit:
-            self.row(f"Show more ({len(apps)-self.limit} more)","",lambda:self.more(apps),icon="go-down-symbolic",fallback="↓",ident="more")
-
-    def app_icon(self, a, size):
-        paths=[a.icon] if a.icon else []
-        for base in (flatpak.user_dir(),flatpak.SYSTEM_DIR):   # an installed app's own icon, in whichever size it brought
-            paths+=[str(base/f"exports/share/icons/hicolor/{d}/apps/{a.id}.{ext}") for d,ext in
-                    (("128x128","png"),("256x256","png"),("scalable","svg"),("512x512","png"),("96x96","png"),("64x64","png"),("48x48","png"))]
-        path=next((p for p in paths if os.path.isfile(p)),None)
-        if path is None: return glyph("application-x-executable-symbolic","▦",size)
-        img=Gtk.Image.new_from_file(path); img.set_pixel_size(S(size)); return img
-
-    def tile(self, a, installed):
-        b=Gtk.Button(); b.add_css_class("app-tile")
-        box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); box.set_valign(Gtk.Align.START)
-        icon=self.app_icon(a,64); icon.set_margin_bottom(S(4)); box.append(icon)
-        name=Gtk.Label(label=a.name); name.add_css_class("app-name"); name.set_ellipsize(Pango.EllipsizeMode.END); name.set_max_width_chars(1); name.set_hexpand(True)
-        box.append(name)
-        summary=Gtk.Label(label=a.summary or (f"Version {a.version}" if a.version else a.id)); summary.add_css_class("row-detail"); summary.set_wrap(True); summary.set_wrap_mode(Pango.WrapMode.WORD_CHAR); summary.set_lines(2)
-        summary.set_ellipsize(Pango.EllipsizeMode.END); summary.set_max_width_chars(1); summary.set_justify(Gtk.Justification.CENTER); box.append(summary)
-        if installed: badge=Gtk.Label(label="Installed"); badge.add_css_class("state-on"); box.append(badge)
-        b.set_child(box); b.set_tooltip_text(a.name); b.connect("clicked",lambda *_:self.details(a)); return b
-
-    def focus_tiles(self, ident=None):
-        target=self._ids.get(ident) if ident else None
-        if target is not None and usable(target): target.grab_focus(); return
-        if self.tiles_from: self.win._focus_first(self.groups[self.tiles_from:])
-        else: self.win._focus_first(self.groups)
-    def more(self, apps):
-        first=apps[self.limit] if len(apps)>self.limit else None
-        self.limit+=self.STEP; self.redraw()
-        if first is not None: self.focus_tiles(f"app:{first.id}")
-
-    # ---------------------------------------------------------- an app
-    def details(self, a):
-        s=self.state; inst=s.is_installed(a.id); win=self.win
-        win._begin_modal(a.name)
-        head=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(16)); head.set_margin_bottom(S(10))
-        head.append(self.app_icon(a,96))
-        facts=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); facts.set_valign(Gtk.Align.CENTER)
-        version=(inst.version if inst else "") or a.version
-        lines=[a.developer," · ".join(x for x in (f"Version {version}" if version else "",a.license) if x)]
-        if a.verified: lines.append("✓ Verified on Flathub")
-        for text in lines:
-            if text: l=Gtk.Label(label=text); l.set_xalign(0); l.add_css_class("muted"); facts.append(l)
-        if inst: l=Gtk.Label(label="Installed"+(" for everyone on this computer" if inst.installation=="system" else "")); l.set_xalign(0); l.add_css_class("state-on"); facts.append(l)
-        head.append(facts); win.modal_card.append(head)
-        if a.summary: win._message(a.summary,"app-summary")
-        if a.description: win._message(_shorten(a.description,600))
-        if inst: specs=[("Open",lambda:self.open_app(a),"active"),("Remove",lambda:self.remove(a,inst),"danger"),("Close",win.close_modal,None)]
-        else: specs=[("Install",lambda:self.install(a),"active"),("Close",win.close_modal,None)]
-        made=win._buttons(*specs)
-        win._finish_modal([made],win.close_modal,made[0] if inst else made[-1])   # Close first: a stray Enter never starts a download
-    def install(self, a):
-        self.win.close_modal(); s=self.state
-        steps=([] if "user" in s.remote else [(flatpak.setup_argv()[0],False)])+[(flatpak.install_argv(a.id),False)]
-        self.run_steps(f"Installing {a.name}",steps,f"{a.name} is installed. Open it here, or from Applications.",a.id)
-    def remove(self, a, inst):
-        argv,root=flatpak.uninstall_argv(inst)
-        self.win.confirm(f"Remove {a.name}?",f"{a.name} is removed from this computer"+(" for everyone, and this asks for your password" if root else "")
-                         +f". Its settings stay (in ~/.var/app/{a.id}), so installing it again keeps them.","Remove",
-                         lambda:self.run_steps(f"Removing {a.name}",[(argv,root)],f"{a.name} was removed.",a.id),
-                         back=lambda:self.details(a))
-    def open_app(self, a):
-        self.win.close_modal()
-        try: subprocess.Popen(flatpak.run_argv(a.id),start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        except OSError as exc: self.win.notice(a.name,f"Could not open {a.name}: {exc}"); return
-        self.win.close()   # out of the way of the app
-    def setup(self):
-        self.run_steps("Setting up Flathub",[(argv,False) for argv in flatpak.setup_argv()],"Flathub is set up.")
-
-    # ---------------------------------------------------------- the Settings tab
-    def draw_settings(self, s):
-        """The Apps settings, on the page: how apps are installed now, then each choice with what it does."""
-        unverified=ConfigStore().settings["flatpak_unverified"]
-        flathub=[r for r in s.remotes if r.name==flatpak.REMOTE]
-        where={"user":"for you","system":"for everyone on this computer"}
-        self.section("HOW APPS ARE INSTALLED")
-        on=[where[r.installation] for r in flathub if r.enabled]
-        self.note(("Flathub is set up "+" and ".join(on)+". " if on else "Flathub is not set up, or it is turned off. ")
-                  +"Apps installed here are installed for you only, in your home folder, so no password is needed and other users "
-                  "of this computer do not get them. Apps installed for everyone (by an administrator, with the system's software "
-                  f"tools) are listed under Installed too, and removing them asks for your password. {len(s.installed)} app"
-                  f"{'s are' if len(s.installed)!=1 else ' is'} installed. Updates to them come with the rest of the system's, on Software updates.")
-
-        self.section("REPOSITORIES")
-        self.note("A repository is a place Flatpak downloads apps from. Flathub is the main one, and the only one these tabs browse; "
-                  "apps from another repository can still be installed by their own instructions, and are updated from it. "
-                  "Turning a repository off keeps its apps, but they get no more updates.")
-        for r in s.remotes:
-            forget=None
-            if r.name!=flatpak.REMOTE:   # Flathub is always kept: it can be turned off
-                forget=self.button("user-trash-symbolic","✕",f"Remove {r.name}",lambda r=r:self.delete_remote(r),danger=True)
-            self.row(r.name,"On" if r.enabled else "Off",lambda r=r:self.toggle_remote(r),icon="folder-remote-symbolic",fallback="⇄",
-                     detail=" · ".join(x for x in ("For you" if r.installation=="user" else "For everyone (system)",r.url) if x)+". Select to turn it "+("off" if r.enabled else "on"),
-                     ident=f"remote:{r.name}:{r.installation}",extras=[forget],value_css="state-on" if r.enabled else "setting-value")
-        if not s.remotes: self.note("No repositories are set up.")
-        if not flathub:
-            self.row("Add Flathub again","",self.setup,icon="list-add-symbolic",fallback="+",ident="set:flathub",detail="Adds Flathub for you and downloads its list of apps")
-        self.row("Add a repository","",self.add_remote,icon="list-add-symbolic",fallback="+",ident="set:add",
-                 detail="From the address of its .flatpakrepo file, such as Flathub Beta's")
-
-        self.section("WHICH APPS ARE SHOWN")
-        self.row("Show unverified apps",_on_off(unverified),self.toggle_unverified,ident="set:unverified",value_css="state-on" if unverified else "setting-value",
-                 detail="Off is recommended")
-        self.note("Off: only apps whose publisher Flathub has verified to be the app's own developer are shown. "
-                  "On: also apps packaged by someone else, often a volunteer. Most work well, but their publisher is not checked, "
-                  "so install them only when you trust where they come from.")
-
-        self.section("THE LIST OF APPS")
-        age=updates.age_text(s.catalog.updated) if s.catalog else ""
-        self.row("Download the list of apps again","",self.setup,detail=f"Downloaded {age}" if age else "Not downloaded yet",
-                 icon="view-refresh-symbolic",fallback="⟳",ident="set:list")
-        self.note("Search and Categories use a copy of Flathub's list of apps kept on this computer. Download it again to see apps "
-                  "added since, and new versions.")
-
-        if s.installed:
-            self.section("REMOVE ALL APPS")
-            self.row("Uninstall every Flatpak app and runtime","",self.uninstall_all,icon="user-trash-symbolic",fallback="✕",ident="set:uninstall",
-                     detail=f"{len(s.installed)} app{'s' if len(s.installed)!=1 else ''}")
-            self.note("Removes every Flatpak app and the runtimes they share, for a fresh start. Each app's own settings and files "
-                      "in your home folder (~/.var/app) are kept.")
-
-    def toggle_unverified(self):
-        store=ConfigStore(); store.settings["flatpak_unverified"]=not store.settings["flatpak_unverified"]; store.save()
-        self.redraw()
-    def add_remote(self, error=""):
-        def got(url):
-            url=url.strip()
-            if not url.startswith(("https://","http://")): self.add_remote("Type the repository's address, starting with https://."); return
-            self.run_steps("Adding a repository",[(flatpak.add_remote_argv(url),False)],f"{flatpak.remote_name(url)} is added.",focus="set:add")
-        self.win.ask_text("Add a repository","The address of the repository's .flatpakrepo file, such as https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo.",
-                          got,"https://",error=error)
-    def toggle_remote(self, r):
-        argv,root=flatpak.enable_remote_argv(r,not r.enabled)
-        self.run_steps(f"Turning {r.name} {'off' if r.enabled else 'on'}",[(argv,root)],f"{r.name} is {'off' if r.enabled else 'on'}.",
-                       focus=f"remote:{r.name}:{r.installation}")
-    def delete_remote(self, r):
-        argv,root=flatpak.delete_remote_argv(r)
-        self.win.confirm(f"Remove {r.name}?",f"Apps from {r.name} stop getting updates.","Remove",
-                         lambda:self.run_steps(f"Removing {r.name}",[(argv,root)],f"{r.name} is removed.",focus="set:add"))
-    def uninstall_all(self):
-        steps=flatpak.uninstall_all_steps(self.state.installed)
-        self.win.confirm("Uninstall every Flatpak app?",f"This uninstalls all {len(self.state.installed)} Flatpak apps and the runtimes they use, with their "
-                         "files. Their data in your home folder (~/.var/app) is kept."+(" It asks for your password for the system-wide ones." if len(steps)>1 else ""),
-                         "Uninstall all",lambda:self.run_steps("Uninstalling Flatpak apps",steps,"Every Flatpak app is uninstalled."))
-
-    def run_steps(self, label, steps, success, app_id=None, focus=None):
-        """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
-        self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
-        self.win._focus_first(self.groups)
-        def finish(problem=""):
-            self.running=None; self.set_status("")
-            if problem: self._append(f"\n✗ Stopped: {problem}")
-            else: self.outcome=success; self._append(f"\n✓ {success}")
-            target=focus or (f"app:{app_id}" if app_id else "tiles")
-            self.redraw(); self.focus_tiles(target); self.refresh_focus=target   # and again once the page has been read again
-            if problem: self.win.notice(label,problem)
-            self.refresh(quiet=True)
-        def next_step(i):
-            if i>=len(steps): finish(); return
-            argv,root=steps[i]; self._append("$ "+" ".join(argv))
-            def done(code,tail):
-                if code!=0: finish(tail.strip().splitlines()[-1] if tail.strip() else f"It stopped with exit status {code}."); return
-                next_step(i+1)
-            if root: self.win.run_as_root(argv,label,self._append,done)
-            else: StreamedRun(argv,self._append,done)
-        next_step(0)
 
 # ====================================================================== System information
 class SystemPage(Page):
@@ -1598,4 +1228,4 @@ class UserPage(Page):
     def summary(self): return login_ui.role(self.state[0]) if self.state else ""   # "Administrator" or "Standard User", small and grey beside "User"
     def draw(self, state): login_ui.draw_user(self,state)
 
-PAGES=(AppearancePage,UserPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,NetworkPage,StoragePage)
+PAGES=(AppearancePage,UserPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,UpdatesPage,SystemPage,NetworkPage,StoragePage)

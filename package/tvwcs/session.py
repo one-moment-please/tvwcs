@@ -22,12 +22,12 @@ def session_key(env=None, boot_id=BOOT_ID) -> str:
     parts=[]
     try: parts.append(Path(boot_id).read_text().strip())
     except OSError: pass
-    sock=env.get("SWAYSOCK") or env.get("I3SOCK")
+    sock=env.get("SWAYSOCK")
     if sock:
         parts.append(sock)
         try: parts.append(str(os.stat(sock).st_mtime_ns))
         except OSError: pass
-    else: parts.append(f"{env.get('DISPLAY','')}{env.get('WAYLAND_DISPLAY','')}")
+    else: parts.append(env.get("WAYLAND_DISPLAY",""))
     return "|".join(parts)
 
 def first_time_this_login(marker, env=None, boot_id=BOOT_ID) -> bool:

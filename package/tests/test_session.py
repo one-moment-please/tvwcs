@@ -10,9 +10,9 @@ class SessionTests(unittest.TestCase):
     def test_once_per_login_without_a_runtime_dir_that_empties(self):
         with tempfile.TemporaryDirectory() as d:
             boot=Path(d)/"boot_id"; boot.write_text("boot-1\n"); sock=Path(d)/"ipc-socket.100"; sock.write_text("")
-            marker=Path(d)/"cache"/"tvwcs-startup-done"; env={"I3SOCK":str(sock)}
+            marker=Path(d)/"cache"/"tvwcs-startup-done"; env={"SWAYSOCK":str(sock)}
             self.assertTrue(first_time_this_login(marker,env,boot)); self.assertFalse(first_time_this_login(marker,env,boot))   # TVWCS restarted
-            sock.unlink(); time.sleep(0.01); sock.write_text("")   # the next login: i3 makes its socket again
+            sock.unlink(); time.sleep(0.01); sock.write_text("")   # the next login: sway makes its socket again
             self.assertTrue(first_time_this_login(marker,env,boot)); self.assertFalse(first_time_this_login(marker,env,boot))
             boot.write_text("boot-2\n"); self.assertTrue(first_time_this_login(marker,env,boot))   # a reboot
             self.assertNotEqual(session_key({"SWAYSOCK":"/run/a.1.sock"},boot),session_key({"SWAYSOCK":"/run/a.2.sock"},boot))

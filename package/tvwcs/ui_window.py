@@ -484,7 +484,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         for kind,item in rows:
             if kind=="favorite": content.append(self._favorite_row(item))
             else: content.append(self._window_row(item.windows[0]) if len(item.windows)==1 else self._workspace_row(item,outputs))
-        if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the i3 or sway window manager."))
+        if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the sway window manager."))
         if not rows:
             content.append(muted_label("Nothing is open and there are no favorites yet. Press → (or ⊞ in the bottom-right corner) to see your installed applications."))
     def _keep_at_bottom(self,adj):

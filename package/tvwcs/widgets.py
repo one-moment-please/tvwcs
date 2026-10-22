@@ -13,7 +13,7 @@ _scale=[1.0]
 _I3_MODS=((Gdk.ModifierType.SUPER_MASK,"Mod4"),(Gdk.ModifierType.ALT_MASK,"Mod1"),(Gdk.ModifierType.CONTROL_MASK,"Control"),(Gdk.ModifierType.SHIFT_MASK,"Shift"))
 
 def held_modifiers(state):
-    """The i3 names of the modifiers held in a key event's state, for hotkeys.HotkeyCapture."""
+    """The sway names of the modifiers held in a key event's state, for hotkeys.HotkeyCapture."""
     return [m for mask,m in _I3_MODS if state & mask]
 
 def set_scale(factor): _scale[0]=float(factor)

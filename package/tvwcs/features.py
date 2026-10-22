@@ -1,8 +1,8 @@
 """The software each part of TVWCS needs beyond a basic install. No GTK dependency.
 
 The installer installs what the Quick Menu, the applications list and Settings need. Each entry below needs packages
-of its own; a Settings page whose software is missing offers to install it (Sound installs PipeWire, Apps installs
-Flatpak and adds Flathub, and so on), and its Quick Menu icon is not shown until then. There is no on/off switch: what
+of its own; a Settings page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth installs
+BlueZ), and its Quick Menu icon is not shown until then. There is no on/off switch: what
 is installed is used. (Before 4.0 there was a Features page with one.)"""
 from __future__ import annotations
 import re, shutil, subprocess
@@ -22,7 +22,6 @@ FEATURES=(
             ("pipewire","pipewire-pulse","wireplumber","pulseaudio-utils"),(("cmd","pactl"),),("sound",)),
     Feature("bluetooth","Bluetooth","Pairing and connecting Bluetooth remotes, headphones and game controllers.",
             ("bluez",),(("cmd","bluetoothctl"),),("bluetooth",)),
-    Feature("apps","Apps from Flathub","Finding, installing and removing apps from Flathub.",("flatpak",),(("cmd","flatpak"),),("apps",)),
 )
 BY_KEY={f.key:f for f in FEATURES}
 PAGE_FEATURE={p:f.key for f in FEATURES for p in f.pages}

@@ -1,0 +1,5 @@
+#!/bin/sh
+# The bytecode postinst compiled is not in the package's file list: remove it with the package.
+set -e
+rm -rf /usr/lib/tvwcs/tvwcs/__pycache__
+exit 0

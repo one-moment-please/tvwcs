@@ -639,7 +639,7 @@ class ControlPanelApp(Gtk.Application):
         return 0
 
 def main(args=()):
-    GLib.set_prgname(APP_ID)   # the window's class on X11 matches the launcher's StartupWMClass
+    GLib.set_prgname(APP_ID)   # the window's app_id matches the launcher's StartupWMClass
     GLib.set_application_name(TITLE)
     return ControlPanelApp().run([sys.argv[0],*args])
 

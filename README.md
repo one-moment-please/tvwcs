@@ -1,6 +1,6 @@
 # TVWCS
 
-TVWCS (TV Window Channel Switcher) lets you use an ordinary Linux computer from the couch with a remote. It runs on top of the i3 or sway window manager and gives you:
+TVWCS (TV Window Channel Switcher) lets you use an ordinary Linux computer from the couch with a remote. It runs on top of the sway window manager and gives you:
 
 - a **Quick Menu** at the bottom left of the screen: your favorites, your open apps, search, and a status row with the clock, network, sound, Bluetooth and battery;
 - an **Applications** pane beside it: every installed app by category, plus your own numbered **Channels**;
@@ -10,8 +10,8 @@ It works with normal desktop apps. It is not a media center and needs no plugins
 
 TVWCS has two modes:
 
-- **TV mode** is the **TVWCS** session you pick at the login screen. It is made for a remote: every app opens full screen in a workspace of its own, the i3/sway bar is off (the Quick Menu shows the time and status instead), the mouse pointer hides after 3 seconds, the Quick Menu stays open while nothing else is, and the computer locks with TVWCS's own lock screen.
-- **Desktop mode** is TVWCS inside your usual i3 or sway session. The Quick Menu is a launcher and switcher; apps open the way i3/sway opens them, and your bar, pointer and lock screen are left as they are.
+- **TV mode** is the **TVWCS** session you pick at the login screen. It is made for a remote: every app opens full screen in a workspace of its own, the sway bar is off (the Quick Menu shows the time and status instead), the mouse pointer hides after 3 seconds, the Quick Menu stays open while nothing else is, and the computer locks with a simple swaylock screen in TVWCS's colours.
+- **Desktop mode** is TVWCS inside your usual sway session. The Quick Menu is a launcher and switcher; apps open the way sway opens them, and your bar, pointer and lock screen are left as they are.
 
 <table>
   <tr>
@@ -58,51 +58,42 @@ The apps in these videos are mockups made for the demo (a window with a still pi
 
 ## What you need
 
-- **Debian or a Debian-based system** (Ubuntu, Linux Mint, Pop!_OS, Raspberry Pi OS).
-- **systemd.**
-- i3 4.20 or newer, or sway. The installer can install i3 for you.
-- Python 3.9 or newer with GTK 4 (PyGObject). The installer lists and installs anything missing.
+- **Debian or a Debian-based system** (Ubuntu, Linux Mint, Pop!_OS, Raspberry Pi OS), with **systemd**.
+- **sway.** apt installs it with TVWCS. (i3 was supported until 4.x.)
 
 Other distributions and systems without systemd are not supported. [TODO.md](TODO.md) records what it would take to bring them back.
-
-**On a system that isn't Debian-based**, TVWCS's own windows may still run if you install its packages by hand, but:
-
-- the installer can't install anything: it only knows apt and Debian's package names, so it lists what is missing and stops;
-- **Software updates** can't check for or install system updates (apt only); Flatpak and TVWCS's own updates still work;
-- **System information** can't install the SSH server, and **Apps** can't install Flatpak itself;
-- **Network** can't take over an Ethernet port set up in `/etc/network/interfaces` (Debian's ifupdown);
-- the hints that name a missing tool give Debian's package names;
-- without systemd, Sleep, Reboot and Shut down, the network-time switch, starting PipeWire and the SSH switch don't work, and the installer can't set up automatic login.
 
 **New computer?** [Setting up a TV computer with Debian](docs/INSTALL-DEBIAN.md) goes from an empty computer to one that boots into TVWCS.
 
 ## Install
 
-Run this in a terminal (not as root):
+TVWCS comes as Debian packages, attached to each [release](https://github.com/one-moment-please/tvwcs/releases):
+
+- **tvwcs**: the Quick Menu, Applications, Settings and the **TVWCS** session. apt installs what it needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
+- **tvwcs-boot-logo**: the TVWCS logo while the computer starts and shuts down, instead of lines of text (a Plymouth theme). Optional; **Settings › User** turns it on and off.
+
+The installer picks the release, asks a few questions and installs the packages with apt. Run it in a terminal (not as root):
 
 ```bash
 wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
 ```
 
-With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions.
-
-The installer asks all its questions first and changes nothing until you agree to the list of what it will do. If something fails, it undoes what it had done. It installs TVWCS into `~/.local/share/tvwcs`; your own data (channels, favorites, settings, hotkeys) is kept in `~/.config/tvwcs/`. You can also unpack a release from [Releases](https://github.com/one-moment-please/tvwcs/releases) and run its `./tvwcs/install.sh`: it then offers to install that release, or to download another.
+With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the packages next to it, or to download another release. Or install the .deb files yourself: `sudo apt install ./tvwcs_5.0.0_all.deb`.
 
 ### What the installer asks
 
-1. **When TVWCS is already installed:** upgrade, install a different version (the prerelease when there is one, or one of the two releases before the latest), or remove TVWCS.
-2. **i3, sway or both.** It says which are installed and suggests those. With neither, it suggests sway, which plays video more smoothly; i3 can suit games and older apps better.
-3. **The login screen.** With no login screen, it installs TVWCS's own. With another one, it offers TVWCS's. TVWCS's login screen shows who can log in, takes the password from the remote on an on-screen keyboard, and starts the TVWCS session by default (the sway one when both are set up). Some login screens, such as LightDM (Linux Mint's), cannot reliably start sway: then it warns and offers TVWCS's login screen, i3 instead, SDDM, installing anyway, or cancelling.
-4. **Your usual i3/sway session.** TVWCS always gets its own **TVWCS** session at the login screen, in TV mode. It asks whether to also add TVWCS to your usual i3/sway session, in desktop mode (one `include` line in its config). Without an i3/sway config, it asks whether to create one (choosing the `$mod` key and the keyboard layout) or not now.
-5. **The packages.** It lists what it needs, grouped by what each is for, and asks whether to go ahead.
+1. **Which version:** the latest release, the prerelease when there is one, or one of the two releases before the latest.
+2. **The TVWCS logo at startup**, instead of the start-up text.
+3. **Logging in automatically into TVWCS.** With no login screen, it installs greetd (a small login screen with a text login) and offers to log you straight into TVWCS. With greetd, LightDM or SDDM, it offers the automatic login. With another login screen, choose **TVWCS** there.
+4. **Your usual sway session.** TVWCS always has its own **TVWCS** session at the login screen, in TV mode. It asks whether to also add TVWCS to your usual sway session, in desktop mode (one `include /usr/share/tvwcs/tvwcs.conf` line in its config).
 
-Every file of yours it changes is backed up first as `<file>.tvwcs-backup`.
+It asks all its questions first and changes nothing until you agree to the list of what it will do. Every file of yours it changes is backed up first as `<file>.tvwcs-backup`. Your own data (channels, favorites, settings, hotkeys) is kept in `~/.config/tvwcs/`.
 
-**Upgrading from 3.x:** TV mode is now the TVWCS session at the login screen, and your usual i3/sway session is desktop mode. The installer cleans up what earlier versions set up and tells you what changed. If you have been logging in to your usual i3 or sway session to use TVWCS on a TV, log in to the **TVWCS** session next time; the installer shows how to put your usual session back to how it was.
+**Upgrading from 4.x:** run the installer in a terminal once (4.x's updater can't install packages, and says so). It removes the old copy in `~/.local/share/tvwcs` and TVWCS's old login screen: another login screen installed on the computer takes over, or else greetd's text login, and the automatic login is kept. TV mode now runs on sway: the first TVWCS session makes its sway config from sway's standard one (`~/.config/tvwcs/sway-session.conf`). TVWCS is taken out of an i3 config.
 
-**Removing TVWCS:** run the installer and choose **Remove**. It takes out every part of TVWCS. If TVWCS's login screen is in use, it switches to another first; when there is no other, it tells you to install one and stops. It lists the packages it installed that nothing else needs and offers to mark them so `sudo apt autoremove` removes them; it does not remove them itself.
+**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs tvwcs-boot-logo`). It also takes TVWCS out of your usual sway config, and puts greetd back to its plain text login when it was starting TVWCS.
 
-**For scripted installs:** `TVWCS_VERSION=latest` (or `package`, or a version such as `4.0.0`) answers which version, `TVWCS_WMS="i3 sway"` which window managers, `TVWCS_DEST=<folder>` installs somewhere else, and `TVWCS_NO_RESTART=1` leaves a running TVWCS alone. `./install.sh --missing` lists the packages that are not installed, and changes nothing.
+**For scripted installs:** `TVWCS_VERSION=latest` (or `package`, or a version such as `5.0.0`) answers which version.
 
 ## Using it with a remote
 
@@ -131,7 +122,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 - **On-screen keyboard:** wherever text is typed, the on-screen keyboard can be hidden (it starts that way), full, or a number pad; buttons on it switch, and it opens next time as you left it.
 - **Other keys:** set the Quick Menu key for a keyboard, a remote or a gamepad in **Settings › Remote and hotkeys**, where the apps with hotkeys of their own are listed too. A gamepad needs a key mapper such as AntiMicroX.
 
-From a terminal, `~/.local/share/tvwcs/bin/tvwcs` takes `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
+From a terminal, `tvwcs` takes `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
 
 ## Settings
 
@@ -140,38 +131,35 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
 | **Appearance** (`appearance`) | Interface size (Automatic is TV size in TV mode and desktop size otherwise), dark or light theme (passed on to apps that follow the system's choice), accent colour, background colour, closing TVWCS when it loses focus (on by default), and the screen edge margin for TVs that cut off the edges (overscan), set on a full-screen preview with a slider. |
-| **User** (`user`) | Your name and password, with "Administrator" or "Standard User" beside the page's title. Logging in automatically after start-up, on or off. The login screen: when TVWCS's copy is out of date it says so and offers to update it; with more than one login screen it offers to switch, and to remove TVWCS's. The application to open at login (none, the last one used, or one you choose). |
+| **User** (`user`) | Your name and password, with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM). The login screen in use, and switching to another one installed. **TVWCS logo at startup**, on or off (it installs or removes the tvwcs-boot-logo package). The application to open at login (none, the last one used, or one you choose). |
 | **Remote and hotkeys** (`hotkeys`) | The Quick Menu key for the keyboard, remote and gamepad (clearing one asks first), and the apps that have a hotkey of their own (give one with ✎ on the app). **Reset all hotkeys** puts back the defaults and removes the app hotkeys. |
 | **Sound** (`sound`) | Volume and mute for the output and the input in use. The others are folded under "2 inactive outputs" or "1 inactive input", which open and close. **Allow over-amplification** lets volumes go up to 150 % (off by default: volumes stop at 100 %). |
-| **Displays** (`displays`) | Resolution, refresh rate, arrangement and scale: a row of buttons from 75 % to 200 % (in i3 only 100 % and 200 % unless **Fractional scaling** is on). In i3: **Tear-free video** (Xorg's TearFree, or NVIDIA's full composition pipeline) and, when it is installed, a button that opens NVIDIA's settings (it may need a mouse). A change goes back after 15 seconds unless you keep it. |
-| **Power and sleep** (`power`) | When the screen saver starts, the screen turns off, the computer locks and it sleeps. A laptop has these times twice, plugged in and on battery, and a choice of what to do when the battery is nearly empty. The screen saver is TVWCS's logo or a picture of your own, bouncing around. It works on i3 and on sway (where it is drawn over every window and needs gtk4-layer-shell (gir1.2-gtk4layershell-1.0 and libgtk4-layer-shell0), which the page offers to install). In TV mode on i3 it can also show when the computer locks: any key shows the lock screen, and after a minute without input the screen saver comes back. It never runs while the screen is off. |
+| **Displays** (`displays`) | Resolution, refresh rate, arrangement and scale for each display: a row of buttons from 75 % to 200 %. A change goes back after 15 seconds unless you keep it. |
+| **Power and sleep** (`power`) | When the screen turns off, the computer locks and it sleeps (sway's swayidle times them; sound playing and apps that ask keep it awake). A laptop has these times twice, plugged in and on battery, and a choice of what to do when the battery is nearly empty. |
 | **Bluetooth** (`bluetooth`) | Pair, connect and forget devices. Shows battery levels. |
-| **Date and time** (`datetime`) | Time zone, network time, 12- or 24-hour clock. Setting the time by hand: a box for each of year, month, day, hour and minute, typed in or changed with ▲ and ▼, with AM and PM for the 12-hour clock. |
-| **Apps** (`apps`) | Install and remove apps from Flathub, with no password. Without Flatpak, it offers to install it and add Flathub. Tabs along the top: **Search** (a search bar that searches as you type; ⌨ beside it opens the on-screen keyboard), **Categories** (two rows of category buttons, Featured first), **Installed**, and **Settings**, on the page: how apps are installed, the repositories (add, turn off or remove them; Flathub can be turned off but is always kept), unverified apps (off, recommended), downloading the list of apps again, and uninstalling every Flatpak app and runtime, each explained. |
-| **Software updates** (`updates`) | System and Flatpak updates, and TVWCS's own updates (including prereleases and rolling back). |
+| **Date and time** (`datetime`) | Time zone (one list), network time, 12- or 24-hour clock. |
+| **Software updates** (`updates`) | System updates (apt), and TVWCS's own updates (including prereleases and rolling back), installed as packages. |
 | **System information** (`system`) | Hardware and versions. Turns the SSH server on or off and shows how to connect. |
-| **Terminal** (`terminal`) | A terminal, with Tab and Esc buttons for a remote. |
 | **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. An Ethernet port the Debian installer set up (shown as "not managed") can be handed to NetworkManager; the old setup is kept as a backup. |
-| **Storage** (`storage`) | Drives, with their partitions under them: mount and unmount partitions and safely remove drives. Partitions of the running system are marked as part of it. Network shares (Windows/Samba, NFS, SFTP, WebDAV, FTP): add, connect and disconnect. Passwords are not saved. Buttons install and uninstall the network share support (Samba, through gvfs-backends). |
+| **Storage** (`storage`) | Drives, with their partitions under them: mount and unmount partitions and safely remove drives. Partitions of the running system are marked as part of it. |
 
 A page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth BlueZ, and so on). When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.
 
-**Locking in TV mode:** the TVWCS session always locks with TVWCS's lock screen, which says "Locked" and whose password to type (it uses i3lock, or swaylock on sway). With **Power and sleep › Show it when the computer locks** on (i3), locking shows the screen saver; any key or button shows the lock screen, and after a minute without input the screen saver comes back. Once the screen has turned off (**Turn off the screen after**), the screen saver stays away until the next lock, and the lock screen turns the screen off again instead. A desktop session's own lock screen is not changed. `tvwcs lock` locks by hand.
+**Locking in TV mode:** the TVWCS session locks with swaylock, on a dark screen with a ring in your accent colour. A desktop session's own lock screen is not changed. `tvwcs lock` locks by hand.
 
 ## Update and uninstall
 
-**Update:** **Settings › Software updates › Check for TVWCS updates**, or run the installer again and choose Upgrade. When a new version needs packages that are not installed, Settings lists them and offers to install them first. Your data is never changed.
+**Update:** **Settings › Software updates › Check for TVWCS updates** downloads the new packages and installs them with apt (it asks for your password), or run the installer again. Your data is never changed.
 
-**Uninstall:** run the installer and choose **Remove** (see above).
+**Uninstall:** `install.sh --remove` (see above).
 
 ## Troubleshooting
 
-- **The hotkey does nothing:** check that `i3-msg -t get_config | grep -i tvwcs` (`swaymsg` on sway) shows TVWCS and that `~/.config/tvwcs/hotkeys.conf` exists. Running `install.sh` again fixes both.
-- **Tapping Super does nothing:** another tool (such as xcape) may grab the key. `xev` shows the keycode your key sends; compare it with the line in `hotkeys.conf`.
+- **The hotkey does nothing:** check that `swaymsg -t get_config | grep -i tvwcs` shows TVWCS and that `~/.config/tvwcs/hotkeys.conf` exists. Logging in to the TVWCS session again creates it.
+- **Tapping Super does nothing:** another tool may grab the key. `wev` shows the keycode your key sends; compare it with the line in `hotkeys.conf`.
 - **"TVWCS is already running":** delete the stale `$XDG_RUNTIME_DIR/tvwcs.pid`.
 - **The edges of TVWCS are cut off on the TV:** raise **Settings › Appearance › Screen edge margin**, or turn off overscan in the TV's picture settings.
-- **Wrong monitor (i3):** install `xdotool`.
-- **sway says "Invalid tiling_drag command" (or other errors about your i3 config):** sway started on its own reads `~/.config/i3/config` when there is no `~/.config/sway/config`, and i3-only lines stop it. Start TVWCS's sway session with `tvwcs-session sway` instead (from a text console, or **TVWCS (sway)** at the login screen; a login screen made only for X, such as Linux Mint's, may not list it). `install.sh` also offers to create a sway config of its own.
+- **The TVWCS session doesn't start:** run `tvwcs-session` from a text console to see sway's errors. Its config is `~/.config/tvwcs/sway-session.conf`; delete it to make a fresh one from sway's standard config.
 - **Letters instead of icons:** install `adwaita-icon-theme` or `papirus-icon-theme`.
 - **Check for updates fails:** TVWCS needs internet access to `api.github.com`.
 

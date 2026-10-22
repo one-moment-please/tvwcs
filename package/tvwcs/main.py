@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""TVWCS — Metro-style TV launcher and workspace switcher for i3 and sway. Application controller and command line."""
+"""TVWCS — Metro-style TV launcher and workspace switcher for sway. Application controller and command line."""
 from __future__ import annotations
 import os, shlex, signal, subprocess, sys, threading, time
 from pathlib import Path
-from tvwcs.flatpak_env import with_flatpak_data_dirs
-# Before GLib reads it: Flatpak apps' launchers and icons, also when this session's login did not add them.
-os.environ["XDG_DATA_DIRS"]=with_flatpak_data_dirs(os.environ.get("XDG_DATA_DIRS"),
-                                                   os.environ.get("XDG_DATA_HOME") or str(Path.home()/".local"/"share"))
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
-from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_i3
+from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_bindings
 from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, default_of, display_name, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, is_4k, scale_key, tv_mode as in_tv_mode
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
@@ -35,9 +31,10 @@ REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a 
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
 BAR_MODES_FILE=RUNTIME/"tvwcs-bar-modes.json"    # the modes the bars had before TV mode hid them (see tv_mode.py)
 def _find_launcher():
-    """Locate the tvwcs launcher script next to the package (works in the repo layout, the
-    install.sh layout ~/.local/share/tvwcs, and a zip extracted anywhere)."""
+    """Locate the tvwcs launcher: /usr/bin/tvwcs for the package in /usr/lib/tvwcs, else the script next to the package
+    (the repository layout)."""
     here=Path(__file__).resolve().parent          # .../tvwcs (the package)
+    if here.parent==Path("/usr/lib/tvwcs"): return Path("/usr/bin/tvwcs")
     for cand in (here.parent/"bin"/"tvwcs", here/"tvwcs", here.parent.parent/"bin"/"tvwcs"):
         if cand.exists(): return cand
     return here.parent/"bin"/"tvwcs"              # sensible default even if missing
@@ -86,7 +83,7 @@ class StatusWatcher:
     Everything that runs a command runs on a worker thread."""
     TICK=2            # seconds between looks
     READ_EVERY=4      # seconds between reads of the status while the Quick Menu is on screen
-    BAR_EVERY=4       # seconds between checks that the bar is still hidden (an i3 reload shows it again)
+    BAR_EVERY=4       # seconds between checks that the bar is still hidden (a sway reload shows it again)
     UPDATES_EVERY=3*3600   # seconds between update checks (the package lists, Flathub)
     def __init__(self, app):
         self.app=app; self.source=0; self.reading=False; self.last_read=0.0; self.last_bar=0.0; self.updates=0
@@ -184,7 +181,7 @@ class TVWCSApp(Gtk.Application):
     def scale_factor(self): return effective_scale(scale_key(self.store.settings),screen_height())
     @property
     def tv(self):
-        """TV mode (a TVWCS session, see model.tv_mode), under i3 or sway: the bar is hidden and the Quick Menu stays
+        """TV mode (a TVWCS session, see model.tv_mode), under sway: the bar is hidden and the Quick Menu stays
         open while no application is."""
         return in_tv_mode() and self.wm.available
 
@@ -205,7 +202,7 @@ class TVWCSApp(Gtk.Application):
         threading.Thread(target=self._restore_displays,daemon=True).start()
     @staticmethod
     def _restore_displays():
-        """The display settings kept in Settings: xrandr and sway forget them at log-out."""
+        """The display settings kept in Settings: sway forgets them at log-out."""
         from tvwcs import control_display
         problem=control_display.restore()
         if problem: print(f"Could not apply the saved display settings: {problem}",file=sys.stderr)
@@ -281,8 +278,8 @@ class TVWCSApp(Gtk.Application):
         if clock is None: self.apply_geometry(mapped=True); pane.set_valign(Gtk.Align.FILL); return
         handler=clock.connect("after-paint",painted)
     def apply_geometry(self,mapped=False):
-        """Ask i3 to float the window at the computed rectangle. Repeated shortly after mapping because
-        i3 can only match the window once it exists (and GTK may still resize it after); a window already `mapped` is
+        """Ask sway to float the window at the computed rectangle. Repeated shortly after mapping because
+        sway can only match the window once it exists (and GTK may still resize it after); a window already `mapped` is
         also placed at once."""
         if not self.wm.available or self.layout is None: return
         def place():   # where it should be by then: a later fit may have changed it
@@ -305,7 +302,7 @@ class TVWCSApp(Gtk.Application):
         shown=self.window.is_visible(); self.window.set_visible(False); self.window.note_shown()
         if shown and self._fullscreen:
             ids=self._fullscreen; self._fullscreen=set()
-            GLib.timeout_add(150,lambda:(self.wm.restore_fullscreen(ids,skip_current=launched),GLib.SOURCE_REMOVE)[1])   # once i3 has refocused
+            GLib.timeout_add(150,lambda:(self.wm.restore_fullscreen(ids,skip_current=launched),GLib.SOURCE_REMOVE)[1])   # once sway has refocused
     def has_dialogs(self):
         return any(w is not self.window and w.is_visible() for w in self.get_windows())
     def dismiss_dialogs(self):
@@ -400,7 +397,7 @@ class TVWCSApp(Gtk.Application):
         """How selecting an open app shows it: in TV mode alone in a workspace of its own, in desktop mode where it is."""
         return LAUNCH_NEW_WORKSPACE if self.tv else LAUNCH_PLAIN
     def launch_mode(self,profile=None):
-        """Where an app opens: in TV mode in a workspace of its own, full screen; in desktop mode where i3 / sway opens it.
+        """Where an app opens: in TV mode in a workspace of its own, full screen; in desktop mode where sway opens it.
         The Quick Menu's one-time choice (open alongside, or in a new workspace) passes its own mode instead."""
         return LAUNCH_NEW_WORKSPACE if self.tv else LAUNCH_PLAIN
     # PIN protection. A profile's PIN is asked when it is launched; if its scope is "launch and show" it is also asked
@@ -586,7 +583,7 @@ class TVWCSApp(Gtk.Application):
         `launcher`: the new install's launcher, when the update moved TVWCS to another folder."""
         wait='while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2"'
         try: subprocess.Popen(["sh","-c",wait,"sh",str(os.getpid()),str(launcher or LAUNCHER)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or i3) to use the new version."); return
+        except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or sway) to use the new version."); return
         self.hide_window(); self.quit()
     def run_system_action(self,action_id):
         command=command_for(action_id,self.store.settings)
@@ -665,9 +662,9 @@ class TVWCSApp(Gtk.Application):
         """Set (or, with "", clear) the hotkey that launches a profile, taking the key from whatever had it."""
         self.store.set_profile_hotkey(profile_id,spec); self.apply_hotkeys()
     def apply_hotkeys(self):
-        """Write hotkeys.conf from the settings, the profiles' hotkeys and (on a TV) the border rules, and ask i3 to reload
+        """Write hotkeys.conf from the settings, the profiles' hotkeys and (on a TV) the border rules, and ask sway to reload
         if it changed."""
-        text=render_i3(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes(),self.store.app_hotkeys(),in_tv_mode())
+        text=render_bindings(self.store.settings["hotkeys"],str(LAUNCHER),self._modifier_keycodes(),self.store.app_hotkeys(),in_tv_mode())
         try: old=HOTKEYS_FILE.read_text(encoding="utf-8")
         except OSError: old=None
         if old!=text:

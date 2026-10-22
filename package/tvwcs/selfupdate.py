@@ -1,17 +1,22 @@
 """Updating TVWCS itself from its GitHub releases: find the latest published release (or, for those who want them,
-the newest prerelease), compare it with the running version, download its zip, run the zip's install.sh into the
-current install folder and clean up. Each merged change is released as a prerelease first and marked latest once
-it has been tested, so "the latest release" is also what a prerelease rolls back to.
+the newest prerelease), compare it with the running version, download its .deb packages and install them as root with
+apt. Each merged change is released as a prerelease first and marked latest once it has been tested, so "the latest
+release" is also what a prerelease rolls back to.
+
+A release has one .deb per package: tvwcs (the program), and tvwcs-boot-logo (the logo shown while the computer starts,
+installed from Settings > User). An update installs the new version of each one installed here.
 No GTK here, so it can be tested without a display; the Settings panel runs these calls on a worker thread."""
 from __future__ import annotations
-import json, os, re, shutil, subprocess, tempfile, urllib.error, urllib.request, zipfile
+import json, os, re, shutil, subprocess, tempfile, urllib.error, urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
 GITHUB_REPO="one-moment-please/tvwcs"
 LATEST_URL=f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_URL=f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=30"
-MAX_DOWNLOAD=50*1024*1024   # a release zip is a few hundred KB; anything near this is not one
+PACKAGES=("tvwcs","tvwcs-boot-logo")
+LIB="/usr/lib/tvwcs"        # where the tvwcs package puts the Python package
+MAX_DOWNLOAD=50*1024*1024   # a release's .deb is a few hundred KB; anything near this is not one
 TIMEOUT=20
 
 class UpdateError(Exception):
@@ -21,7 +26,7 @@ class UpdateError(Exception):
 class Release:
     version: str
     tag: str
-    zip_url: str
+    debs: dict                  # package name -> download URL
     page_url: str
     prerelease: bool = False
 
@@ -36,18 +41,20 @@ def is_newer(candidate,current):
     width=max(len(a),len(b))
     return a+(0,)*(width-len(a)) > b+(0,)*(width-len(b))
 
+_DEB=re.compile(r"(tvwcs(?:-[a-z-]+)?)_([0-9][0-9.]*)_all\.deb")
 def release_from_json(data):
-    """Pick the version and the release zip out of GitHub's /releases/latest answer."""
+    """Pick the version and the .deb packages out of one of GitHub's release answers."""
     tag=str(data.get("tag_name") or "")
-    zips=[a for a in data.get("assets") or [] if str(a.get("name","")).lower().endswith(".zip")]
-    asset=next((a for a in zips if re.fullmatch(r"TVWCS-[\d.]+\.zip",str(a.get("name","")))),zips[0] if zips else None)
-    if not tag or asset is None: raise UpdateError("The latest release on GitHub has no TVWCS zip attached.")
-    return Release(".".join(map(str,parse_version(tag))),tag,asset["browser_download_url"],str(data.get("html_url") or ""),
-                   bool(data.get("prerelease")))
+    debs={}
+    for a in data.get("assets") or []:
+        m=_DEB.fullmatch(str(a.get("name","")))
+        if m and m.group(1) in PACKAGES: debs[m.group(1)]=a.get("browser_download_url")
+    if not tag or "tvwcs" not in debs: raise UpdateError("That release on GitHub has no TVWCS .deb package attached.")
+    return Release(".".join(map(str,parse_version(tag))),tag,debs,str(data.get("html_url") or ""),bool(data.get("prerelease")))
 
 def newest_release(items):
-    """The newest version among GitHub's /releases list, prereleases included; drafts and releases without a TVWCS
-    zip are skipped. None when there is none."""
+    """The newest version among GitHub's /releases list, prereleases included; drafts and releases without TVWCS's
+    .deb (4.x and older) are skipped. None when there is none."""
     found=[]
     for data in items if isinstance(items,list) else []:
         if not isinstance(data,dict) or data.get("draft"): continue
@@ -75,25 +82,17 @@ def latest_release(prereleases=False):
     newest=newest_release(_get_json(RELEASES_URL))
     return newest if newest is not None and is_newer(newest.version,latest.version) else latest
 
-def default_dir():
-    """Where install.sh puts TVWCS: ~/.local/share/tvwcs (XDG_DATA_HOME)."""
-    return Path(os.environ.get("XDG_DATA_HOME") or Path.home()/".local"/"share")/"tvwcs"
+def packaged(package_dir=None):
+    """True when this TVWCS was installed from its .deb (it runs from /usr/lib/tvwcs), not from a source checkout,
+    which is updated with git instead."""
+    return Path(package_dir or Path(__file__).resolve().parent).resolve().parent==Path(LIB)
 
-def legacy_dir():
-    """Where TVWCS 2.6 and older were installed: ~/.config/i3/tvwcs."""
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home()/".config")/"i3"/"tvwcs"
-
-def update_target(current):
-    """Where an update of the install in `current` goes: the same folder, except that one in the old location
-    moves to the new default."""
-    if current is not None and Path(current).resolve()==legacy_dir().resolve(): return default_dir()
-    return current
-
-def install_dir(package_dir):
-    """The folder install.sh put TVWCS in (it holds tvwcs.conf and bin/tvwcs next to the package), or None when
-    running from a source checkout, which is updated with git instead."""
-    root=Path(package_dir).resolve().parent
-    return root if (root/"tvwcs.conf").is_file() and (root/"bin"/"tvwcs").is_file() else None
+def installed_packages(run=subprocess.run):
+    """Which of TVWCS's packages are installed here."""
+    try: done=run(["dpkg-query","-W","-f=${Package} ${db:Status-Status}\\n",*PACKAGES],capture_output=True,text=True,timeout=20)
+    except (OSError,subprocess.TimeoutExpired): return []
+    found=[l.split()[0] for l in (done.stdout or "").splitlines() if len(l.split())==2 and l.split()[1]=="installed"]
+    return [p for p in PACKAGES if p in found]
 
 def _download(url,target):
     try:
@@ -101,70 +100,35 @@ def _download(url,target):
             total=0
             while chunk:=r.read(65536):
                 total+=len(chunk)
-                if total>MAX_DOWNLOAD: raise UpdateError("The download is far larger than a TVWCS release; stopped.")
+                if total>MAX_DOWNLOAD: raise UpdateError("The download is far larger than a TVWCS package; stopped.")
                 out.write(chunk)
     except (urllib.error.URLError,OSError) as exc:
         raise UpdateError(f"Download failed: {getattr(exc,'reason',exc)}") from exc
 
-def download_release(release):
-    """Download the release zip and unpack it in a new temporary folder. Returns the folder; the caller deletes it
-    (discard) once it has been installed or the update was cancelled."""
+def download(release, packages):
+    """Download the release's .deb of each package in `packages` into a new temporary folder. Returns (folder, files);
+    the caller deletes the folder (discard) once it has been installed or the update was cancelled. The folder and
+    files can be read by everyone: apt reads them as its own _apt user."""
+    wanted=[p for p in packages if p in release.debs] or list(release.debs)[:1]
     tmp=Path(tempfile.mkdtemp(prefix="tvwcs-update-"))
     try:
-        archive=tmp/"release.zip"; unpacked=tmp/"unpacked"
-        _download(release.zip_url,archive)
-        try:
-            with zipfile.ZipFile(archive) as z: z.extractall(unpacked)   # extractall drops absolute and ".." paths
-        except zipfile.BadZipFile as exc: raise UpdateError("The downloaded file is not a valid zip.") from exc
-        if not (unpacked/"tvwcs"/"install.sh").is_file() or not (unpacked/"tvwcs"/"tvwcs"/"main.py").is_file():
-            raise UpdateError("The downloaded zip does not look like a TVWCS release.")
+        os.chmod(tmp,0o755); files=[]
+        for name in wanted:
+            f=tmp/f"{name}_{release.version}_all.deb"; _download(release.debs[name],f); os.chmod(f,0o644)
+            with open(f,"rb") as fh:
+                if fh.read(8)!=b"!<arch>\n": raise UpdateError(f"The downloaded {name} package is not a .deb.")
+            files.append(f)
     except BaseException:
         discard(tmp); raise
-    return tmp
+    return tmp,files
 
 def discard(folder): shutil.rmtree(folder,ignore_errors=True)
 
-def parse_missing(text):
-    """install.sh --missing output -> [(packages, what for)]."""
-    out=[]
-    for line in (text or "").splitlines():
-        parts=line.split("\t")
-        if len(parts)==3 and parts[0]=="need" and parts[1].strip(): out.append((parts[1].strip(),parts[2].strip()))
-    return out
+def install_argv(files):
+    """The root command that installs downloaded .deb files with apt, with the packages they need. A rollback is an
+    older version, so downgrades are allowed."""
+    return ["env","DEBIAN_FRONTEND=noninteractive","apt-get","install","-y","--allow-downgrades",*[str(f) for f in files]]
 
-def missing_packages(folder):
-    """The packages the downloaded release needs that are not installed here, so they can be installed first.
-    Releases before 3.1 cannot say ([]): their install.sh has no --missing and would install instead of answering."""
-    script=Path(folder)/"unpacked"/"tvwcs"/"install.sh"
-    try:
-        if "--missing" not in script.read_text(errors="replace"): return []
-        done=subprocess.run(["sh",str(script),"--missing"],cwd=str(script.parent),stdin=subprocess.DEVNULL,
-                            capture_output=True,text=True,timeout=60)
-    except (OSError,subprocess.TimeoutExpired): return []
-    return parse_missing(done.stdout) if done.returncode==0 else []
-
-def install_packages_argv(packages):
-    """The root command that installs the packages a release needs (apt; Debian is the supported system)."""
-    names=[p for group in packages for p in group.split()]
-    if not names or not all(re.fullmatch(r"[a-z0-9][a-z0-9+.-]*",n) for n in names): raise ValueError("Unexpected package name.")
-    return ["env","DEBIAN_FRONTEND=noninteractive","sh","-c",'apt-get update -q && apt-get install -y "$@"',"sh",*names]
-
-def install_downloaded(folder,dest,migrate=False):
-    """Run the downloaded release's install.sh into `dest`. Returns install.sh's output."""
-    unpacked=Path(folder)/"unpacked"
-    env={**os.environ,"TVWCS_DEST":str(dest),"TVWCS_NO_RESTART":"1"}   # TVWCS restarts itself afterwards
-    if migrate: env["TVWCS_MIGRATE"]="1"
-    try:
-        done=subprocess.run(["sh",str(unpacked/"tvwcs"/"install.sh")],cwd=str(unpacked/"tvwcs"),env=env,stdin=subprocess.DEVNULL,
-                            capture_output=True,text=True,timeout=120)
-    except (OSError,subprocess.TimeoutExpired) as exc: raise UpdateError(f"Could not run install.sh: {exc}") from exc
-    if done.returncode!=0: raise UpdateError("install.sh failed:\n"+(done.stderr or done.stdout).strip()[-600:])
-    return done.stdout
-
-def install_release(release,dest,migrate=False):
-    """Download the release zip into a temporary folder, run its install.sh into `dest`, and delete the
-    temporary folder whatever happens. `migrate`: the user agreed to move TVWCS from its old location, so install.sh
-    updates the include line in the window manager config and deletes the old copy. Returns install.sh's output."""
-    folder=download_release(release)
-    try: return install_downloaded(folder,dest,migrate)
-    finally: discard(folder)
+def deb_url(name, version):
+    """The download address of one package of one release (Settings > User installs the boot logo of this version)."""
+    return f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{name}_{version}_all.deb"
