@@ -2,7 +2,7 @@
 
 Power actions use systemd's systemctl (TVWCS supports systemd systems only; TODO.md lists what others would need)."""
 from __future__ import annotations
-import os, shlex, shutil
+import os, shlex, shutil, subprocess
 from dataclasses import dataclass
 from tvwcs import lockscreen
 
@@ -36,9 +36,28 @@ def login_manager_installed(exists=os.path.exists, which=shutil.which):
             return bool(f.read().strip())
     except OSError: return False
 
+def login_service(env=None, run=subprocess.run) -> str:
+    """The PAM service logind recorded for this login: "login" for a text console (typing tvwcs there, or the
+    console's automatic login), "greetd", "gdm-password", "sddm"... for a login screen; "" when logind cannot say."""
+    env=os.environ if env is None else env
+    sid=env.get("XDG_SESSION_ID")
+    if not sid: return ""
+    try:
+        out=run(["loginctl","show-session",sid,"-p","Service","--value"],capture_output=True,text=True,timeout=2)
+        return out.stdout.strip() if out.returncode==0 else ""
+    except (OSError,subprocess.SubprocessError): return ""
+
+def can_log_out(env=None, run=subprocess.run, exists=os.path.exists) -> bool:
+    """Logging out reaches a login screen: this session came from one (logind says so), or, when logind cannot say,
+    one starts at boot. A session started at a text console only goes back to it, or with the automatic login
+    straight back into TVWCS, even with a login screen installed."""
+    service=login_service(env,run)
+    if service: return service!="login"
+    return login_manager_installed(exists)
+
 def power_menu(settings=None, display_manager=None):
     """The actions the Quick Menu's power menu offers, in order. `settings` is accepted for older callers."""
-    dm=login_manager_installed() if display_manager is None else display_manager
+    dm=can_log_out() if display_manager is None else display_manager
     by_id={a.id:a for a in SYSTEM_ACTIONS}
     return [by_id[i] for i in POWER_MENU if i!="logout" or dm]
 
