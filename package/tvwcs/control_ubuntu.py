@@ -23,7 +23,7 @@ EXTRAS=(
     Extra("snap","Snap (snapd)",("snapd",),
           "Ubuntu's second app store and the service that runs its apps. Removing it removes every Snap app with it. "
           "Apps from Flathub (here in Apps) are not touched."),
-    Extra("cloud-init","cloud-init",("cloud-init","cloud-initramfs-copymods","cloud-initramfs-dyn-netconf"),
+    Extra("cloud-init","cloud-init",("cloud-init","cloud-init-base","cloud-initramfs-copymods","cloud-initramfs-dyn-netconf"),
           "Sets up cloud servers and virtual machines when they first start. A computer at home does not need it; "
           "it only adds to the start-up time. The network settings it wrote in /etc/netplan are kept."),
     Extra("pro","Ubuntu Pro client",("ubuntu-pro-client","ubuntu-pro-client-l10n","ubuntu-advantage-tools","ubuntu-pro-auto-attach"),
