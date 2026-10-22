@@ -1,5 +1,36 @@
 # Changelog
 
+## 5.0.0 — 2026-10-22
+
+A leaner TVWCS: sway only, installed as Debian packages, with the parts that cost a lot of code for little use on a TV taken out.
+
+**Installing**
+- TVWCS is now two Debian packages, built from this one repository and attached to each release: **tvwcs** (the program, its sway session and Settings) and **tvwcs-boot-logo**. apt installs what they need. The installer is much shorter: it picks the release, asks about the boot logo, the automatic login and your usual sway session, then installs the packages. `install.sh --remove` removes them.
+- **Settings › Software updates** downloads a new release's packages and installs them with apt (it asks for your password).
+- **Upgrading from 4.x:** run the installer in a terminal once; 4.x's updater can't install packages and says so. The copy in `~/.local/share/tvwcs` is removed. Channels, favorites, options and hotkeys are kept.
+- The installer no longer offers the sudo rule for sleeping, rebooting and shutting down without a password. An existing rule keeps working; without one, TVWCS asks for the password on screen when polkit refuses.
+
+**sway only**
+- TV mode and desktop mode run on sway. i3 support is removed, with Xorg, startx, xrandr, xdotool, xsettingsd, unclutter, i3lock and xss-lock. The TVWCS session makes its sway config from sway's standard one the first time (`~/.config/tvwcs/sway-session.conf`). An i3 config's TVWCS include line is taken out.
+- **Power and sleep** runs on swayidle only: screen off, lock and sleep.
+- The lock screen is plain swaylock, on a dark screen with a ring in your accent colour.
+- **Displays**: one scale per display; the i3-only Fractional scaling and Tear-free video settings are gone.
+
+**The login screen**
+- TVWCS's own login screen (the greeter and its on-screen keyboard) is removed. Upgrading switches to another graphical login screen installed on the computer; without one, greetd stays with its text login, and the automatic login into TVWCS is kept. On a computer without a login screen, the installer sets up greetd with the automatic login.
+- **Settings › User** sets the automatic login (greetd, LightDM or SDDM) and switches between installed login screens.
+
+**New: the TVWCS logo at startup**
+- **Settings › User › TVWCS logo at startup** shows the TVWCS logo while the computer starts and shuts down, instead of lines of text (the tvwcs-boot-logo package: a Plymouth theme, with GRUB's `splash` option). Turning it off removes the package.
+
+**Removed**
+- The screen saver.
+- Settings › **Apps** and all Flatpak support (Flatpak updates on the Software updates page too). Apps installed with Flatpak still show in Applications.
+- Settings › **Terminal**.
+- Network shares on the Storage page.
+- Setting the time by hand, and the region-then-city time zone picker: Date and time has one list of time zones.
+- The pycairo source tarball in the repository.
+
 ## 4.4.1 — 2026-10-22
 
 **Quick Menu**

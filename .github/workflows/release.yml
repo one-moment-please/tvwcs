@@ -1,7 +1,7 @@
 name: Release
 
-# Prerelease workflow: every push to `main` whose VERSION has no release yet builds TVWCS-<version>.zip and
-#   publishes it as the prerelease v<version>. Once it has been tested on a TV computer, the Promote workflow marks
+# Prerelease workflow: every push to `main` whose VERSION has no release yet builds TVWCS's .deb packages (tvwcs and
+#   tvwcs-boot-logo), tvwcs.tar.gz and TVWCS-<version>.zip, and publishes them as the prerelease v<version>. Once it has been tested on a TV computer, the Promote workflow marks
 #   it as the latest release, which is what TVWCS's updater installs by default.
 # Beta workflow: every push to `beta` builds a prerelease you can download and test.
 # Tag workflow: pushing a tag like `v2.5.0` by hand creates that release, published as the latest at once.
@@ -40,7 +40,7 @@ jobs:
       - name: Run unit tests
         if: steps.kind.outputs.kind != 'none'
         run: ./scripts/run-tests.sh
-      - name: Build zip
+      - name: Build packages and zip
         id: build
         if: steps.kind.outputs.kind != 'none'
         run: |
@@ -69,3 +69,4 @@ jobs:
           files: |
             ${{ steps.build.outputs.file }}
             resources/tvwcs.tar.gz
+            resources/*.deb

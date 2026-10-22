@@ -1,13 +1,24 @@
-"""install.sh in a throwaway system: a home folder, /etc, /usr/share and /usr/local/bin under a temporary folder, and
-stand-ins for sudo, apt-get, wget and the window managers. Covers the questions it asks first, what it then installs
-or undoes, the versions it offers, upgrading from 3.x and removing TVWCS. Skipped outside the repository."""
-import io, json, os, pty, select, shutil, subprocess, tarfile, tempfile, time, unittest
+"""install.sh in a throwaway system: a home folder, /etc and /usr/share under a temporary folder, and stand-ins for
+sudo, apt-get and wget. Covers the questions it asks first, what it then installs, the versions it offers, upgrading
+from 4.x (its own login screen and its copy in ~/.local/share/tvwcs) and removing TVWCS. Skipped outside the
+repository."""
+import json, os, pty, select, shutil, subprocess, tempfile, time, unittest
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 SCRIPT=ROOT/"install.sh"
-KEYCODES="# WARNING\n# WARNING: a template for the i3-config-wizard.\n# WARNING\n\n# i3 config file (v4)\nset $mod Mod1\nbindcode $mod+36 exec i3-sensible-terminal\n"
 SWAY="# Default config for sway\nset $mod Mod4\nbindsym $mod+Return exec $term\n"
+OLD_GREETD="""[terminal]
+vt = 7
+
+[default_session]
+command = "cage -s -d -- /usr/local/lib/tvwcs-greeter/greeter"
+user = "_greetd"
+
+[initial_session]
+command = "/usr/local/lib/tvwcs-greeter/start-session x11 i3 /usr/local/bin/tvwcs-session i3"
+user = "tv"
+"""
 
 def tool(folder, name, body):
     p=Path(folder)/name; p.write_text("#!/bin/sh\n"+body+"\n"); p.chmod(0o755); return p
@@ -17,34 +28,33 @@ class InstallTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); t=Path(self.tmp.name)
         self.root=t/"root"; self.etc=self.root/"etc"; self.home=t/"home user"; self.home.mkdir()   # a space, to test quoting
-        (self.etc/"i3").mkdir(parents=True); (self.etc/"i3"/"config.keycodes").write_text(KEYCODES)
-        (self.etc/"sway").mkdir(); (self.etc/"sway"/"config").write_text(SWAY)
+        (self.etc/"sway").mkdir(parents=True); (self.etc/"sway"/"config").write_text(SWAY); (self.etc/"greetd").mkdir()
+        (self.etc/"systemd"/"system").mkdir(parents=True)
         (self.etc/"os-release").write_text("ID=debian\n")
         self.share=self.root/"usr"/"share"; self.share.mkdir(parents=True)
+        self.units=self.root/"lib"/"systemd"/"system"; self.units.mkdir(parents=True); (self.units/"greetd.service").write_text("")
+        self.lib=t/"lib"; self.lib.mkdir(); (self.lib/"tvwcs").symlink_to(ROOT/"package"/"tvwcs")   # the installed package
         self.bin=t/"fakebin"; self.bin.mkdir(); self.log=t/"log"
         tool(self.bin,"sudo",'exec "$@"')
-        tool(self.bin,"apt-get",f'echo "apt-get $*" >> "{self.log}"; [ -z "$APT_FAILS" ] || {{ [ "$1" = install ] && exit 1; }}; exit 0')
-        tool(self.bin,"visudo","exit 0")
+        tool(self.bin,"apt-get",f'echo "apt-get $*" >> "{self.log}"; exit 0')
         self.downloads=t/"downloads"; self.downloads.mkdir()
         # wget: the file named after the URL's last parts in downloads/ (a/b/c -> a_b_c), else fail
         tool(self.bin,"wget",f'out=$2; url=$3; f=$(echo "$url" | sed "s#^[a-z]*://[^/]*/##; s#[/?=&]#_#g"); [ -f "{self.downloads}/$f" ] || exit 8; cp "{self.downloads}/$f" "$out"')
-        self.dest=self.home/".local"/"share"/"tvwcs"
-        # this computer's own commands, less the window managers and login screens, which each test stands in for
-        self.sys=t/"sysbin"; self.sys.mkdir(); hidden={"i3","sway","gdm3","gdm","sddm","lightdm","lxdm","xdm","slim","ly","greetd",
-            "emptty","nodm","entrance","lemurs","Xorg","Xlibre","startx","pipewire","pulseaudio"}
+        self.old=self.home/".local"/"share"/"tvwcs"
+        self.sys=t/"sysbin"; self.sys.mkdir(); hidden={"sway","gdm3","gdm","sddm","lightdm","greetd","wget","curl","sudo","doas","apt-get"}
         for d in os.environ["PATH"].split(":"):
             if not os.path.isdir(d): continue
             for e in os.scandir(d):
                 if e.name not in hidden and not (self.sys/e.name).exists() and os.access(e.path,os.X_OK): (self.sys/e.name).symlink_to(e.path)
         self.env={"PATH":f"{self.bin}:{self.sys}","HOME":str(self.home),"TVWCS_ETC":str(self.etc),"TVWCS_ROOT":str(self.root),
-                  "TVWCS_SHARE":str(self.share),"TVWCS_BINDIR":str(self.root/"usr"/"local"/"bin"),"TVWCS_RUN":str(t/"run"),
-                  "TVWCS_DEST":str(self.dest),"TVWCS_NO_RESTART":"1","TVWCS_PACKAGES":"","XDG_RUNTIME_DIR":str(t/"rt"),
-                  "TVWCS_GITHUB":"https://github.test","TVWCS_API":"https://api.test","TVWCS_UNITS":str(self.root/"lib"/"systemd"/"system"),
-                  "LANG":"C.UTF-8"}
+                  "TVWCS_SHARE":str(self.share),"TVWCS_LIB":str(self.lib),"TVWCS_LOCAL":str(self.root/"usr"/"local"),"TVWCS_RUN":str(t/"run"),
+                  "TVWCS_PACKAGES":"","TVWCS_GITHUB":"https://github.test","TVWCS_API":"https://api.test","TVWCS_UNITS":str(self.units),"LANG":"C.UTF-8"}
         (t/"run"/"systemd"/"system").mkdir(parents=True)
+        self.pkg=t/"pkg"; self.pkg.mkdir(); shutil.copy(SCRIPT,self.pkg/"install.sh")
+        for n in ("tvwcs","tvwcs-boot-logo"): (self.pkg/f"{n}_5.0.0_all.deb").write_bytes(b"!<arch>\n")
     def tearDown(self): self.tmp.cleanup()
-    def wm(self, *names):
-        for n in names: tool(self.bin,n,"exit 0")
+    def apt(self): return self.log.read_text() if self.log.exists() else ""
+    def greetd(self): return (self.etc/"greetd"/"config.toml").read_text()
     def run_install(self, *args, stdin=subprocess.DEVNULL, script=SCRIPT, **env):
         p=subprocess.run(["sh",str(script),*args],env={**self.env,**env},stdin=stdin,capture_output=True,text=True,timeout=60)
         self.out=p.stdout+p.stderr; return p
@@ -69,191 +79,88 @@ class InstallTests(unittest.TestCase):
                     os.write(fd,(answer+"\n").encode()); out+=b"\n"; mark=len(out)
         if time.time()>=deadline: os.kill(pid,9)
         _pid,status=os.waitpid(pid,0); self.status=os.waitstatus_to_exitcode(status); self.out=out.decode(errors="replace").replace("\r",""); return self.out
-    def release(self, version):
-        """A release's tvwcs.tar.gz, as make-release.sh builds it, served at its download URL."""
-        buf=io.BytesIO()
-        with tarfile.open(fileobj=buf,mode="w:gz") as tar:
-            for f in (ROOT/"package"/"tvwcs").glob("*.py"): tar.add(f,f"tvwcs/tvwcs/{f.name}")
-            tar.add(ROOT/"package"/"bin"/"tvwcs","tvwcs/bin/tvwcs")
-            for f in ("tvwcs.conf","com.tvwcs.ControlPanel.desktop","tvwcs.svg","tvwcs-settings.svg"): tar.add(ROOT/"data"/f,f"tvwcs/{f}")
-            tar.add(SCRIPT,"tvwcs/install.sh")
-            info=tarfile.TarInfo("tvwcs/VERSION"); data=(version+"\n").encode(); info.size=len(data); tar.addfile(info,io.BytesIO(data))
-        (self.downloads/f"one-moment-please_tvwcs_releases_download_v{version}_tvwcs.tar.gz").write_bytes(buf.getvalue())
     def releases(self, latest, rows):
-        """GitHub's release list: rows of (version, prerelease)."""
+        """GitHub's release list: rows of (version, prerelease), each with its packages to download."""
         items=[{"url":"x","tag_name":f"v{v}","name":f"TVWCS {v}","draft":False,"prerelease":pre,"body":'not a "tag_name": "v9.9.9"'} for v,pre in rows]
         (self.downloads/"repos_one-moment-please_tvwcs_releases_per_page_30").write_text(json.dumps(items,indent=2))
         (self.downloads/"repos_one-moment-please_tvwcs_releases_latest").write_text(json.dumps({"tag_name":f"v{latest}","prerelease":False}))
-    def version(self): return (ROOT/"VERSION").read_text().strip()
+        for v,_pre in rows:
+            for n in ("tvwcs","tvwcs-boot-logo"): (self.downloads/f"one-moment-please_tvwcs_releases_download_v{v}_{n}_{v}_all.deb").write_bytes(b"!<arch>\n")
 
-    # ------------------------------------------------------------------ options
-    def test_help_and_unknown_options_change_nothing(self):
-        p=self.run_install("--help"); self.assertEqual(p.returncode,0); self.assertIn("--missing",p.stdout); self.assertNotIn("set -eu",p.stdout)
-        p=self.run_install("--bogus"); self.assertEqual(p.returncode,2)
-        self.assertFalse(self.dest.exists())
-    def test_missing_lists_the_packages_by_what_they_are_for(self):
-        self.wm("sway")
-        p=self.run_install("--missing"); self.assertEqual(p.returncode,0,self.out)
-        self.assertIn("need\tpython3 python3-gi gir1.2-gtk-4.0 python3-gi-cairo\tTVWCS's windows",p.stdout)
-        self.assertIn("need\tsway swayidle swaylock\t",p.stdout); self.assertNotIn("xinit",p.stdout)
-        self.assertTrue(all(l.startswith("need\t") for l in p.stdout.splitlines()),p.stdout)
-        self.assertNotIn("flatpak",p.stdout)   # Settings > Apps offers Flatpak itself
-        self.assertFalse(self.dest.exists()); self.assertFalse((self.home/".config").exists())
-
-    # ------------------------------------------------------------------ without a terminal (the in-app updater)
-    def test_without_a_terminal_it_installs_this_package_and_asks_nothing(self):
-        self.wm("i3")
-        p=self.run_install(); self.assertEqual(p.returncode,0,self.out)
-        self.assertEqual((self.dest/"VERSION").read_text().strip(),self.version())
-        self.assertIn(f"exec --no-startup-id '{self.dest}/bin/tvwcs'",(self.dest/"tvwcs.conf").read_text())
-        session=(self.home/".config"/"tvwcs"/"i3-session.conf").read_text()
-        self.assertTrue(session.rstrip().endswith("include ~/.local/share/tvwcs/tvwcs.conf"),session)
-        self.assertIn("set $mod Mod4",session)
-        self.assertTrue((self.home/".config"/"tvwcs"/"hotkeys.conf").is_file())
-        launcher=(self.home/".local"/"share"/"applications"/"com.tvwcs.ControlPanel.desktop").read_text()
-        self.assertIn(f'Exec="{self.dest}/bin/tvwcs" settings',launcher)
-        self.assertFalse((self.home/".config"/"i3").exists())   # the usual session is left alone
-        self.assertFalse(self.log.exists())                       # nothing installed with apt
-        self.assertIn("Run install.sh in a terminal once to add TVWCS's i3 session",self.out)
-
-    # ------------------------------------------------------------------ a new install, on a terminal
-    def test_a_new_install_asks_everything_first_then_installs(self):
-        self.wm("sway")
-        out=self.converse([],{"Choose 1-":"","Go ahead":"y","sudo rule":"n"},TVWCS_PACKAGES="python3 python3-gi")
+    def test_help_and_options(self):
+        p=self.run_install("--help"); self.assertEqual(p.returncode,0); self.assertIn("--remove",p.stdout); self.assertNotIn("set -eu",p.stdout)
+        self.assertEqual(self.run_install("--bogus").returncode,2)
+        p=self.run_install("--missing"); self.assertEqual((p.returncode,p.stdout),(0,""))   # what 4.x's updater asks first
+    def test_without_a_terminal_it_says_to_run_it_in_one(self):
+        p=self.run_install(); self.assertEqual(p.returncode,1); self.assertIn("in a terminal",self.out); self.assertEqual(self.apt(),"")
+    def test_a_new_install_without_a_login_screen_sets_up_greetd(self):
+        out=self.converse(["n","y","y"],script=self.pkg/"install.sh")   # (the packages here, the only choice) no logo; log in automatically; go ahead
         self.assertEqual(self.status,0,out)
-        self.assertIn(f"Install TVWCS {self.version()} from this package",out)
-        self.assertIn("sway is installed.",out)
-        self.assertIn("There is no login screen here, so TVWCS's own is installed",out)
-        self.assertIn("These packages will be installed:",out)
-        self.assertIn("TVWCS's login screen\n      greetd cage",out)
-        self.assertIn("gir1.2-gtk-4.0 python3-gi-cairo",out)
-        self.assertLess(out.index("Go ahead?"),out.index("Installing:"))   # nothing before the last question
-        apt=self.log.read_text(); self.assertIn("apt-get install -y gir1.2-gtk-4.0 python3-gi-cairo sway swayidle swaylock greetd cage",apt)
-        self.assertIn("greetd",(self.home/".config"/"tvwcs"/"installed-packages").read_text())
-        self.assertTrue((self.home/".config"/"tvwcs"/"sway-session.conf").is_file())
-        self.assertIn("Exec=",(self.share/"wayland-sessions"/"tvwcs-sway.desktop").read_text())
-        self.assertIn("tvwcs-greeter/greeter",(self.etc/"greetd"/"config.toml").read_text())
-        state=json.loads((self.root/"var"/"lib"/"tvwcs-greeter"/"state.json").read_text())
-        self.assertEqual(state["users"][os.environ.get("USER") or subprocess.run(["id","-un"],capture_output=True,text=True).stdout.strip()]["session"],"tvwcs-sway")
-        self.assertFalse((self.home/".config"/"sway").exists())   # "Not now"
-        self.assertIn('choose "TVWCS (sway)" at the login screen',out)
+        self.assertIn("There is no login screen here",out)
+        apt=self.apt()
+        self.assertIn("tvwcs_5.0.0_all.deb greetd",apt); self.assertNotIn("tvwcs-boot-logo",apt)
+        self.assertIn('command = "/usr/bin/tvwcs-session"',self.greetd()); self.assertIn("agreety --cmd /usr/bin/tvwcs-session",self.greetd())
+        self.assertEqual(os.readlink(self.etc/"systemd"/"system"/"display-manager.service"),"/lib/systemd/system/greetd.service")
+    def test_declining_at_the_end_changes_nothing(self):
+        out=self.converse(["y","n","n"],script=self.pkg/"install.sh")
+        self.assertIn("Nothing was changed",out); self.assertEqual(self.apt(),""); self.assertFalse((self.etc/"greetd"/"config.toml").exists())
+    def test_the_boot_logo_and_the_usual_sway_session(self):
+        cfg=self.home/".config"/"sway"/"config"; cfg.parent.mkdir(parents=True); cfg.write_text("# mine\n")
+        self.use("greetd"); (self.etc/"greetd"/"config.toml").write_text('[default_session]\ncommand = "tuigreet"\nuser = "greeter"\n')
+        out=self.converse(["y","n","y","y"],script=self.pkg/"install.sh")   # logo; no automatic login; desktop mode; go ahead
+        self.assertEqual(self.status,0,out)
+        self.assertIn("tvwcs-boot-logo_5.0.0_all.deb",self.apt()); self.assertNotIn("greetd",self.apt().split("tvwcs-boot-logo_5.0.0_all.deb")[1])
+        self.assertIn("include /usr/share/tvwcs/tvwcs.conf",cfg.read_text()); self.assertEqual(Path(str(cfg)+".tvwcs-backup").read_text(),"# mine\n")
+        self.assertIn("tuigreet",self.greetd())
+    def use(self, unit):
+        link=self.etc/"systemd"/"system"/"display-manager.service"
+        if link.is_symlink(): link.unlink()
+        link.symlink_to(f"/lib/systemd/system/{unit}.service")
+    def test_an_upgrade_from_4_removes_the_old_copy_and_login_screen(self):
+        self.old.mkdir(parents=True); (self.old/"VERSION").write_text("4.2.2\n")
+        self.use("greetd"); (self.etc/"greetd"/"config.toml").write_text(OLD_GREETD)
+        lib=self.root/"usr"/"local"/"lib"/"tvwcs-greeter"; lib.mkdir(parents=True); (lib/"greeter").write_text("")
+        sw=self.home/".config"/"sway"/"config"; sw.parent.mkdir(parents=True); sw.write_text("include ~/.local/share/tvwcs/tvwcs.conf\n")
+        i3=self.home/".config"/"i3"/"config"; i3.parent.mkdir(parents=True); i3.write_text("# i3\ninclude ~/.local/share/tvwcs/tvwcs.conf\n")
+        prof=self.home/".profile"; prof.write_text("# mine\n# >>> TVWCS: start the window manager after the automatic login (added by install.sh; delete to undo) >>>\nexec sway\n# <<< TVWCS <<<\n")
+        apps=self.home/".local"/"share"/"applications"; apps.mkdir(parents=True); (apps/"com.tvwcs.ControlPanel.desktop").write_text("")
+        out=self.converse(["n","y"],script=self.pkg/"install.sh")   # no logo; go ahead
+        self.assertEqual(self.status,0,out)
+        self.assertIn("TVWCS 4.2.2 is installed",out); self.assertIn("tv is still logged in automatically",out)
+        self.assertIn('command = "/usr/bin/tvwcs-session"',self.greetd()); self.assertIn('user = "tv"',self.greetd()); self.assertNotIn("tvwcs-greeter",self.greetd())
+        self.assertFalse(lib.exists()); self.assertFalse(self.old.exists()); self.assertFalse((apps/"com.tvwcs.ControlPanel.desktop").exists())
+        self.assertEqual(sw.read_text(),"include /usr/share/tvwcs/tvwcs.conf\n"); self.assertEqual(i3.read_text(),"# i3\n")
+        self.assertEqual(prof.read_text(),"# mine\n")
+    def test_a_standalone_script_downloads_the_release(self):
+        self.releases("4.2.2",[("5.1.0",True),("5.0.0",True),("4.2.2",False)])
+        out=self.converse(["","n","n","y"])   # the first offer: the newest prerelease (no 5.x is the latest yet)
+        self.assertEqual(self.status,0,out)
+        self.assertIn("TVWCS 5.1.0, a prerelease",out); self.assertNotIn("4.2.2",out)
+        self.assertIn("tvwcs_5.1.0_all.deb",self.apt())
     def test_on_ubuntu_it_offers_to_remove_its_extras_one_by_one(self):
-        self.wm("sway"); (self.etc/"os-release").write_text("ID=ubuntu\nID_LIKE=debian\n")
-        tool(self.bin,"dpkg-query",'for a; do p=$a; done; case "$p" in snapd|cloud-init) printf ii ;; esac')
-        out=self.converse([],{"Choose 1-":"","Go ahead":"y","sudo rule":"n","Remove Snap":"y","Remove cloud-init":""},
-                          TVWCS_PACKAGES="python3 python3-gi snapd cloud-init")
+        (self.etc/"os-release").write_text("ID=ubuntu\nID_LIKE=debian\n")
+        out=self.converse([],{"Show the TVWCS logo":"n","automatically":"n","Remove Snap":"y","Remove cloud-init":"","Go ahead":"y"},
+                          script=self.pkg/"install.sh",TVWCS_PACKAGES="snapd cloud-init")
         self.assertEqual(self.status,0,out)
         self.assertIn("== Ubuntu extras",out); self.assertNotIn("Ubuntu Pro client",out)   # not installed: not offered
-        self.assertIn("  Removing: Snap (snapd)\n",out); self.assertLess(out.index("Go ahead?"),out.index("Removing Snap (snapd)..."))
-        apt=self.log.read_text(); self.assertIn("apt-get purge -y snapd\n",apt); self.assertNotIn("cloud-init",apt)
-        self.assertLess(apt.index("apt-get install"),apt.index("apt-get purge"))
+        self.assertIn("  remove Snap (snapd)\n",out); self.assertLess(out.index("Go ahead?"),out.index("Removing Snap (snapd)..."))
     def test_extras_are_only_offered_on_ubuntu(self):
-        self.wm("sway")
-        out=self.converse([],{"Choose 1-":"","Go ahead":"y","sudo rule":"n"},TVWCS_PACKAGES="python3 python3-gi snapd cloud-init")
-        self.assertEqual(self.status,0,out); self.assertNotIn("Ubuntu extras",out); self.assertNotIn("purge",self.log.read_text())
-    def test_suggests_sway_when_neither_is_installed_and_offers_both(self):
-        out=self.converse([],{"Which should TVWCS use":"","Choose 1-3 [3]":"3","Go ahead":"n"})
-        self.assertIn("sway is recommended: it plays video more smoothly. i3 may work better",out)
-        self.assertIn("1) sway (recommended)",out); self.assertIn("Nothing was changed.",out)
-        self.assertFalse(self.dest.exists())
-    def test_declining_at_the_end_changes_nothing(self):
-        self.wm("i3")
-        out=self.converse([],{"Go ahead":"n"})
-        self.assertIn("Nothing was changed.",out); self.assertFalse(self.dest.exists()); self.assertFalse(self.log.exists())
-    def test_a_failed_install_undoes_what_it_did(self):
-        self.wm("i3"); (self.home/".config"/"i3").mkdir(parents=True); (self.home/".config"/"i3"/"config").write_text("# mine\n")
-        out=self.converse([],{"desktop mode?":"y","Go ahead":"y","sudo rule":"n"},APT_FAILS="1")
-        self.assertNotEqual(self.status,0); self.assertIn("The installation failed: the packages could not be installed.",out)
-        self.assertIn("Undoing the changes made so far",out)
-        self.assertFalse(self.dest.exists()); self.assertEqual((self.home/".config"/"i3"/"config").read_text(),"# mine\n")
-        self.assertIn("apt-get remove -y",self.log.read_text())
-    def test_adds_tvwcs_to_the_usual_session_only_when_asked(self):
-        self.wm("i3"); cfg=self.home/".config"/"i3"/"config"; cfg.parent.mkdir(parents=True); cfg.write_text("# mine\n")
-        self.converse([],{"desktop mode?":"","Go ahead":"y","sudo rule":"n","login screen":"n"})
-        self.assertEqual(cfg.read_text(),"# mine\n")
-        self.converse([],{"desktop mode?":"y","Go ahead":"y","sudo rule":"n"})
-        text=cfg.read_text(); self.assertTrue(text.rstrip().endswith("include ~/.local/share/tvwcs/tvwcs.conf"),text)
-        self.assertTrue((cfg.parent/"config.tvwcs-backup").is_file())
-        out=self.converse([],{"Go ahead":"y","sudo rule":"n"})   # already in: not asked again, and not added twice
-        self.assertNotIn("desktop mode?",out); self.assertEqual(cfg.read_text().count("tvwcs.conf"),1)
-    def test_creates_a_usual_config_with_the_chosen_keys(self):
-        self.wm("i3")
-        self.converse(["","","2"],{"Choose 1-3 [3]":"1","keyboard layout":"n",
-                          "Keyboard layout (":"de nodeadkeys","Go ahead":"y","sudo rule":"n"})
-        text=(self.home/".config"/"i3"/"config").read_text()
-        self.assertIn("set $mod Mod1",text); self.assertNotIn("WARNING",text); self.assertIn("setxkbmap -layout de -variant nodeadkeys",text)
-        self.assertIn("include ~/.local/share/tvwcs/tvwcs.conf",text)
-        self.assertIn("set $mod Mod1",(self.home/".config"/"tvwcs"/"i3-session.conf").read_text())
-    def test_sway_with_lightdm_offers_five_ways_on(self):
-        self.wm("sway"); (self.etc/"X11").mkdir(); (self.etc/"X11"/"default-display-manager").write_text("/usr/sbin/lightdm\n")
-        out=self.converse([],{"What should be done":"","Choose 1-5 [1]":"2","Go ahead":"n"})
-        for choice in ("Install TVWCS's login screen","Use i3 instead of sway","Install SDDM","install sway anyway","Cancel the installation"):
-            self.assertIn(choice,out)
-        self.assertIn("TVWCS (i3) session",out); self.assertNotIn("TVWCS (sway) session",out)
-        out=self.converse([],{"Choose 1-5 [1]":"5"}); self.assertIn("Nothing was changed.",out)
-    def test_another_login_screen_is_only_replaced_on_a_clear_yes(self):
-        self.wm("i3"); (self.etc/"X11").mkdir(); (self.etc/"X11"/"default-display-manager").write_text("/usr/sbin/lightdm\n")
-        out=self.converse([],{"Use TVWCS's login screen instead?":"","Go ahead":"y","sudo rule":"n"})
-        self.assertIn("This computer uses LightDM",out); self.assertFalse((self.etc/"greetd").exists())
-
-    # ------------------------------------------------------------------ versions
-    def test_a_standalone_script_offers_the_latest_release_or_another(self):
-        alone=Path(self.tmp.name)/"alone"; alone.mkdir(); shutil.copy(SCRIPT,alone/"install.sh")
-        self.releases("4.0.0",[("4.1.0",True),("4.0.0",False),("3.6.1",False),("3.6.0",False),("3.5.2",False)])
-        self.release("4.0.0"); self.release("4.1.0"); self.wm("i3")
-        out=self.converse([],{"Choose 1-3 [1]":"2","Choose 1-4 [1]":"1","Go ahead":"y","sudo rule":"n","login screen":"n"},script=alone/"install.sh")
-        self.assertIn("Install TVWCS 4.0.0, the latest release",out)
-        self.assertIn("1) 4.1.0, the prerelease",out); self.assertIn("2) 3.6.1, an earlier release",out); self.assertIn("3) 3.6.0, an earlier release",out)
-        self.assertNotIn("3.5.2",out); self.assertNotIn("9.9.9",out)
-        self.assertEqual(self.status,0,out); self.assertEqual((self.dest/"VERSION").read_text().strip(),"4.1.0")
-    def test_piped_to_a_shell_without_a_terminal_it_installs_the_latest(self):
-        self.releases("4.0.0",[("4.0.0",False)]); self.release("4.0.0"); self.wm("i3")
-        with open(SCRIPT,"rb") as f: p=self.run_install(stdin=f,script=Path("/dev/stdin"))
-        self.assertEqual(p.returncode,0,self.out); self.assertEqual((self.dest/"VERSION").read_text().strip(),"4.0.0")
-    def test_a_package_offers_itself_first_then_the_latest(self):
-        self.releases("9.0.0",[("9.0.0",False)]); self.wm("i3")
-        out=self.converse([],{"Choose 1-4 [1]":"4"})
-        self.assertIn(f"1) Install TVWCS {self.version()} from this package",out)
-        self.assertIn("2) Install TVWCS 9.0.0, the latest release (downloaded)",out); self.assertIn("Nothing was changed.",out)
-
-    # ------------------------------------------------------------------ upgrading
-    def installed(self, version="3.6.1"):
-        self.run_install(TVWCS_WMS="i3"); (self.dest/"VERSION").write_text(version+"\n")
-    def test_an_upgrade_from_3_cleans_up_and_explains_the_sessions(self):
-        self.wm("i3"); self.installed()
-        cfg=self.home/".config"/"i3"/"config"; cfg.parent.mkdir(parents=True); cfg.write_text("# mine\ninclude ~/.local/share/tvwcs/tvwcs.conf\n")
-        (self.home/".config"/"tvwcs"/"setup").write_text("dedicated\n")
-        out=self.converse([],{"Choose 1-":"","Go ahead":"y","sudo rule":"n","login screen":"n"})
-        self.assertIn(f"Upgrade to TVWCS {self.version()} from this package",out); self.assertIn("Remove TVWCS",out)
-        self.assertIn("TVWCS's TV mode is now the \"TVWCS\" session at the login screen",out)
-        self.assertIn(f"{cfg} includes TVWCS",out); self.assertIn("cp '",out)
-        self.assertFalse((self.home/".config"/"tvwcs"/"setup").exists())
-        self.assertEqual(cfg.read_text().count("tvwcs.conf"),1)
-
-    # ------------------------------------------------------------------ removing
-    def test_remove_needs_another_login_screen_first(self):
-        self.wm("i3"); self.installed(self.version())
-        (self.etc/"systemd"/"system").mkdir(parents=True); (self.etc/"systemd"/"system"/"display-manager.service").symlink_to("/lib/systemd/system/greetd.service")
-        (self.etc/"greetd").mkdir(); (self.etc/"greetd"/"config.toml").write_text('[default_session]\ncommand = "cage -s -d -- /usr/local/lib/tvwcs-greeter/greeter"\n')
-        out=self.converse([],{"Choose 1-3 [1]":"2"})
-        self.assertIn("TVWCS's login screen is the only one installed",out); self.assertTrue(self.dest.exists())
-        units=self.root/"lib"/"systemd"/"system"; units.mkdir(parents=True); (units/"sddm.service").write_text("")
-        out=self.converse([],{"Choose 1-3 [1]":"2","Remove TVWCS now?":"y"})
-        self.assertIn("goes back to SDDM",out); self.assertIn("TVWCS is removed.",out)
-        self.assertFalse(self.dest.exists()); self.assertTrue((self.home/".config"/"tvwcs").exists())
-        self.assertNotIn("tvwcs-greeter",(self.etc/"greetd"/"config.toml").read_text())
-    def test_remove_takes_tvwcs_out_of_the_usual_config_and_offers_to_mark_packages(self):
-        self.wm("i3"); self.installed(self.version())
-        cfg=self.home/".config"/"i3"/"config"; cfg.parent.mkdir(parents=True)
-        cfg.write_text("# mine\n\n# TVWCS (desktop mode): added.\ninclude ~/.local/share/tvwcs/tvwcs.conf\n")
-        (self.home/".config"/"tvwcs"/"installed-packages").write_text("greetd\nxdotool\n")
-        tool(self.bin,"apt-mark",f'[ "$1" = showmanual ] && {{ echo greetd; echo xdotool; exit 0; }}; echo "apt-mark $*" >> "{self.log}"')
-        tool(self.bin,"apt-cache",'for a; do p=$a; done; echo "$p"; echo "Reverse Depends:"; [ "$p" = xdotool ] && echo "  some-game"; exit 0')
-        out=self.converse([],{"Choose 1-3 [1]":"2","Mark them as removable?":"y","Also delete":"y","Remove TVWCS now?":"y"},
-                          TVWCS_PACKAGES="greetd xdotool")
-        self.assertIn("won't",out.replace("does not","won't")); self.assertIn("sudo apt autoremove",out)
-        self.assertIn("apt-mark auto greetd",self.log.read_text()); self.assertNotIn("xdotool",self.log.read_text())
-        self.assertEqual(cfg.read_text().rstrip(),"# mine")
-        self.assertFalse((self.home/".config"/"tvwcs").exists())
+        out=self.converse([],{"Show the TVWCS logo":"n","automatically":"n","Go ahead":"y"},script=self.pkg/"install.sh",TVWCS_PACKAGES="snapd cloud-init")
+        self.assertEqual(self.status,0,out); self.assertNotIn("Ubuntu extras",out)
+    def test_remove(self):
+        self.use("greetd"); (self.etc/"greetd"/"config.toml").write_text('[default_session]\ncommand = "agreety --cmd /usr/bin/tvwcs-session"\nuser = "_greetd"\n')
+        cfg=self.home/".config"/"sway"/"config"; cfg.parent.mkdir(parents=True)
+        cfg.write_text("# mine\n\n# TVWCS (desktop mode): its hotkeys, window rules and autostart. Added by TVWCS's install.sh.\ninclude /usr/share/tvwcs/tvwcs.conf\n")
+        pid,fd=pty.fork()
+        if pid==0: os.execvpe("sh",["sh",str(SCRIPT),"--remove"],self.env)
+        os.write(fd,b"y\nn\n"); out=b""
+        while True:
+            try: chunk=os.read(fd,4096)
+            except OSError: break
+            if not chunk: break
+            out+=chunk
+        os.waitpid(pid,0)
+        self.assertIn("purge -y tvwcs tvwcs-boot-logo",self.apt(),out)
+        self.assertNotIn("tvwcs",cfg.read_text().replace("# mine","")); self.assertIn("agreety --cmd /bin/sh",self.greetd())
 
 if __name__=="__main__": unittest.main()

@@ -15,7 +15,7 @@ DEFAULT_CONFIG=CONFIG_HOME/"tvwcs"/"config.json"
 LAUNCH_SAME="same"                  # tile alongside whatever is on the current workspace
 LAUNCH_NEW_WORKSPACE="new_workspace"  # always get a workspace of its own
 LAUNCH_MODES=(LAUNCH_SAME,LAUNCH_NEW_WORKSPACE)
-LAUNCH_PLAIN="plain"                # desktop mode: as i3 / sway places it (opened where it opens, focused where it is)
+LAUNCH_PLAIN="plain"                # desktop mode: as sway places it (opened where it opens, focused where it is)
 
 # TVWCS's own windows are recognised by title. The prefix is deliberately unusual: a document called
 # "tvwcs notes" in a text editor must never be mistaken for one of them (it would vanish from Open applications).
@@ -24,11 +24,11 @@ DIALOG_PREFIX="TVWCS · "
 def is_tvwcs_title(title: str) -> bool:
     return title==MAIN_TITLE or (title or "").startswith(DIALOG_PREFIX)
 
-# TV mode and desktop mode. TVWCS runs in TV mode in a TVWCS session (the login screen's "TVWCS (i3)" / "TVWCS (sway)",
-# whose tvwcs-session wrapper exports TVWCS_SESSION), and in desktop mode in any other session (TVWCS included in the
-# usual i3 / sway config). In TV mode apps open full screen in workspaces of their own, the bar is hidden, the Quick Menu
-# stays open while nothing is, the mouse pointer hides when it rests and TVWCS's lock screen is used. In desktop mode
-# i3 / sway place apps as they always do and TVWCS changes nothing about the bar, the pointer or locking.
+# TV mode and desktop mode. TVWCS runs in TV mode in a TVWCS session (the login screen's "TVWCS", whose tvwcs-session
+# wrapper exports TVWCS_SESSION), and in desktop mode in any other sway session (TVWCS included in the usual sway
+# config). In TV mode apps open full screen in workspaces of their own, the bar is hidden, the Quick Menu stays open
+# while nothing is, the mouse pointer hides when it rests and TVWCS's lock screen is used. In desktop mode sway places
+# apps as it always does and TVWCS changes nothing about the bar, the pointer or locking.
 # TVWCS_MODE=tv|desktop overrides it (for trying one mode in the other's session, and for the tests).
 def tv_mode(env=None) -> bool:
     env=os.environ if env is None else env
@@ -83,8 +83,6 @@ WALLPAPERS=WALLPAPER_GREYS+WALLPAPER_COLOURS+WALLPAPER_DARK
 DEFAULT_WALLPAPER="#323232"   # dark grey
 # The on-screen keyboard: hidden (a button shows it), the full keyboard, or a number pad. The one last used comes back.
 KEYBOARDS={"hidden":"Hidden","full":"Full keyboard","digits":"Number pad"}
-# Settings > Power and sleep > Screen saver: the bouncing logo.
-SCREENSAVER_LOGOS={"tvwcs":"The TVWCS logo","image":"A picture of your own"}   # "dvd" (before 4.1) reads as "tvwcs"
 
 def key_hints(tv) -> str:
     """The Settings app's footer: a remote's key is called Back, a keyboard's Esc."""
@@ -103,15 +101,10 @@ DEFAULT_SETTINGS={
     "theme":"dark",                 # THEMES: TVWCS's look, passed on to applications that follow the desktop's colour scheme
     "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
     "keyboard":"hidden",            # KEYBOARDS: the on-screen keyboard as it was last left (hidden, full or the number pad)
-    "screensaver_logo":"tvwcs",     # SCREENSAVER_LOGOS
-    "screensaver_image":"",         # the picture for "image"
-    "screensaver_on_lock":True,     # the screen saver shows while the computer is locked, and the lock screen on a key
-    "network_shares":[],            # Settings > Storage: saved network shares, as smb:// nfs:// sftp:// ... addresses
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
     "audio_boost":False,            # Settings > Sound: volumes may go over 100% (else they stop there)
-    "flatpak_unverified":False,     # Settings > Apps: also list Flathub apps whose developer is not verified
-    "idle":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # seconds without input before each (0 never; screen_off None: the system decides), see power.py
-    "idle_battery":{"screensaver":0,"screen_off":None,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
+    "idle":{"screen_off":0,"lock":0,"sleep":0},   # seconds without input before each (0 never), see power.py
+    "idle_battery":{"screen_off":0,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
     "battery_critical":{"action":"shutdown","percent":5},   # what to do when the battery is nearly empty (power.CRITICAL_ACTIONS)
     "hotkeys":DEFAULT_HOTKEYS,      # keyboard / remote / gamepad sets; deep-copied with the rest of the defaults
     "startup":{"mode":"none","profile_id":"","last_profile_id":""},   # mode: STARTUP_MODES
@@ -157,12 +150,8 @@ def _clean_settings(raw) -> dict:
     if raw.get("theme") in THEMES: s["theme"]=raw["theme"]
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
     if raw.get("keyboard") in KEYBOARDS: s["keyboard"]=raw["keyboard"]
-    if raw.get("screensaver_logo") in SCREENSAVER_LOGOS: s["screensaver_logo"]=raw["screensaver_logo"]
-    if isinstance(raw.get("screensaver_image"),str): s["screensaver_image"]=raw["screensaver_image"].strip()
-    shares=raw.get("network_shares")
-    if isinstance(shares,list): s["network_shares"]=[x.strip() for x in shares if isinstance(x,str) and x.strip()][:50]
-    for key in ("close_on_click_outside","update_prereleases","clock_24h","screensaver_on_lock","channel_zero_done",
-                "audio_boost","flatpak_unverified"):
+    for key in ("close_on_click_outside","update_prereleases","clock_24h","channel_zero_done",
+                "audio_boost"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))
@@ -319,7 +308,7 @@ class ConfigStore:
         """Profiles that have a hotkey, by name."""
         return sorted((p for p in self.profiles if p.hotkey),key=lambda p:p.name.casefold())
     def app_hotkeys(self):
-        """(spec, profile id, name) of every profile hotkey, for hotkeys.render_i3."""
+        """(spec, profile id, name) of every profile hotkey, for hotkeys.render_bindings."""
         return [(p.hotkey,p.id,p.name) for p in self.hotkey_profiles()]
     def _deduplicate_hotkeys(self):
         """A profile cannot have a key a device slot or an earlier profile already has (only a hand-edited file does that)."""
@@ -377,7 +366,7 @@ _BADGE_PATTERNS=(re.compile(r"^\s*\((\d{1,4})\+?\)\s*"),re.compile(r"^\s*\[(\d{1
 
 def extract_badge(title, urgent=False):
     """Return (display_title, badge_text_or_None). Many apps (mail, chat) put an unread count at
-    the start of the window title, e.g. '(3) Inbox'; i3 also flags windows as urgent."""
+    the start of the window title, e.g. '(3) Inbox'; sway also flags windows as urgent."""
     t=title or ""
     for pattern in _BADGE_PATTERNS:
         m=pattern.match(t)

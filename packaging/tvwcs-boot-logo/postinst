@@ -1,0 +1,9 @@
+#!/bin/sh
+# Make TVWCS's logo the boot screen: the default Plymouth theme (in the initramfs), with GRUB's "splash" option.
+set -e
+if [ "$1" = configure ]; then
+    plymouth-set-default-theme tvwcs || true
+    if command -v update-initramfs >/dev/null 2>&1; then update-initramfs -u || true; fi
+    if command -v update-grub >/dev/null 2>&1 && [ -f /boot/grub/grub.cfg ]; then update-grub || true; fi
+fi
+exit 0

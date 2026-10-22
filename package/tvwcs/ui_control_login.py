@@ -1,21 +1,12 @@
-"""Settings > User: the account (name, password), the automatic login, TVWCS's login screen (update, switch, remove)
-and the application to open at login. The system side is loginscreen.py and account.py; the changes that need root go
-through the window's run_as_root."""
+"""Settings > User: the account (name, password), the automatic login, the login screen, the TVWCS logo at startup and
+the application to open at login. The system side is loginscreen.py, bootlogo.py and account.py; the changes that need
+root go through the window's run_as_root."""
 from __future__ import annotations
-import os, shutil
-from tvwcs import __version__, account, loginscreen
-from tvwcs.model import CONFIG_HOME, STARTUP_LABELS, STARTUP_MODES, ConfigStore, startup_choices
+from tvwcs import __version__, account, bootlogo, loginscreen, selfupdate
+from tvwcs.model import STARTUP_LABELS, STARTUP_MODES, ConfigStore, startup_choices
 from tvwcs.ui_control import in_background
 
-CONFIG_FILE=CONFIG_HOME/"tvwcs"/"config.json"
-
 def me() -> str: return account.read().login
-def wm(env=None) -> str:
-    env=os.environ if env is None else env
-    return "sway" if env.get("SWAYSOCK") else "i3"
-def my_session() -> str:
-    """The session that starts TVWCS in TV mode with the window manager running now: TVWCS's own session."""
-    return loginscreen.tvwcs_session(loginscreen.sessions(),wm())
 
 def run_root(page, args, label, done, packages=()):
     """Run `python3 -m tvwcs.loginscreen args` as root (installing `packages` first), then done(problem or "")."""
@@ -24,8 +15,6 @@ def run_root(page, args, label, done, packages=()):
         page.set_status("")
         if code: done(("\n".join(lines[-6:]) or tail or f"{label} did not work.").strip()); return
         done("")
-    if packages and not shutil.which("apt-get"):
-        done(f"This needs {', '.join(packages)} (the Debian names). Install them with your package manager first."); return
     page.set_status(f"{label}…")
     page.win.run_as_root(loginscreen.root_command(args,packages),label,lines.append,finished)
 
@@ -33,119 +22,81 @@ def run_root(page, args, label, done, packages=()):
 def role(a) -> str: return "Administrator" if a.admin else "Standard User"
 
 def read_user():
-    a=account.read(); st=loginscreen.status(__version__,ConfigStore().settings); who,_sid=loginscreen.autologin()
-    return (a,st,who,loginscreen.autologin_supported(st["current"]))
+    return (account.read(),loginscreen.status(),bootlogo.installed())
 
 def draw_user(page, state):
-    a,st,who,supported=state; cur=st["current"]
+    a,st,logo=state; cur=st["current"]; who,_sid=st["autologin"]
     page.section("ACCOUNT")
     page.row("Name",a.full_name or "Not set",lambda:change_name(page,a),detail="Shown on the login screen",ident="user:name")
     page.row("User name",a.login,None,detail="Used to log in and for the home folder; it cannot be changed here",ident="user:login")
     page.row("Password","Change",lambda:change_password(page),detail="Asks for the current one first",ident="user:password")
     page.section("LOGGING IN")
-    if supported:
+    if loginscreen.autologin_supported(cur):
         mine=who==a.login
-        page.row("Log in automatically after startup","On" if mine else f"On for {who}" if who else "Off",lambda:toggle_autologin(page,a,cur,mine),
-                 ident="user:auto",value_css="state-on" if mine else "setting-value")
-    else:
+        page.row("Log in automatically after startup","On" if mine else f"On for {who}" if who else "Off",lambda:toggle_autologin(page,a,mine),
+                 detail="Straight into TVWCS, without the login screen",ident="user:auto",value_css="state-on" if mine else "setting-value")
+    elif cur:
         page.row("Log in automatically after startup","Not here",None,detail=f"Set it in {loginscreen.name(cur)}'s own settings",ident="user:auto")
-    draw_login_screen(page,st)
+    others=[u for u in st["installed"] if u!=cur]
+    page.row("Login screen",loginscreen.name(cur) if cur else "None",(lambda:change_login_screen(page,cur,others)) if others else None,
+             detail="Choose this to switch to another one installed here" if others else "",ident="user:screen")
+    if cur and not loginscreen.wayland_ok(cur):
+        page.note(f"{loginscreen.name(cur)} cannot start sway reliably. greetd or SDDM can.","error")
+    if st["old_greeter"]:
+        page.row("Remove TVWCS's old login screen","",lambda:remove_old_greeter(page),ident="user:old",
+                 detail="TVWCS 4's login screen is still set up; TVWCS 5 no longer has one",icon="user-trash-symbolic",fallback="✕")
+    page.row("TVWCS logo at startup","On" if logo else "Off",lambda:toggle_boot_logo(page,logo),ident="user:logo",
+             detail="Shows the TVWCS logo while the computer starts, instead of lines of text",value_css="state-on" if logo else "setting-value")
     draw_startup(page)
 
-def toggle_autologin(page, a, cur, mine):
-    turning_on=not mine
-    args=["autologin",a.login,my_session()] if turning_on else ["autologin","--off"]
+def toggle_autologin(page, a, mine):
+    args=["autologin",a.login,loginscreen.SESSION] if not mine else ["autologin","--off"]
     def done(problem):
         if problem: page.win.notice("Log in automatically",problem); return
-        if cur=="": loginscreen.set_start_lines(wm() if turning_on else "")
         page.refresh(quiet=True)
-    label="Turning on the automatic login" if turning_on else "Turning off the automatic login"
-    run_root(page,args,label,done)
+    run_root(page,args,"Turning off the automatic login" if mine else "Turning on the automatic login",done)
 
-# ---------------------------------------------------------------------- the login screen
-def draw_login_screen(page, st):
-    """The Login screen row: the one in use, whether TVWCS's copy is out of date, and what it can change to."""
-    cur=st["current"]; others=[u for u in st["installed"] if u!=cur]
-    if st["ours"]:
-        stale=st["outdated"] or st["look_changed"]
-        value="Out of date" if st["outdated"] else "Needs updating" if stale else "TVWCS"
-        detail=("TVWCS's copy is older than this version: choose this to update it" if st["outdated"] else
-                "Its colours differ from TVWCS's now: choose this to update it" if stale else
-                "TVWCS's login screen"+(", or switch to another one" if others else ""))
-        page.row("Login screen",value,(lambda:change_login_screen(page,st)) if stale or others else None,detail=detail,ident="user:screen",
-                 value_css="error" if st["outdated"] else "setting-value")
-    else:
-        page.row("Login screen",loginscreen.name(cur) if cur else "None",lambda:change_login_screen(page,st),
-                 detail="Choose this to use TVWCS's login screen"+(" or another one" if others else ""),ident="user:screen")
-        if wm()=="sway" and cur and not loginscreen.wayland_ok(cur):
-            page.note(f"{loginscreen.name(cur)} cannot start sway reliably. TVWCS's login screen, or SDDM, can.","error")
+def change_login_screen(page, cur, others):
+    def picked(unit):
+        def done(problem):
+            if problem: page.win.notice("Login screen",problem); return
+            page.win.notice("Login screen",f"From the next start, the computer uses {loginscreen.name(unit)}.",lambda:page.refresh(quiet=True))
+        page.win.confirm(f"Switch to {loginscreen.name(unit)}?",f"From the next start the computer uses {loginscreen.name(unit)}. It asks for your password.",
+                         "Switch",lambda:run_root(page,["switch",unit],"Changing the login screen",done),danger=False)
+    page.win.choose_option("Login screen",[(u,f"Switch to {loginscreen.name(u)}") for u in others],None,picked)
 
-def change_login_screen(page, st):
-    cur=st["current"]; options=[]
-    if st["ours"] and (st["outdated"] or st["look_changed"]): options.append(("update","Update TVWCS's login screen to this version"))
-    if not st["ours"]: options.append(("tvwcs","Use TVWCS's login screen"))
-    for unit in st["installed"]:
-        if unit!=cur: options.append((f"switch:{unit}",f"Switch to {loginscreen.name(unit)}"))
-    if st["ours"] and st["installed"]:   # never without another one to go to
-        fb=st["fallback"] or st["installed"][0]
-        options.append((f"remove:{fb}",f"Remove TVWCS's login screen (back to {loginscreen.name(fb)})"))
-    def picked(key):
-        what,_,unit=key.partition(":")
-        if what=="update": update_login_screen(page)
-        elif what=="tvwcs": turn_login_on(page,st)
-        elif what=="switch" and st["ours"]: turn_login_off(page,unit,keep_files=True)
-        elif what=="switch": switch_login_screen(page,unit)
-        elif what=="remove": turn_login_off(page,unit)
-    page.win.choose_option("Login screen",options,None,picked)
-
-def _carried_autologin():
-    """The automatic login to keep when the login screen changes: this user's, when it is on now."""
-    who,_sid=loginscreen.autologin()
-    return (who,my_session()) if who and who==me() else None
-
-def turn_login_on(page, st):
-    cur=st["current"]; missing=st["packages"]; auto=_carried_autologin()
-    text=(f"TVWCS's login screen replaces {loginscreen.name(cur)} from the next start. {loginscreen.name(cur)} stays installed." if cur else
-          "TVWCS's login screen shows from the next start.")
-    if missing: text+=f" It needs {', '.join(missing)}, which will be installed now."
-    args=["enable","--config",str(CONFIG_FILE),"--previous",cur,"--session",me(),my_session()]+(["--autologin",*auto] if auto else [])
+def remove_old_greeter(page):
     def done(problem):
         if problem: page.win.notice("Login screen",problem); return
-        if auto and not cur: loginscreen.set_start_lines("")   # the console's start lines are greetd's job now
-        page.win.notice("Login screen","TVWCS's login screen shows from the next start.",lambda:page.refresh(quiet=True))
-    page.win.confirm("Use TVWCS's login screen?",text+" It asks for your password.","Use it",
-                     lambda:run_root(page,args,"Turning on the login screen",done,missing),danger=False)
-
-def update_login_screen(page):
-    def done(problem):
-        if problem: page.win.notice("Login screen",problem)
         page.refresh(quiet=True)
-    run_root(page,["update","--config",str(CONFIG_FILE)],"Updating the login screen",done)
+    page.win.confirm("Remove TVWCS's old login screen?","Another login screen installed here takes over from the next start; without one, "
+                     "greetd's text login does, and the automatic login is kept. It asks for your password.","Remove",
+                     lambda:run_root(page,["migrate"],"Removing the old login screen",done),danger=False)
 
-def switch_login_screen(page, unit):
-    def done(problem):
-        if problem: page.win.notice("Login screen",problem); return
-        page.win.notice("Login screen",f"From the next start, the computer uses {loginscreen.name(unit)}.",lambda:page.refresh(quiet=True))
-    page.win.confirm(f"Switch to {loginscreen.name(unit)}?",f"From the next start the computer uses {loginscreen.name(unit)}. It asks for your password.",
-                     "Switch",lambda:run_root(page,["switch",unit],"Changing the login screen",done),danger=False)
-
-def turn_login_off(page, unit, keep_files=False):
-    """Go from TVWCS's login screen to `unit`. keep_files: only switch (TVWCS's stays installed, to switch back to);
-    otherwise TVWCS's login screen is removed."""
-    auto=_carried_autologin()
-    keep=auto if auto and loginscreen.autologin_supported(unit) else None
-    args=["disable","--to",unit]+(["--autologin",*keep] if keep else [])
-    if keep_files: args=["switch",unit]
-    def done(problem):
-        if problem: page.win.notice("Login screen",problem); return
-        after=f"From the next start, the computer uses {loginscreen.name(unit)}."
-        if auto and not keep and not keep_files: after+=f" The automatic login could not be kept: set it in {loginscreen.name(unit)}'s own settings."
-        page.win.notice("Login screen",after,lambda:page.refresh(quiet=True))
-    title=f"Switch to {loginscreen.name(unit)}?" if keep_files else "Remove TVWCS's login screen?"
-    text=(f"From the next start the computer uses {loginscreen.name(unit)}. TVWCS's login screen stays installed, to switch back to."
-          if keep_files else f"TVWCS's login screen is removed, and from the next start the computer uses {loginscreen.name(unit)}.")
-    page.win.confirm(title,text+" It asks for your password.","Switch" if keep_files else "Remove",
-                     lambda:run_root(page,args,"Changing the login screen",done),danger=not keep_files)
+def toggle_boot_logo(page, on):
+    lines=[]
+    def finished(folder):
+        def done(code, tail):
+            if folder: selfupdate.discard(folder)
+            page.set_status("")
+            if code: page.win.notice("TVWCS logo at startup",("\n".join(lines[-4:]) or tail or "It did not work.").strip())
+            else: page.win.notice("TVWCS logo at startup",("It shows" if not on else "The start-up text shows")+" from the next start.")
+            page.refresh(quiet=True)
+        return done
+    if on:
+        page.win.confirm("Turn off the TVWCS logo?","The computer shows its start-up text again from the next start. It asks for your password.","Turn off",
+                         lambda:(page.set_status("Removing the logo…"),page.win.run_as_root(bootlogo.remove_argv(),"Removing the startup logo",lines.append,finished(None))),
+                         danger=False)
+        return
+    def go():
+        page.set_status("Downloading the logo…")
+        def got(result):
+            folder,files=result; page.set_status("Installing the logo…")
+            page.win.run_as_root(bootlogo.install_argv(files),"Installing the startup logo",lines.append,finished(folder))
+        def failed(exc): page.set_status(""); page.win.notice("TVWCS logo at startup",f"The logo could not be downloaded: {exc}")
+        in_background(lambda:bootlogo.download(__version__),got,failed)
+    page.win.confirm("Show the TVWCS logo at startup?","Installs the tvwcs-boot-logo package (with Plymouth, which draws it) from TVWCS's GitHub release. "
+                     "It asks for your password.","Turn on",go,danger=False)
 
 # ---------------------------------------------------------------------- the application to open at login
 def draw_startup(page):

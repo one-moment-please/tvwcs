@@ -72,15 +72,12 @@ The rest is done from the other computer.
 
    | Question | Answer |
    |---|---|
-   | **Which should TVWCS use? 1) sway (recommended) 2) i3 3) Both** | Enter (**sway**). Choose i3 if you mostly play games or use older apps. |
-   | **Login screen** | On a fresh Debian with no desktop there is none, so TVWCS's own is installed. It lists who can log in and takes the password from the remote. |
-   | **Your usual sway session … Set one up? 1) Yes, with TVWCS in it 2) Yes, without TVWCS 3) Not now** | Enter (**Not now**). The TVWCS session at the login screen is the one for the TV. |
-   | **Which key should be the window manager's modifier?** and **Use the keyboard layout …?** | Enter for Super and your current layout, or choose others. |
-   | **Let TVWCS sleep, reboot and shut down without asking for your password?** | Your choice. `y` is handy with a remote. |
-   | **Ready to install … Go ahead?** | Enter (yes). sudo asks for your password. |
-   | **Show the login screen now?** | Enter (yes). |
+   | **Which version?** | Enter (the latest release). |
+   | **Show the TVWCS logo at startup?** | `y` for the logo instead of lines of text while the computer starts. |
+   | **Log … in automatically into TVWCS at startup?** | Enter (yes). On a fresh Debian with no desktop there is no login screen, so greetd is installed with a text login, for after you log out. |
+   | **Go ahead?** | Enter (yes). sudo asks for your password. |
 
-5. At the login screen, choose **TVWCS (sway)** (it is selected already) and type your password with the remote or a keyboard. To skip the login screen at every start, open **Settings › User** (channel 000) and turn on **Log in automatically after startup**. Anyone who switches the computer on then gets your session, which suits a TV.
+5. Restart (`sudo reboot`). The computer logs straight into TVWCS. To log in by hand instead, open **Settings › User** (channel 000) and turn off **Log in automatically after startup**; greetd then asks for your user name and password as text. Anyone who switches the computer on gets your session with the automatic login, which suits a TV.
 
 Type channel 000 in the Quick Menu to open **Settings**.
 
@@ -98,5 +95,5 @@ Type channel 000 in the Quick Menu to open **Settings**.
 - **`Could not resolve hostname livingroom.local`:** use the IP address. Check that Avahi runs on the TV computer (`systemctl status avahi-daemon`). Some routers block these announcements between Wi-Fi and wired devices.
 - **`Connection refused`:** the SSH server is not running. On the TV computer: `sudo systemctl enable --now ssh`.
 - **The installer asks no questions:** you signed in without `-t`.
-- **The TV still shows a text login:** someone was logged in on that screen during the install. Log out there (`exit`) or restart (`sudo reboot`).
+- **The TV still shows a text login:** restart (`sudo reboot`): greetd takes over from the next start.
 - **No sound:** restart once (`sudo reboot`), then choose the output on the **Sound** page of Settings. HDMI outputs not in use yet are listed there too.

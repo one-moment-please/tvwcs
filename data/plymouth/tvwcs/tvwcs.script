@@ -1,0 +1,45 @@
+# TVWCS's boot logo (Plymouth's script plugin): the TVWCS logo in the middle of a black screen. A disk password, when
+# one is asked for, is typed under it. Installed by the tvwcs-boot-logo package (Settings > User > Boot logo).
+
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
+
+logo.image = Image("logo.png");
+logo.width = Window.GetWidth() * 0.36;
+logo.height = logo.image.GetHeight() * logo.width / logo.image.GetWidth();
+logo.image = logo.image.Scale(logo.width, logo.height);
+logo.sprite = Sprite(logo.image);
+logo.x = Window.GetX() + (Window.GetWidth() - logo.width) / 2;
+logo.y = Window.GetY() + (Window.GetHeight() - logo.height) / 2;
+logo.sprite.SetPosition(logo.x, logo.y, 1);
+
+# ---- a password (an encrypted disk), and questions
+fun show_prompt(text, answer) {
+    prompt.sprite = Sprite(Image.Text(text, 1, 1, 1, 1, "Sans 18"));
+    prompt.sprite.SetPosition(Window.GetX() + (Window.GetWidth() - prompt.sprite.GetImage().GetWidth()) / 2, logo.y + logo.height + 60, 2);
+    answer_image = Image.Text(answer + " ", 1, 1, 1, 1, "Sans 22");
+    entry.sprite = Sprite(answer_image);
+    entry.sprite.SetPosition(Window.GetX() + (Window.GetWidth() - answer_image.GetWidth()) / 2, logo.y + logo.height + 110, 2);
+}
+fun hide_prompt() {
+    prompt.sprite = NULL;
+    entry.sprite = NULL;
+}
+fun password_callback(text, bullets) {
+    stars = "";
+    for (i = 0; i < bullets; i++) stars += "*";
+    if (text == "") text = "Password";
+    show_prompt(text, stars);
+}
+fun question_callback(text, answer) { show_prompt(text, answer); }
+fun normal_callback() { hide_prompt(); }
+Plymouth.SetDisplayPasswordFunction(password_callback);
+Plymouth.SetDisplayQuestionFunction(question_callback);
+Plymouth.SetDisplayNormalFunction(normal_callback);
+
+# ---- messages (such as a disk check)
+fun message_callback(text) {
+    message.sprite = Sprite(Image.Text(text, 0.6, 0.6, 0.6, 1, "Sans 14"));
+    message.sprite.SetPosition(Window.GetX() + (Window.GetWidth() - message.sprite.GetImage().GetWidth()) / 2, Window.GetY() + Window.GetHeight() - 80, 2);
+}
+Plymouth.SetMessageFunction(message_callback);

@@ -1,36 +1,22 @@
-"""Power and sleep without a display: the idle times, what is due when, and reading xset, logind, pactl and
-systemd-inhibit from saved samples."""
+"""Power and sleep without a display: the idle times, what is due when, swayidle's command, and reading logind, pactl
+and systemd-inhibit from saved samples."""
 import os, tempfile, unittest
 
 from tvwcs import power
 
-XSET="""Screen Saver:
-  prefer blanking:  yes    allow exposures:  yes
-  timeout:  600    cycle:  600
-DPMS (Energy Star):
-  Standby: 600    Suspend: 900    Off: 1200
-  DPMS is Enabled
-  Monitor is On
-"""
-
 class PowerTests(unittest.TestCase):
     def test_idle_option_is_cleaned(self):
-        self.assertEqual(power.clean_idle(None),{"screensaver":0,"screen_off":None,"lock":0,"sleep":0})
-        self.assertEqual(power.clean_idle({"screen_off":0,"lock":300,"sleep":"x"}),{"screensaver":0,"screen_off":0,"lock":300,"sleep":0})
+        self.assertEqual(power.clean_idle(None),{"screen_off":0,"lock":0,"sleep":0})
+        self.assertEqual(power.clean_idle({"screen_off":None,"lock":300,"sleep":"x","screensaver":60}),{"screen_off":0,"lock":300,"sleep":0})
         self.assertEqual(power.clean_idle({"lock":True,"sleep":-5})["lock"],0)
     def test_what_is_due_runs_once_per_idle_period_in_time_order(self):
         times={"screen_off":600,"lock":300,"sleep":1800}
         self.assertEqual(power.due(times,299,set()),[])
         self.assertEqual(power.due(times,700,set()),["lock","screen_off"])
         self.assertEqual(power.due(times,700,{"lock"}),["screen_off"])
-        self.assertEqual(power.due({"screen_off":None,"lock":0,"sleep":60},120,set()),["sleep"])
+        self.assertEqual(power.due({"screen_off":0,"lock":0,"sleep":60},120,set()),["sleep"])
     def test_durations(self):
         self.assertEqual([power.duration_text(v) for v in (0,60,300,3600,5400,7200)],["Never","1 minute","5 minutes","1 hour","90 minutes","2 hours"])
-    def test_xset(self):
-        x=power.parse_xset(XSET)
-        self.assertEqual((x.saver,x.dpms,x.dpms_off),(600,True,600))
-        off=power.parse_xset("timeout:  0    cycle:  600\nDPMS (Energy Star):\n  Standby: 0    Suspend: 0    Off: 0\n  DPMS is Disabled\n")
-        self.assertEqual((off.saver,off.dpms,off.dpms_off),(0,False,0))
     def test_logind(self):
         l=power.parse_logind({"IdleAction":'s "suspend"',"IdleActionUSec":"t 1800000000","HandleLidSwitch":'s "suspend"'})
         self.assertEqual((l.available,l.idle_action,l.idle_seconds,l.lid),(True,"suspend",1800,"suspend"))
@@ -45,53 +31,6 @@ class PowerTests(unittest.TestCase):
             os.makedirs(os.path.join(acpi,"PNP0C0D:00")); self.assertTrue(power.has_lid((proc,acpi)))
             os.makedirs(os.path.join(proc,"LID0")); self.assertTrue(power.has_lid((proc,os.path.join(tmp,"none"))))
 
-    def test_xss_lock_can_use_the_tvwcs_lock_screen_and_go_back(self):
-        config="# i3 config\nexec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork\nexec --no-startup-id nm-applet\n"
-        mine=power.with_xss_locker(config,"/opt/tvwcs/tvwcs lock --nofork")
-        self.assertEqual(power.xss_lock_locker(mine),"/opt/tvwcs/tvwcs lock --nofork"); self.assertIn(power.XSS_LOCKER_NOTE+"i3lock --nofork\n",mine)
-        self.assertEqual(power.with_xss_locker(mine,"/new/tvwcs lock --nofork").count(power.XSS_LOCKER_NOTE),1)   # moved install: still one note
-        self.assertEqual(power.with_xss_locker(power.with_xss_locker(mine,"/new/tvwcs lock --nofork"),""),config)
-        self.assertEqual(power.with_xss_locker(config,""),config)
-        self.assertEqual(power.with_xss_locker("exec xss-lock\n","x"),"exec xss-lock\n")   # no locker given: left alone
-
-    def test_xss_lock_is_commented_out_of_the_i3_config(self):
-        config="# i3 config\nexec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork\n#exec xss-lock -- i3lock\nexec_always xss-lock -l -- i3lock\nexec --no-startup-id nm-applet\n"
-        self.assertEqual(power.xss_lock_lines(config),[1,3])
-        changed=power.without_xss_lock(config)
-        self.assertEqual(power.xss_lock_lines(changed),[])
-        self.assertIn("# exec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork\n",changed)
-        self.assertIn("exec --no-startup-id nm-applet\n",changed); self.assertEqual(changed.count(power.XSS_NOTE),2)
-        with tempfile.TemporaryDirectory() as tmp:
-            path=os.path.join(tmp,"config"); open(path,"w").write(config)
-            env={"HOME":tmp,"XDG_CONFIG_HOME":os.path.join(tmp,"none")}
-            self.assertIsNone(power.i3_config_path(env))
-            os.makedirs(os.path.join(tmp,".i3")); os.rename(path,os.path.join(tmp,".i3","config")); path=power.i3_config_path(env)
-            self.assertEqual(path,os.path.join(tmp,".i3","config"))
-            self.assertEqual(power.stop_xss_lock(path),""); self.assertEqual(open(path).read(),changed)
-            self.assertEqual(open(path+".before-tvwcs").read(),config)
-            self.assertEqual(power.stop_xss_lock(path),""); self.assertEqual(open(path+".before-tvwcs").read(),config)   # the first copy is kept
-
-    def test_xss_lock_fix_goes_to_tvwcs_session_config_in_its_own_session(self):
-        """In TVWCS's own session (tvwcs-session exports TVWCS_SESSION), the config i3 runs with is TVWCS's, not the user's."""
-        with tempfile.TemporaryDirectory() as tmp:
-            usual=os.path.join(tmp,".config","i3","config"); os.makedirs(os.path.dirname(usual)); open(usual,"w").write("exec xss-lock -- i3lock\n")
-            session=os.path.join(tmp,".config","tvwcs","i3-session.conf"); os.makedirs(os.path.dirname(session))
-            env={"HOME":tmp}
-            self.assertEqual(power.i3_config_path(env),usual)
-            self.assertIsNone(power.i3_config_path({**env,"TVWCS_SESSION":"i3"}))   # never falls back to the usual one
-            open(session,"w").write("exec xss-lock -- i3lock\n")
-            self.assertEqual(power.i3_config_path({**env,"TVWCS_SESSION":"i3"}),session)
-            other=os.path.join(tmp,"elsewhere.conf"); open(other,"w").write("")
-            self.assertEqual(power.i3_config_path({**env,"TVWCS_SESSION":"i3","TVWCS_SESSION_CONFIG":other}),other)
-            self.assertEqual(power.stop_xss_lock(power.i3_config_path({**env,"TVWCS_SESSION":"i3"})),"")
-            self.assertEqual(open(usual).read(),"exec xss-lock -- i3lock\n"); self.assertIn("# exec xss-lock",open(session).read())
-    def test_xss_lock_running(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            for pid,name in (("1","systemd"),("42","i3"),("self","bash")):
-                os.makedirs(os.path.join(tmp,pid)); open(os.path.join(tmp,pid,"comm"),"w").write(name+"\n")
-            self.assertFalse(power.xss_lock_running(tmp))
-            os.makedirs(os.path.join(tmp,"77")); open(os.path.join(tmp,"77","comm"),"w").write("xss-lock\n")
-            self.assertTrue(power.xss_lock_running(tmp))
     def test_sound_and_inhibitors_keep_it_awake(self):
         self.assertTrue(power.parse_playing("Sink Input #12\n\tDriver: protocol-native.c\n\tCorked: no\n"))
         self.assertFalse(power.parse_playing("Sink Input #12\n\tCorked: yes\n"))
@@ -102,12 +41,9 @@ class PowerTests(unittest.TestCase):
         argv=power.swayidle_argv({"screen_off":600,"lock":0,"sleep":1800},"/opt/tv wcs/bin/tvwcs")
         self.assertEqual(argv,["swayidle","-w","timeout","600","'/opt/tv wcs/bin/tvwcs' idle screen_off","resume","'/opt/tv wcs/bin/tvwcs' idle resume",
                                "timeout","1800","'/opt/tv wcs/bin/tvwcs' idle sleep"])
-        self.assertIsNone(power.swayidle_argv({"screensaver":0,"screen_off":None,"lock":0,"sleep":0},"tvwcs"))
-        self.assertIsNone(power.swayidle_argv({"screensaver":300,"screen_off":None,"lock":0,"sleep":0},"tvwcs",saver=False))   # no gtk4-layer-shell
-        self.assertEqual(power.swayidle_argv({"screensaver":300,"screen_off":None,"lock":0,"sleep":0},"tvwcs"),
-                         ["swayidle","-w","timeout","300","'tvwcs' idle screensaver"])
+        self.assertIsNone(power.swayidle_argv({"screen_off":0,"lock":0,"sleep":0},"tvwcs"))
+        self.assertEqual(power.swayidle_argv({"screen_off":0,"lock":300,"sleep":0},"tvwcs"),["swayidle","-w","timeout","300","'tvwcs' idle lock"])
 
-if __name__=="__main__": unittest.main()
 
 class BatteryTests(unittest.TestCase):
     def supply(self, files):
@@ -150,33 +86,4 @@ class BatteryTests(unittest.TestCase):
         self.assertEqual(power.critical(settings,low),"")
         self.assertEqual(power.clean_critical({"action":"explode","percent":0}),{"action":"shutdown","percent":5})
 
-class XTakeOverTests(unittest.TestCase):
-    """TVWCS keeps X's own screen times before switching them off, and gives them back when the screen is left to the
-    system again (a laptop whose battery times leave it to the system)."""
-    def test_saved_times(self):
-        self.assertEqual(power.parse_x_saved(XSET),"600 600 900 1200 1")
-        self.assertEqual(power.parse_x_saved(XSET.replace("Enabled","Disabled")),"600 600 900 1200 0")
-        self.assertEqual(power.parse_x_saved("no X here"),"")
-    def test_restore_command(self):
-        self.assertEqual(power.x_restore_argv("600 600 900 1200 1"),["xset","s","600","+dpms","dpms","600","900","1200"])
-        self.assertEqual(power.x_restore_argv("0 0 0 0 0"),["xset","s","0","-dpms","dpms","0","0","0"])
-        for bad in ("","600 600","a b c d e","1 2 3 4 5 6"): self.assertIsNone(power.x_restore_argv(bad))
-    def test_take_over_then_give_back(self):
-        from unittest import mock
-        from tvwcs.control_cmd import Result
-        calls=[]
-        def run(argv, timeout=15):
-            calls.append(argv)
-            return Result(True,0,XSET,"") if argv==["xset","q"] else Result(True,0,"","")
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(power,"have",return_value=True), mock.patch.object(power,"run",run):
-            env={"XDG_RUNTIME_DIR":tmp}; saved=os.path.join(tmp,power.X_SAVED_NAME)
-            power.x_take_over(None,env)   # never taken over: nothing to give back
-            self.assertEqual(calls,[])
-            power.x_take_over(0,env)
-            self.assertEqual(calls,[["xset","q"],["xset","s","off","+dpms","dpms","0","0","0"]])
-            with open(saved) as f: self.assertEqual(f.read(),"600 600 900 1200 1")
-            calls.clear(); power.x_take_over(600,env)   # kept once: X is already switched off by then
-            self.assertEqual(calls,[["xset","s","off","+dpms","dpms","0","0","0"]])
-            calls.clear(); power.x_take_over(None,env)
-            self.assertEqual(calls,[["xset","s","600","+dpms","dpms","600","900","1200"]])
-            self.assertFalse(os.path.exists(saved))
+if __name__=="__main__": unittest.main()

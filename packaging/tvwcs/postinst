@@ -1,0 +1,5 @@
+#!/bin/sh
+# Compile TVWCS's Python files once, as root: its users cannot write the bytecode next to them.
+set -e
+if [ "$1" = configure ]; then python3 -m compileall -q /usr/lib/tvwcs/tvwcs >/dev/null 2>&1 || true; fi
+exit 0

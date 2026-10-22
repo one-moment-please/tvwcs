@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=TVWCS
+Comment=TVWCS in TV mode: a sway session made for a TV and a remote
+Exec=/usr/bin/tvwcs-session
+TryExec=sway
+DesktopNames=sway
+Icon=tvwcs

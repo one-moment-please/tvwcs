@@ -10,4 +10,5 @@ venv/
 # release artifacts (built by scripts/make-release.sh)
 resources/tvwcs.tar.gz
 resources/*.zip
+resources/*.deb
 !resources/TVWCS-2.5.0.zip

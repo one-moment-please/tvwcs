@@ -83,14 +83,13 @@ def parse_mounts(text):
     return drives
 
 def window_manager(env=None):
-    """'i3 4.23', 'sway 1.9', or what XDG_CURRENT_DESKTOP says."""
+    """'sway 1.10', or what XDG_CURRENT_DESKTOP says."""
     env=os.environ if env is None else env
-    for tool,marker in (("sway","SWAYSOCK"),("i3","I3SOCK")):
-        if env.get(marker) or (tool=="i3" and env.get("DESKTOP_SESSION","").startswith("i3")) or (tool=="sway" and env.get("XDG_CURRENT_DESKTOP","").lower()=="sway"):
-            if have(tool):
-                m=re.search(r"version\s+(\S+)",run([tool,"--version"],timeout=5).out)
-                if m: return f"{tool} {m.group(1).rstrip(',')}"
-            return tool
+    if env.get("SWAYSOCK") or env.get("XDG_CURRENT_DESKTOP","").lower()=="sway":
+        if have("sway"):
+            m=re.search(r"version\s+(\S+)",run(["sway","--version"],timeout=5).out)
+            if m: return f"sway {m.group(1).rstrip(',')}"
+        return "sway"
     return env.get("XDG_CURRENT_DESKTOP") or env.get("DESKTOP_SESSION") or ""
 
 def battery(root="/sys/class/power_supply"):

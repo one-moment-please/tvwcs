@@ -11,12 +11,11 @@ class SystemActionTests(unittest.TestCase):
         self.assertEqual(lock_command("slock -x",{},lambda c:None),["slock","-x"])
     def test_lock_autodetect_and_fallback(self):
         have=lambda names:(lambda c: "/usr/bin/"+c if c in names else None)
-        self.assertEqual(lock_command("",{},have({"i3lock"})),["i3lock","-c","000000"])
+        self.assertEqual(lock_command("",{},have({"swaylock","loginctl"})),["swaylock","-f","-c","000000"])
         self.assertEqual(lock_command("",{},have({"loginctl"})),["loginctl","lock-session"])
         self.assertIsNone(lock_command("",{},have(set())))   # nothing to lock with: Settings says so
-        self.assertEqual(lock_command("",{"SWAYSOCK":"/s"},have({"swaymsg","swaylock","i3lock"}))[0],"swaylock")
     def test_logout_command(self):
-        self.assertEqual(logout_command({},lambda c:None),["i3-msg","exit"])
+        self.assertIsNone(logout_command({},lambda c:None))
         self.assertEqual(logout_command({"SWAYSOCK":"/s"},lambda c:"/x"),["swaymsg","exit"])
     def test_command_for(self):
         have=lambda names:(lambda c: "/usr/bin/"+c if c in names else None)

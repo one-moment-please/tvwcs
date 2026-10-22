@@ -1,0 +1,15 @@
+Package: tvwcs
+Version: @VERSION@
+Architecture: all
+Maintainer: TVWCS <https://github.com/one-moment-please/tvwcs>
+Section: x11
+Priority: optional
+Homepage: https://github.com/one-moment-please/tvwcs
+Depends: python3, python3-gi, gir1.2-gtk-4.0, sway, swayidle, swaylock, pulseaudio-utils, network-manager, udisks2, libglib2.0-bin, xdg-desktop-portal, xdg-desktop-portal-gtk, adwaita-icon-theme, fonts-open-sans
+Recommends: pipewire-pulse | pulseaudio, wireplumber, bluez, greetd
+Suggests: tvwcs-boot-logo
+Installed-Size: @SIZE@
+Description: TV launcher, workspace switcher and settings for sway, made for a remote
+ TVWCS is a Metro-style Quick Menu and applications guide for sway, with a Settings app for sound, displays, power,
+ Bluetooth, the network, updates and more, all usable with a TV remote. Its "TVWCS" session at the login screen runs
+ it in TV mode; included in a usual sway session it runs in desktop mode.

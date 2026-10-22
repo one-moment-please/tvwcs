@@ -44,9 +44,6 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.launching=set(); self._launch_slots=[]   # profiles starting now: their buttons show a spinner (set_launching)
         self._reset_nav()
         self.set_decorated(False); self.set_hide_on_close(True); self.set_resizable(True); self.add_css_class("tvwcs-window")
-        # The Quick Menu grows and shrinks upwards from the bottom of the screen (main.fit_quick_menu): keep the status
-        # row still while it does, instead of a frame drawn from the old top
-        self.connect("realize",lambda w:cursor.keep_bottom_on_resize(w.get_surface()))
         self.pointer=PointerWatch(self,lambda:cursor.hide_ms(self.app.store.settings))   # hover colours only while the mouse is in use
         key=Gtk.EventControllerKey(); key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key.connect("key-pressed",self._key_pressed); key.connect("key-released",self._key_released); self.add_controller(key)
@@ -498,7 +495,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         for kind,item in rows:
             if kind=="favorite": content.append(self._favorite_row(item))
             else: content.append(self._window_row(item.windows[0]) if len(item.windows)==1 else self._workspace_row(item,outputs))
-        if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the i3 or sway window manager."))
+        if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the sway window manager."))
         if not rows:
             content.append(muted_label("Nothing is open and there are no favorites yet. Press → (or ⊞ in the bottom-right corner) to see your installed applications."))
     def _keep_at_bottom(self,adj):

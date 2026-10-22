@@ -1,252 +1,107 @@
-"""The Settings app's Displays page without a display: xrandr and swaymsg output parsed from saved samples, the
-arrangement kept when a resolution changes, the commands it would run, and the settings saved for the next login."""
+"""The Settings app's Displays page without a display: swaymsg output parsed from saved samples, the arrangement kept
+when a resolution changes, the commands it would run, and the settings saved for the next login."""
 import json, tempfile, unittest
 from pathlib import Path
 
 from tvwcs import control_display as disp
 
-XRANDR="""Screen 0: minimum 320 x 200, current 4480 x 1440, maximum 16384 x 16384
-HDMI-1 connected primary 1920x1080+0+180 (normal left inverted right x axis y axis) 527mm x 296mm
-   1920x1080     60.00*+  50.00    59.94
-   1920x1080i    60.00    50.00
-   1280x720      60.00    59.94    50.00
-   1024x768      60.00
-DP-1 connected 2560x1440+1920+0 (normal left inverted right x axis y axis) 597mm x 336mm
-   2560x1440     59.95 + 143.97*
-   1920x1080     60.00    59.94
-DP-2 disconnected (normal left inverted right x axis y axis)
-VGA-1 connected (normal left inverted right x axis y axis)
-   1024x768      60.00 +
-   800x600       60.32    56.25
-"""
-ROTATED="""Screen 0: minimum 320 x 200, current 1080 x 1920, maximum 16384 x 16384
-HDMI-1 connected primary 1080x1920+0+0 left (normal left inverted right x axis y axis) 527mm x 296mm
-   1920x1080     60.00*+
-"""
-SWAY=json.dumps([
-    {"name":"HDMI-A-1","make":"Samsung Electric Company","model":"QN55","active":True,"scale":2.0,"transform":"normal",
-     "rect":{"x":0,"y":0,"width":1920,"height":1080},"current_mode":{"width":3840,"height":2160,"refresh":60000},
-     "modes":[{"width":3840,"height":2160,"refresh":60000},{"width":3840,"height":2160,"refresh":30000},{"width":1920,"height":1080,"refresh":60000}]},
-    {"name":"eDP-1","make":"Unknown","model":"Unknown","active":False,"rect":{"x":0,"y":0,"width":0,"height":0},
-     "modes":[{"width":1366,"height":768,"refresh":60059}]},
-])
+def out(name, x, y, w, h, active=True, scale=1.0, transform="normal", modes=((1920,1080,60000),), make="Unknown", model="Unknown"):
+    return {"name":name,"make":make,"model":model,"active":active,"scale":scale,"transform":transform,
+            "rect":{"x":x,"y":y,"width":w,"height":h},"current_mode":{"width":modes[0][0],"height":modes[0][1],"refresh":modes[0][2]} if active else {},
+            "modes":[{"width":a,"height":b,"refresh":r} for a,b,r in modes]}
 
-def outputs(text=XRANDR): return disp.parse_xrandr(text)
+SWAY=json.dumps([
+    out("HDMI-A-1",0,0,1920,1080,scale=2.0,make="Samsung Electric Company",model="QN55",
+        modes=((3840,2160,60000),(3840,2160,30000),(1920,1080,60000))),
+    out("eDP-1",0,0,0,0,active=False,modes=((1366,768,60059),)),
+])
+ROW=json.dumps([out("DP-1",0,0,1920,1080,modes=((1920,1080,60000),(1280,720,60000))),out("DP-2",1920,0,1920,1080),out("DP-3",3840,0,1920,1080)])
+
 def by(outs, name): return next(o for o in outs if o.name==name)
 
 class ParseTests(unittest.TestCase):
-    def test_xrandr_outputs_modes_and_rates(self):
-        outs=outputs()
-        self.assertEqual([o.name for o in outs],["HDMI-1","DP-1","VGA-1"])   # the disconnected DP-2 is left out
-        hdmi,dp,vga=outs
-        self.assertTrue(hdmi.primary and hdmi.enabled); self.assertEqual((hdmi.x,hdmi.y,hdmi.width,hdmi.height,hdmi.rate),(0,180,1920,1080,60.0))
-        self.assertEqual([(m.width,m.height,m.interlaced) for m in hdmi.modes],[(1920,1080,False),(1920,1080,True),(1280,720,False),(1024,768,False)])
-        self.assertEqual(hdmi.modes[0].rates,[60.0,59.94,50.0]); self.assertTrue(hdmi.modes[0].preferred)
-        self.assertEqual((dp.rate,dp.x),(143.97,1920)); self.assertTrue(dp.modes[0].preferred); self.assertFalse(dp.primary)
-        self.assertFalse(vga.enabled); self.assertEqual(vga.preferred_mode().width,1024)   # connected, switched off
-    def test_xrandr_rotated_display_covers_its_turned_size(self):
-        o,=outputs(ROTATED)
-        self.assertTrue(o.rotated); self.assertEqual((o.width,o.height),(1920,1080)); self.assertEqual(o.size,(1080,1920))
-    def test_sway_outputs(self):
-        tv,laptop=disp.parse_sway(SWAY)
-        self.assertEqual((tv.label,tv.width,tv.height,tv.rate,tv.size),("Samsung Electric Company QN55",3840,2160,60.0,(1920,1080)))
-        self.assertEqual(tv.modes[0].rates,[60.0,30.0]); self.assertTrue(tv.modes[0].preferred)
-        self.assertEqual(laptop.label,""); self.assertFalse(laptop.enabled); self.assertEqual(laptop.modes[0].rates,[60.059])
+    def test_reads_outputs_modes_rates_and_scale(self):
+        outs=disp.parse_sway(SWAY)
+        tv=by(outs,"HDMI-A-1")
+        self.assertEqual((tv.label,tv.enabled,tv.width,tv.height,tv.rate,tv.scale),("Samsung Electric Company QN55",True,3840,2160,60.0,2.0))
+        self.assertEqual(tv.size,(1920,1080)); self.assertEqual(tv.modes[0].rates,[60.0,30.0]); self.assertTrue(tv.modes[0].preferred)
+        lap=by(outs,"eDP-1"); self.assertFalse(lap.enabled); self.assertEqual(lap.label,""); self.assertEqual(lap.scale,1.0)
         self.assertEqual(disp.parse_sway("not json"),[])
+    def test_a_rotated_display_covers_its_turned_size(self):
+        o=disp.parse_sway(json.dumps([out("DP-1",0,0,1080,1920,transform="90")]))[0]
+        self.assertTrue(o.rotated); self.assertEqual(o.size,(1080,1920))
+    def test_read_state_needs_sway(self):
+        self.assertFalse(disp.read_state({}).available)
     def test_texts(self):
-        self.assertEqual(disp.rate_text(60.0),"60 Hz"); self.assertEqual(disp.rate_text(59.94),"59.94 Hz"); self.assertEqual(disp.rate_text(143.97),"143.97 Hz")
+        self.assertEqual((disp.rate_text(60.0),disp.rate_text(59.94),disp.scale_text(1.5)),("60 Hz","59.94 Hz","150 %"))
         self.assertEqual(disp.mode_text(disp.Mode(1920,1080,True)),"1920 × 1080 (interlaced)")
-    def test_backend(self):
-        yes=lambda _n:True
-        self.assertEqual(disp.backend({"SWAYSOCK":"/run/s","DISPLAY":":0"},yes),("sway",""))
-        self.assertEqual(disp.backend({"DISPLAY":":0"},yes),("xrandr",""))
-        self.assertEqual(disp.backend({"WAYLAND_DISPLAY":"wayland-0"},yes)[0],"")
-        self.assertIn("xrandr was not found",disp.backend({"DISPLAY":":0"},lambda _n:False)[1])
+
+class ScaleTests(unittest.TestCase):
+    def test_choices_leave_enough_pixels(self):
+        tv=by(disp.parse_sway(SWAY),"HDMI-A-1")
+        self.assertEqual(disp.scale_choices([tv]),list(disp.SCALES))   # 2160 high: every scale leaves 1080 or more
+        small=disp.Output("X",enabled=True,width=1366,height=768)
+        self.assertEqual(disp.scale_choices([small]),[0.75,1.0,1.25])  # 768/1.5 is below 540
+        self.assertEqual(disp.scale_choices([small],1.6),[0.75,1.0,1.25,1.6])   # the one in use is always offered
 
 class ArrangeTests(unittest.TestCase):
     def test_reads_the_arrangement(self):
-        outs=outputs()
-        self.assertEqual(disp.placements(outs),{"DP-1":("right","HDMI-1")})
+        outs=disp.parse_sway(ROW)
+        self.assertEqual(disp.placements(outs),{"DP-2":("right","DP-1"),"DP-3":("right","DP-2")})
+        self.assertEqual(disp.choices(outs,by(outs,"DP-2"))[0],("right:DP-1","Right of DP-1"))
     def test_a_smaller_resolution_keeps_the_neighbour_against_it(self):
-        new=disp.edited(outputs(),"HDMI-1",mode=(1280,720,False))
-        hdmi,dp=by(new,"HDMI-1"),by(new,"DP-1")
-        self.assertEqual((hdmi.width,hdmi.rate),(1280,60.0)); self.assertEqual((dp.x,dp.y),(1280,0))
-    def test_keeps_the_rate_when_the_new_mode_has_it_else_takes_the_highest(self):
-        self.assertEqual(by(disp.edited(outputs(),"DP-1",mode=(1920,1080,False)),"DP-1").rate,60.0)
-        self.assertEqual(by(disp.edited(outputs(),"HDMI-1",mode=(1280,720,False),rate=59.94),"HDMI-1").rate,59.94)
-    def test_moving_a_display(self):
-        new=disp.edited(outputs(),"DP-1",place=("left","HDMI-1"))
-        self.assertEqual((by(new,"DP-1").x,by(new,"DP-1").y),(0,0)); self.assertEqual((by(new,"HDMI-1").x,by(new,"HDMI-1").y),(2560,0))
-        new=disp.edited(outputs(),"DP-1",place=("below","HDMI-1"))
-        self.assertEqual((by(new,"HDMI-1").x,by(new,"HDMI-1").y,by(new,"DP-1").x,by(new,"DP-1").y),(0,0,0,1080))
-        new=disp.edited(outputs(),"DP-1",place=("mirror","HDMI-1"))
-        self.assertEqual((by(new,"DP-1").x,by(new,"DP-1").y),(0,0))
-    def test_moving_the_primary_display_moves_the_other_instead(self):
-        new=disp.edited(outputs(),"HDMI-1",place=("right","DP-1"))
-        self.assertEqual((by(new,"DP-1").x,by(new,"HDMI-1").x),(0,2560))
-    def test_switching_a_display_on_puts_it_at_the_right_end(self):
-        new=disp.edited(outputs(),"VGA-1",enabled=True)
-        vga=by(new,"VGA-1"); self.assertTrue(vga.enabled); self.assertEqual((vga.width,vga.x,vga.y),(1024,1920+2560,0))
+        new=disp.edited(disp.parse_sway(ROW),"DP-1",mode=(1280,720,False))
+        self.assertEqual([(o.name,o.x) for o in new],[("DP-1",0),("DP-2",1280),("DP-3",3200)])
     def test_a_row_of_three_closes_up_when_the_middle_one_goes_off(self):
-        on=disp.edited(outputs(),"VGA-1",enabled=True)
-        off=disp.edited(on,"DP-1",enabled=False)
-        self.assertEqual(by(off,"VGA-1").x,1920); self.assertFalse(by(off,"DP-1").enabled)
-    def test_switching_the_primary_off_hands_primary_on(self):
-        new=disp.edited(outputs(),"HDMI-1",enabled=False)
-        self.assertTrue(by(new,"DP-1").primary); self.assertEqual(by(new,"DP-1").x,0)
-    def test_primary_changes_only_the_flag(self):
-        new=disp.edited(outputs(),"DP-1",primary=True)
-        self.assertEqual([(o.name,o.primary,o.x,o.y) for o in new if o.enabled],[("HDMI-1",False,0,180),("DP-1",True,1920,0)])
-    def test_anchors_to_the_display_it_shares_the_longest_edge_with(self):
-        outs=disp.edited(disp.edited(outputs(),"VGA-1",enabled=True),"VGA-1",place=("below","DP-1"))
-        outs=disp.edited(outs,"DP-1",primary=True)
-        self.assertEqual(disp.placements(outs)["HDMI-1"],("left","DP-1"))
-    def test_a_display_placed_where_another_is_goes_past_it(self):
-        on=disp.edited(outputs(),"VGA-1",enabled=True)
-        new=disp.edited(on,"VGA-1",place=("right","HDMI-1"))   # DP-1 is already there
-        self.assertEqual(by(new,"VGA-1").x,1920+2560)
-    def test_choices_name_every_other_display_that_is_on(self):
-        outs=outputs(); keys=[k for k,_t in disp.choices(outs,by(outs,"DP-1"))]
-        self.assertEqual(keys,["right:HDMI-1","left:HDMI-1","below:HDMI-1","above:HDMI-1","mirror:HDMI-1"])
+        new=disp.edited(disp.parse_sway(ROW),"DP-2",enabled=False)
+        self.assertEqual((by(new,"DP-3").x,by(new,"DP-2").enabled),(1920,False))
+    def test_switching_a_display_on_puts_it_at_the_right_end(self):
+        outs=disp.parse_sway(SWAY); new=disp.edited(outs,"eDP-1",enabled=True)
+        lap=by(new,"eDP-1"); self.assertEqual((lap.enabled,lap.width,lap.x,lap.y),(True,1366,1920,0))
+    def test_a_scale_change_moves_the_neighbour(self):
+        new=disp.edited(disp.parse_sway(ROW),"DP-1",scale=2.0)
+        self.assertEqual((by(new,"DP-1").size,by(new,"DP-2").x),((960,540),960))
+    def test_moving_the_reference_moves_the_other_instead(self):
+        new=disp.edited(disp.parse_sway(ROW),"DP-1",place=("below","DP-2"))
+        self.assertEqual(((by(new,"DP-1").x,by(new,"DP-1").y),(by(new,"DP-2").x,by(new,"DP-2").y)),((0,1080),(0,0)))   # DP-2 above DP-1
+        self.assertEqual(disp.placements(new)["DP-2"],("above","DP-1"))
+    def test_keeps_the_rate_when_the_new_mode_has_it_else_takes_the_highest(self):
+        m=disp.Mode(1920,1080,rates=[144.0,60.0])
+        self.assertEqual((disp.best_rate(m,60.0),disp.best_rate(m,75.0)),(60.0,144.0))
 
 class CommandTests(unittest.TestCase):
-    def test_xrandr_argv(self):
-        new=disp.edited(outputs(),"HDMI-1",mode=(1280,720,False))
-        self.assertEqual(disp.xrandr_argv(new),["xrandr","--output","HDMI-1","--mode","1280x720","--rate","60.00","--pos","0x0","--primary",
-                         "--output","DP-1","--mode","2560x1440","--rate","143.97","--pos","1280x0","--output","VGA-1","--off"])
-        argv=disp.xrandr_argv(new,{"DP-1"})   # scaled now: set back to 1x1
-        self.assertEqual(argv[argv.index("DP-1"):argv.index("DP-1")+9],["DP-1","--mode","2560x1440","--rate","143.97","--scale","1x1","--pos","1280x0"])
-    def test_interlaced_mode_is_named_as_xrandr_names_it(self):
-        new=disp.edited(outputs(),"HDMI-1",mode=(1920,1080,True))
-        argv=disp.xrandr_argv(new); self.assertEqual(argv[argv.index("HDMI-1")+2],"1920x1080i")
     def test_sway_command(self):
-        tv,laptop=disp.parse_sway(SWAY)
-        self.assertEqual(disp.sway_command([tv,laptop]),'output "HDMI-A-1" enable mode 3840x2160@60.000Hz scale 2 position 0 0; output "eDP-1" disable')
+        outs=disp.parse_sway(SWAY)
+        self.assertEqual(disp.sway_command(outs),'output "HDMI-A-1" enable mode 3840x2160@60.000Hz scale 2 position 0 0; output "eDP-1" disable')
     def test_never_switches_every_display_off(self):
-        outs=outputs()
-        for o in outs: o.enabled=False
-        self.assertIn("At least one",disp.apply(disp.DisplayState(True,"xrandr","",outs),outs))
-
-SCALED="""Screen 0: minimum 320 x 200, current 5120 x 2880, maximum 16384 x 16384
-HDMI-1 connected primary 2560x1440+0+0 (normal left inverted right x axis y axis) 527mm x 296mm
-   1920x1080     60.00*+  50.00
-   1280x720      60.00
-"""
-
-class ScaleTests(unittest.TestCase):
-    def test_xrandr_scaled_display_reads_its_mode_and_scale(self):
-        o,=disp.with_ui(outputs(SCALED),2.0)   # drawn at 200 %, shrunk by 4/3: 150 %
-        self.assertEqual((o.width,o.height,o.scale,o.ui,o.size,round(o.zoom,6)),(1920,1080,1.5,2.0,(2560,1440),1.333333))
-        o,=disp.with_ui(outputs(SCALED),1.0)
-        self.assertEqual(o.scale,0.75)
-    def test_session_scale_on_x11(self):
-        new=disp.scaled(outputs(),1.5)
-        hdmi,dp=by(new,"HDMI-1"),by(new,"DP-1")
-        self.assertEqual((hdmi.ui,hdmi.scale,hdmi.size),(2.0,1.5,(2560,1440)))
-        self.assertEqual((dp.x,dp.y),(2560,0))   # still against it
-        argv=disp.xrandr_argv(new); self.assertEqual(argv[argv.index("HDMI-1")+5:argv.index("HDMI-1")+7],["--scale","1.333333333x1.333333333"])
-        whole=disp.scaled(outputs(),2)
-        self.assertEqual([(o.ui,o.zoom) for o in whole],[(2.0,1.0)]*3); self.assertEqual(by(whole,"DP-1").x,1920)   # a whole step: the desktop keeps its size
-    def test_a_display_switched_on_takes_the_session_scale(self):
-        vga=by(disp.edited(disp.scaled(outputs(),2),"VGA-1",enabled=True),"VGA-1")
-        self.assertEqual((vga.ui,vga.scale),(2.0,2.0))
-    def test_sway_scale_per_display(self):
-        tv,laptop=disp.parse_sway(SWAY)
-        new=disp.edited([tv,laptop],"HDMI-A-1",scale=1.5)
-        self.assertEqual(by(new,"HDMI-A-1").size,(2560,1440)); self.assertIn("scale 1.5 ",disp.sway_command(new))
-        self.assertEqual(disp.Output("eDP-1",enabled=True,width=2560,height=1440,scale=1.5).size,(1706,960))   # as sway rounds it, down
-    def test_choices(self):
-        outs=outputs()   # the smallest display that is on is 1080 high
-        self.assertEqual(disp.scale_choices(outs,False),[1.0,2.0])
-        self.assertEqual(disp.scale_choices(outs,True),[0.75,1.0,1.25,1.5,1.75,2.0])
-        self.assertEqual(disp.scale_choices(outs,False,1.5),[1.0,1.5,2.0])
-        self.assertEqual(disp.scale_text(1.25),"125 %"); self.assertEqual(disp.parse_xft_dpi("Xft.dpi:\t192\nXft.hinting:\t1"),192.0)
-    def test_fractional_choice_is_kept_beside_the_displays(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/"displays.json"
-            self.assertFalse(disp.fractional_on(outputs(),path))
-            disp.set_fractional(True,path); self.assertTrue(disp.fractional_on(outputs(),path))
-            state=disp.DisplayState(True,"xrandr","",outputs())
-            disp.save(state,state.outputs,path); self.assertTrue(json.loads(path.read_text())["xrandr"]["fractional"])
-            disp.set_fractional(False,path); self.assertFalse(disp.fractional_on(outputs(),path))
-            self.assertTrue(disp.fractional_on(disp.scaled(outputs(),1.5),path))   # one in use: offered anyway
-    def test_scale_is_saved_and_restored_for_its_own_backend_only(self):
-        x=disp.DisplayState(True,"xrandr","",outputs())
-        saved=disp.to_saved(x,disp.scaled(x.outputs,1.5))
-        back=disp.from_saved(x,saved); self.assertEqual((by(back,"HDMI-1").scale,by(back,"HDMI-1").ui),(1.5,2.0))
-        tv,laptop=disp.parse_sway(SWAY)
-        sway=disp.DisplayState(True,"sway","",[tv])
-        self.assertIsNotNone(disp.from_saved(sway,{"xrandr":{"outputs":{"HDMI-1":saved["xrandr"]["outputs"]["HDMI-1"]}}}))
-        self.assertEqual(disp.from_saved(sway,{"xrandr":{"outputs":{"HDMI-1":dict(saved["xrandr"]["outputs"]["HDMI-1"],width=3840,height=2160)}}})[0].scale,2.0)
-    def test_xsettings_and_xresources(self):
-        self.assertEqual(disp.xsettings_text(2),"Gdk/WindowScalingFactor 2\nGdk/UnscaledDPI 98304\nXft/DPI 196608\n")
-        self.assertEqual(disp.xresources_text(2),"Xft.dpi: 192\nXcursor.size: 48\n")
-        mine="Xft.antialias: 1\n"
-        with_scale=disp.with_xresources(mine,2)
-        self.assertTrue(with_scale.startswith(mine)); self.assertIn("Xft.dpi: 192",with_scale)
-        self.assertEqual(disp.with_xresources(disp.with_xresources(with_scale,3),1),mine)   # replaced, then taken out
-        self.assertEqual(disp.with_xresources("",1),"")
-        with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/".Xresources"
-            disp.save_xresources(2,path); self.assertIn("Xft.dpi: 192",path.read_text())
-            disp.save_xresources(1,path); self.assertFalse(path.exists())   # it held only TVWCS's lines
-    def test_fractional_scales_only_when_the_bigger_desktop_fits(self):
-        outs=outputs(SCALED)   # one 1920x1080 display
-        self.assertEqual(disp.parse_max_size(SCALED),(16384,16384))
-        self.assertEqual(disp.scale_choices(outs,True,None,(1920,1080)),[1.0,2.0])           # Xvfb: no room to shrink from
-        self.assertEqual(disp.scale_choices(outs,True,None,(8192,8192)),[0.75,1.0,1.25,1.5,1.75,2.0])
-    def test_xrandr_problems_in_words(self):
-        from tvwcs.control_cmd import Result
-        err="X Error of failed request:  BadValue (integer parameter out of range for operation)\n  Major opcode of failed request:  140 (RANDR)\n  Current serial number in output stream:  21\n"
-        self.assertEqual(disp.xrandr_problem(Result(False,1,"",err)),"The displays did not accept the change: BadValue (integer parameter out of range for operation)")
-        self.assertIn("Try a whole step",disp.xrandr_problem(Result(False,1,"","xrandr: screen cannot be larger than 1920x1080 (desired size 2560x1440)\n")))
+        outs=disp.edited(disp.parse_sway(SWAY),"HDMI-A-1",enabled=False)
+        self.assertIn("stay on",disp.apply(disp.DisplayState(True,"",outs),outs))
 
 class SavedTests(unittest.TestCase):
     def test_saved_settings_come_back_only_for_the_same_displays(self):
-        state=disp.DisplayState(True,"xrandr","",outputs())
-        with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/"tvwcs"/"displays.json"
-            disp.save(state,disp.edited(state.outputs,"HDMI-1",mode=(1280,720,False)),path)
-            saved=json.loads(path.read_text())
-        back=disp.from_saved(state,saved)
-        self.assertEqual((by(back,"HDMI-1").width,by(back,"DP-1").x),(1280,1280))
-        fewer=disp.DisplayState(True,"xrandr","",[o for o in outputs() if o.name!="VGA-1"])
-        self.assertIsNone(disp.from_saved(fewer,saved))
-        self.assertIsNotNone(disp.from_saved(disp.DisplayState(True,"sway","",outputs()),saved))   # no sway entry yet: X's is used
-    def test_each_backend_keeps_its_own_settings(self):
-        x=disp.DisplayState(True,"xrandr","",outputs())
-        sway_outs=outputs()
-        for o in sway_outs:
-            if o.name=="HDMI-1": o.name="HDMI-A-1"
-        sway=disp.DisplayState(True,"sway","",sway_outs)
-        with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/"displays.json"
-            disp.save(x,disp.edited(x.outputs,"HDMI-1",mode=(1280,720,False)),path)
-            first=disp.from_saved(sway,json.loads(path.read_text()))                 # sway's first start: X's mode, by connector
-            self.assertEqual(by(first,"HDMI-A-1").width,1280)
-            disp.save(sway,sway.outputs,path)                                          # kept under sway at its own mode
-            saved=json.loads(path.read_text()); self.assertEqual(set(saved),{"xrandr","sway"})
-            self.assertEqual(by(disp.from_saved(x,saved),"HDMI-1").width,1280)       # i3's is untouched
-            self.assertEqual(by(disp.from_saved(sway,saved),"HDMI-A-1").width,by(sway.outputs,"HDMI-A-1").width)
+        outs=disp.parse_sway(ROW); changed=disp.edited(outs,"DP-1",mode=(1280,720,False))
+        saved=disp.to_saved(changed); state=disp.DisplayState(True,"",outs)
+        back=disp.from_saved(state,saved); self.assertEqual((by(back,"DP-1").width,by(back,"DP-2").x),(1280,1280))
+        self.assertIsNone(disp.from_saved(disp.DisplayState(True,"",disp.parse_sway(SWAY)),saved))
+    def test_scale_is_kept(self):
+        outs=disp.parse_sway(SWAY); saved=disp.to_saved(disp.edited(outs,"HDMI-A-1",scale=1.5))
+        self.assertEqual(by(disp.from_saved(disp.DisplayState(True,"",outs),saved),"HDMI-A-1").scale,1.5)
+    def test_modes_kept_under_i3_before_5_0_are_used_once(self):
+        outs=disp.parse_sway(SWAY)
+        old={"xrandr":{"outputs":{"HDMI-1":{"enabled":True,"x":0,"y":0,"width":1920,"height":1080,"rate":60.0,"scale":1.0},
+                                 "eDP-1":{"enabled":False}}}}
+        tv=by(disp.from_saved(disp.DisplayState(True,"",outs),old),"HDMI-A-1")
+        self.assertEqual((tv.width,tv.scale),(1920,2.0))   # the mode, not X11's scale
+        self.assertNotIn("xrandr",disp.to_saved(outs,old))
     def test_a_file_from_before_3_0_1_still_loads(self):
-        x=disp.DisplayState(True,"xrandr","",outputs())
-        old={"backend":"xrandr","outputs":disp.to_saved(x,disp.edited(x.outputs,"HDMI-1",mode=(1280,720,False)))["xrandr"]["outputs"]}
-        self.assertEqual(by(disp.from_saved(x,old),"HDMI-1").width,1280)
-
-class TearingTests(unittest.TestCase):
-    def test_tearfree_property_per_output(self):
-        text="Screen 0: minimum 8 x 8\nHDMI-1 connected primary 1920x1080+0+0\n\tTearFree: on\n\t\tsupported: off, on, auto\nDP-1 disconnected\n\tTearFree: off\neDP-1 connected 1366x768+1920+0\n\tTearFree: auto\n"
-        self.assertEqual(disp.parse_tearfree(text),{"HDMI-1":"on","eDP-1":"auto"})
-    def test_nvidia_metamode(self):
-        mode,on=disp.parse_metamode("id=50, switchable=no, source=nv-control :: DPY-1: nvidia-auto-select @1920x1080 +0+0 {ViewPortIn=1920x1080}\n")
-        self.assertEqual((mode,on),("DPY-1: nvidia-auto-select @1920x1080 +0+0 {ViewPortIn=1920x1080}",False))
-        self.assertEqual(disp.with_pipeline(mode,True),"DPY-1: nvidia-auto-select @1920x1080 +0+0 {ViewPortIn=1920x1080, ForceCompositionPipeline=On, ForceFullCompositionPipeline=On}")
-        self.assertTrue(disp.parse_metamode(disp.with_pipeline(mode,True))[1])
-        self.assertEqual(disp.with_pipeline(disp.with_pipeline(mode,True),False),mode)
-    def test_the_choice_is_kept(self):
-        import tempfile, os
+        outs=disp.parse_sway(ROW)
+        old={"backend":"sway","outputs":disp.to_saved(outs)["sway"]["outputs"]}
+        self.assertIsNotNone(disp.from_saved(disp.DisplayState(True,"",outs),old))
+    def test_save_writes_the_file(self):
         with tempfile.TemporaryDirectory() as d:
-            path=os.path.join(d,"displays.json"); self.assertIsNone(disp.saved_tearing(path))
-            disp.save_tearing(True,path); self.assertTrue(disp.saved_tearing(path))
+            p=Path(d)/"displays.json"; disp.save(disp.parse_sway(ROW),p)
+            self.assertEqual(sorted(json.loads(p.read_text())["sway"]["outputs"]),["DP-1","DP-2","DP-3"])
+    def test_connector_names(self):
+        self.assertEqual(disp.connector_key("HDMI-A-2"),"HDMI-2")
 
 if __name__=="__main__": unittest.main()

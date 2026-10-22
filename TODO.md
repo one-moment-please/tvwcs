@@ -4,6 +4,10 @@ Work that was researched but not done, so it can be picked up later. Code refere
 version 2.10.4; the last commit with the removed distribution support in it is `9e7ef12`
 (`git show 9e7ef12:scripts/install.sh` and so on gives the old files back in full).
 
+TVWCS 5.0 removed i3 (and X11), TVWCS's own login screen, the screen saver, Settings › Apps (Flatpak), Settings ›
+Terminal, network shares and setting the time by hand. The last commit with all of them is `10cee1d` (4.2.2), for
+bringing any of them back. Notes below that mention i3 date from before then.
+
 ---
 
 ## 1. Tablet mode (not started)

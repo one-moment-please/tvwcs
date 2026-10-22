@@ -1,7 +1,7 @@
-"""TV mode's extras: the i3 / sway bar is hidden (the Quick Menu shows the time and status instead), and the Quick Menu
+"""TV mode's extras: the sway bar is hidden (the Quick Menu shows the time and status instead), and the Quick Menu
 stays on screen while no application is open. No GTK dependency.
 
-The bar is hidden with `bar mode invisible`, which lasts until i3 reloads its config, so it is applied again now and
+The bar is hidden with `bar mode invisible`, which lasts until sway reloads its config, so it is applied again now and
 then. The modes the bars had first are kept in a file, so the bars come back as they were when TV mode or the option is
 turned off, or TVWCS stops, even after TVWCS was restarted in between."""
 from __future__ import annotations

@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=TVWCS
+Description=The TVWCS logo on a black screen while the computer starts and shuts down, instead of the start-up text.
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/tvwcs
+ScriptFile=/usr/share/plymouth/themes/tvwcs/tvwcs.script

@@ -76,12 +76,10 @@ class DateTimeTests(unittest.TestCase):
     def test_zone_from_the_localtime_link(self):
         self.assertEqual(dt.zone_from_link("../usr/share/zoneinfo/Europe/Paris"),"Europe/Paris")
         self.assertEqual(dt.zone_from_link("/etc/foo"),"")
-    def test_regions_and_cities(self):
+    def test_one_list_of_zones(self):
         zones=["America/New_York","America/Argentina/Buenos_Aires","Europe/Paris","UTC","Etc/GMT+5","Africa/Abidjan"]
-        r=dt.regions(zones)
-        self.assertEqual(list(r),["Africa","America","Europe","Other"])
-        self.assertEqual(r["America"],[("America/Argentina/Buenos_Aires","Buenos Aires, Argentina"),("America/New_York","New York")])
-        self.assertEqual(r["Other"],[("UTC","UTC")])
+        self.assertEqual(dt.zone_choices(zones),[("Africa/Abidjan","Abidjan (Africa)"),("America/Argentina/Buenos_Aires","Buenos Aires, Argentina (America)"),
+                                                 ("America/New_York","New York (America)"),("Europe/Paris","Paris (Europe)"),("UTC","UTC")])
         self.assertEqual(dt.zone_label("America/New_York"),"New York (America)"); self.assertEqual(dt.zone_label("UTC"),"UTC")
         self.assertEqual(dt.split_zone("Etc/UTC"),("Other","UTC"))
     def test_commands(self):

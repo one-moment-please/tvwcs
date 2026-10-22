@@ -2,12 +2,12 @@
 
 Applications that follow the desktop's colour scheme read it from different places, so TVWCS sets each of them:
 - GNOME's setting org.gnome.desktop.interface color-scheme ("prefer-dark" or "default"): GTK 4 and libadwaita apps,
-  and, through xdg-desktop-portal's Settings interface, Flatpak apps, Firefox and Chromium-based browsers;
+  and, through xdg-desktop-portal's Settings interface, Firefox and Chromium-based browsers;
 - gtk-application-prefer-dark-theme in ~/.config/gtk-3.0/settings.ini and gtk-4.0/settings.ini: GTK 3 and GTK 4 apps
   that do not read GNOME's settings.
 Qt applications keep their own look.
 
-The background colour is painted on the X root window (xsetroot), or set as sway's output background."""
+The background colour is set as sway's output background."""
 from __future__ import annotations
 import configparser, io, os, re, shutil
 from pathlib import Path
@@ -69,22 +69,21 @@ def apply_theme(theme, env=None):
     return "; ".join(problems)
 
 def portal_missing(which=shutil.which, exists=os.path.exists):
-    """Flatpak apps and browsers learn the colour scheme through xdg-desktop-portal's GTK (or GNOME) back end. True when
+    """Browsers learn the colour scheme through xdg-desktop-portal's GTK (or GNOME) back end. True when
     neither is installed, so Settings can say what to install."""
     names=("xdg-desktop-portal-gtk","xdg-desktop-portal-gnome")
     places=("/usr/libexec","/usr/lib/x86_64-linux-gnu","/usr/lib/aarch64-linux-gnu","/usr/lib")
     return not any(which(n) or any(exists(f"{p}/{n}") for p in places) for n in names)
 
 # ---------------------------------------------------------------------- the background colour
-def wallpaper_argv(colour, sway=False):
-    if sway: return ["swaymsg",f"output * bg {colour} solid_color"]
-    return ["xsetroot","-solid",colour]
+def wallpaper_argv(colour):
+    return ["swaymsg",f"output * bg {colour} solid_color"]
 
 def apply_wallpaper(colour, env=None):
     """Paint the background. Returns "" when it worked, else why not."""
     env=os.environ if env is None else env
-    on_sway=bool(env.get("SWAYSOCK"))
-    argv=wallpaper_argv(colour,on_sway)
-    if not have(argv[0]): return "Install x11-xserver-utils (xsetroot) to set the background colour." if not on_sway else "swaymsg was not found."
+    if not env.get("SWAYSOCK"): return "The background colour is set in sway only."
+    argv=wallpaper_argv(colour)
+    if not have(argv[0]): return "swaymsg was not found."
     r=run(argv,timeout=5)
     return "" if r.ok else (r.message or "The background colour could not be set.")

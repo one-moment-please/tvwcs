@@ -325,10 +325,10 @@ class ChannelZeroTests(unittest.TestCase):
     def test_new_settings_are_cleaned(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"config.json"
-            path.write_text(json.dumps({"profiles":[],"settings":{"theme":"purple","wallpaper":"#123456","password_keyboard":"digits","screensaver_logo":"nope"}}))
+            path.write_text(json.dumps({"profiles":[],"settings":{"theme":"purple","wallpaper":"#123456","password_keyboard":"digits","screensaver_logo":"nope","flatpak_unverified":True}}))
             s=ConfigStore(path).settings
             self.assertEqual(s["theme"],"dark"); self.assertEqual(s["wallpaper"],DEFAULT_SETTINGS["wallpaper"])
-            self.assertEqual(s["keyboard"],"hidden"); self.assertEqual(s["screensaver_logo"],"tvwcs")
+            self.assertEqual(s["keyboard"],"hidden"); self.assertNotIn("screensaver_logo",s); self.assertNotIn("flatpak_unverified",s)
     def test_wallpaper_choices(self):
         from tvwcs.model import WALLPAPERS, DEFAULT_WALLPAPER
         self.assertEqual(len(WALLPAPERS),18); self.assertIn(DEFAULT_WALLPAPER,WALLPAPERS); self.assertEqual(DEFAULT_SETTINGS["theme"],"dark")

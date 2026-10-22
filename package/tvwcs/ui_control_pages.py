@@ -2,30 +2,23 @@
 a page that is on screen re-reads quietly every few seconds and only redraws when something changed, keeping the
 selection on the same row."""
 from __future__ import annotations
-import math, os, shutil, signal, subprocess, time
+import os, shutil, signal, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
 from tvwcs import control_storage as storage
-from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_flatpak as flatpak, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_ubuntu as ubuntu, control_updates as updates
-from pathlib import Path
+from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_ubuntu as ubuntu, control_updates as updates
 from tvwcs import __version__, features, power, privilege, selfupdate
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (SCALE_LABELS, SCREENSAVER_LOGOS, THEMES, WALLPAPERS, ConfigStore, accent_name, is_4k, scale_choices,
+from tvwcs.model import (SCALE_LABELS, THEMES, WALLPAPERS, ConfigStore, accent_name, is_4k, scale_choices,
                          scale_key, tv_mode)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for
 from tvwcs.ui_control import StreamedRun, colour_swatch, in_background
 from tvwcs.widgets import METRO_COLORS, NavGroup, S, clear_box, glyph, muted_label, section_title, usable
-
-try:
-    gi.require_version("Vte","3.91")
-    from gi.repository import Vte
-except (ImportError,ValueError):
-    Vte=None
 
 class Page:
     key=""; title=""; icon=""; fallback=""
@@ -55,7 +48,6 @@ class Page:
 
     def nav_groups(self):
         return ([NavGroup(self.header)] if self.header else [])+self.groups
-    def captures_keys(self, focused): return False
 
     # ---------------------------------------------------------- reading
     def shown(self):
@@ -237,7 +229,7 @@ class AppearancePage(_ConfigPage):
         self.note("Automatic is TV Mode in a TVWCS session and Desktop otherwise"+("; 4K TV Mode suits a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
         self.row("Theme",THEMES[st["theme"]],self.choose_theme,ident="opt:theme")
         self.note("Dark or light, for TVWCS and Settings. Applications that follow the desktop's colour scheme (most GTK apps, "
-                  "and Flatpak apps and browsers through the desktop portal) switch with it.")
+                  "and browsers through the desktop portal) switch with it.")
         self.row("Accent colour",accent_name(st["accent"]),self.choose_accent,ident="opt:accent",swatch=st["accent"])
         self.row("Background colour","",self.choose_wallpaper,ident="opt:wallpaper",swatch=st["wallpaper"])
         self.note("Shown where no application is open, and behind the Quick Menu.")
@@ -352,72 +344,48 @@ class _SelfUpdate:
             self.updating=False; self.update_text=""; self.redraw()
             if selfupdate.parse_version(release.version)==selfupdate.parse_version(__version__):
                 self.win.notice("TVWCS updates",f"This is already the latest release, TVWCS {__version__}."); return
-            dest=selfupdate.install_dir(Path(selfupdate.__file__).parent)
-            if dest is None: self.win.notice("TVWCS updates","This copy runs from a source checkout: change its version with git."); return
-            target=selfupdate.update_target(dest)
-            self.win.confirm("Roll back TVWCS?",f"Install TVWCS {release.version}, the latest release, in place of {__version__}? "
+            if not selfupdate.packaged(): self.win.notice("TVWCS updates","This copy runs from a source checkout: change its version with git."); return
+            self.win.confirm("Roll back TVWCS?",f"Install TVWCS {release.version}, the latest release, in place of {__version__}? It asks for your password. "
                              "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install "+release.version,
-                             lambda:self.install(release,target,target!=dest),danger=False)
+                             lambda:self.install(release),danger=False)
         in_background(selfupdate.latest_release,found,failed)
     def checked(self, release):
         self.updating=False
         if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
         self.update_text=f"{release.version} available"; self.redraw()
-        dest=selfupdate.install_dir(Path(selfupdate.__file__).parent)
-        if dest is None:
+        if not selfupdate.packaged():
             self.win.notice("TVWCS updates",f"TVWCS {release.version} is available. This copy runs from a source checkout: update it with git pull."); return
-        target=selfupdate.update_target(dest); moving=target!=dest
-        move=(f" It also moves TVWCS from {dest} to {target} and updates the include line in your i3 / sway config to match "
-              "(the config is backed up first)." if moving else "")
         kind=" prerelease" if release.prerelease else ""
-        self.win.confirm("Update TVWCS?",f"TVWCS {release.version}{kind} is available (you have {__version__}). Download and install it now?{move} "
-                         "TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
-                         lambda:self.install(release,target,moving),danger=False)
-    def install(self, release, target, moving):
-        """Download the release, install the packages it needs that are missing here (asked first), then install it."""
+        self.win.confirm("Update TVWCS?",f"TVWCS {release.version}{kind} is available (you have {__version__}). Download and install it now? "
+                         "It asks for your password. TVWCS restarts afterwards; your channels, favorites, options and hotkeys are kept.","Install update",
+                         lambda:self.install(release),danger=False)
+    def install(self, release):
+        """Download the release's packages (those installed here), then install them as root with apt."""
         self.updating=True; self.update_text="Downloading…"; self.redraw()
         def failed(exc): self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
         def downloaded(result):
-            folder,missing=result
-            if not missing: self.install_downloaded(release,folder,target,moving,""); return
-            listing="\n".join(f"• {packages}: {why}" for packages,why in missing)
-            def cancel(): self.win.close_modal(); selfupdate.discard(folder); self.updating=False; self.update_text=""; self.redraw()
-            def install_them():
-                try: argv=selfupdate.install_packages_argv([p for p,_w in missing])
-                except ValueError as exc: self.install_downloaded(release,folder,target,moving,str(exc)); return
-                self.update_text="Installing packages…"; self.redraw(); lines=[]
-                def after(code,tail):
-                    problem="" if code==0 else ("\n".join(lines[-3:]) or tail or "apt-get did not finish.").strip()
-                    self.install_downloaded(release,folder,target,moving,problem)
-                self.win.run_as_root(argv,"Installing packages",lines.append,after)
-            self.win.confirm(f"TVWCS {release.version} needs more packages",
-                             f"These packages are not installed yet:\n{listing}\n\nInstall them first? It asks for your password. "
-                             "Cancel stops the update.","Install and update",install_them,danger=False,back=cancel)
-        def fetch():
-            folder=selfupdate.download_release(release)
-            return folder,selfupdate.missing_packages(folder)
-        in_background(fetch,downloaded,failed)
-    def install_downloaded(self, release, folder, target, moving, package_problem):
-        self.updating=True; self.update_text="Installing…"; self.redraw()
-        def done(_out):
-            selfupdate.discard(folder)
-            self.updating=False; self.update_text=f"Installed {release.version}"; self.redraw()
-            restarted=tell_tvwcs(f"restart {target/'bin'/'tvwcs'}")
-            note=f" Some packages could not be installed: {package_problem}" if package_problem else ""
-            self.win.notice("TVWCS updated",f"TVWCS {release.version} is installed"+(" and has restarted." if restarted else ".")+
-                            " Close Settings and open it again to use the new version."+note)
-        def failed(exc): selfupdate.discard(folder); self.updating=False; self.update_text="Update failed"; self.redraw(); self.win.notice("TVWCS updates",f"The update failed: {exc}")
-        in_background(lambda:selfupdate.install_downloaded(folder,target,migrate=moving),done,failed)
+            folder,files=result; lines=[]
+            self.update_text="Installing…"; self.redraw()
+            def done(code, tail):
+                selfupdate.discard(folder); self.updating=False
+                if code:
+                    self.update_text="Update failed"; self.redraw()
+                    self.win.notice("TVWCS updates","The update failed:\n"+("\n".join(lines[-4:]) or tail or "apt-get did not finish.").strip()); return
+                self.update_text=f"Installed {release.version}"; self.redraw()
+                restarted=tell_tvwcs("restart /usr/bin/tvwcs")
+                self.win.notice("TVWCS updated",f"TVWCS {release.version} is installed"+(" and has restarted." if restarted else ".")+
+                                " Close Settings and open it again to use the new version.")
+            self.win.run_as_root(selfupdate.install_argv(files),"Installing TVWCS "+release.version,lines.append,done)
+        in_background(lambda:selfupdate.download(release,selfupdate.installed_packages()),downloaded,failed)
 
 # ====================================================================== Power and sleep
 class PowerPage(Page):
-    """After how long without input the screen turns off, the computer locks and it sleeps (TVWCS keeps these times,
-    see power.py), and what the system does by itself: X's blanking and DPMS, logind's idle action and the lid."""
+    """After how long without input the screen turns off, the computer locks and it sleeps (swayidle, see power.py),
+    and what the system does by itself: logind's idle action and the lid."""
     key="power"; title="Power and sleep"; icon="system-shutdown-symbolic"; fallback="⏻"
     def read(self):
         store=ConfigStore(); st=store.settings
         return power.read_state(st,command_for("lock",st) is not None,command_for("sleep",st) is not None)
-    def summary(self): return "swayidle" if self.state and self.state.session=="sway" else ""
     def draw(self, s):
         if s.battery.present:
             b=s.battery
@@ -432,80 +400,32 @@ class PowerPage(Page):
             self.idle_rows(s,s.settings,"idle","WHEN NOTHING IS TOUCHED, PLUGGED IN")
             self.idle_rows(s,s.battery_settings,"idle_battery","WHEN NOTHING IS TOUCHED, ON BATTERY")
         else: self.idle_rows(s,s.settings,"idle","WHEN NOTHING IS TOUCHED")
-        times=s.settings; screen=times["screen_off"]
         self.note("Times count from the last key, remote button or mouse movement. Nothing happens while sound is playing, "
                   "or while an application keeps the computer awake.")
-        st=ConfigStore().settings
-        saver=features.screensaver(); tv=tv_mode()
-        self.section("SCREEN SAVER")
-        if not features.installed(saver):
-            missing=features.missing_packages(saver) or list(saver.packages)
-            self.row("Install the screen saver","",lambda:install_feature(self,saver),icon="video-display-symbolic",fallback="▭",ident="saver:feature",
-                     detail=f"Installs {', '.join(missing)}")
-            if s.session=="sway": self.note("On sway the screen saver is drawn over every window, with gtk4-layer-shell, so a video "
-                                            "playing fullscreen stays fullscreen underneath it.")
-        else:
-            logo=st["screensaver_logo"]
-            self.row("Logo",SCREENSAVER_LOGOS[logo],self.choose_logo,detail=st["screensaver_image"] if logo=="image" else "",ident="saver:logo")
-            if tv and s.session=="sway":
-                self.note("When the computer locks, sway's lock screen (swaylock) shows TVWCS's lock picture, not the screen saver: "
-                          "nothing can be drawn over swaylock. The screen saver runs before the lock, after its own time above.")
-            elif tv:   # a desktop session's lock screen is its own
-                lock_saver=features.BY_KEY["lock_saver"]; ready=features.installed(lock_saver)
-                on_lock=bool(st["screensaver_on_lock"]) and ready
-                why=("Any key or button shows the lock screen; after a minute without input, the screen saver comes back. "
-                     "Once the screen has turned off, it stays off instead") if ready else f"Needs {', '.join(lock_saver.packages)}. Choose this to install it"
-                action=self.toggle_saver_on_lock if ready else lambda:install_feature(self,lock_saver,after=self.saver_on_lock_on)
-                self.row("Show it when the computer locks",_on_off(on_lock),action,detail=why,
-                         icon="system-lock-screen-symbolic",fallback="🔒",ident="saver:lock",value_css="state-on" if on_lock else "setting-value")
-            self.row("Preview","",lambda:self.preview_saver(),detail="Shows the screen saver now. Any key or the mouse ends it.",ident="saver:preview",
-                     icon="media-playback-start-symbolic",fallback="▶")
-            self.note("TVWCS's logo drifts across a black screen and changes colour each time it bounces off an edge. "
-                      "A picture of your own can be any PNG, JPEG or SVG.")
+        if not s.idle_works and any(s.settings[a] or s.battery_settings[a] for a in power.ACTIONS):
+            self.note("These times need swayidle. Install it, then sign out and in again.","error")
         self.section("LOCKING")
-        self.note("In a TVWCS session, TVWCS's lock screen locks the computer: it says the TV is locked and asks for your password. "
-                  "In another session, Lock uses that desktop's own screen locker." if tv else
-                  "This is not a TVWCS session, so Lock uses this desktop's own screen locker, such as i3lock or swaylock. "
-                  "TVWCS's lock screen is used in a TVWCS session.")
-        if not s.idle_works and any(times[a] for a in power.ACTIONS):
-            self.note("These times need swayidle on sway. Install it, then sign out and in again." if s.session=="sway" else
-                      "TVWCS cannot tell how long the computer has been idle: install libxss1, or xprintidle.","error")
-        self.section("WHAT THE SYSTEM DOES BY ITSELF")
-        if s.session=="X11":
-            x=s.xtimers
-            if not x.available: self.row("X screen saver and power saving","Unknown",None,detail="xset was not found, or there is no display")
-            else:
-                self.row("X blanks the screen after",power.duration_text(x.saver) if x.saver else "Never",None,
-                         detail="X's own screen saver" + (" (switched off while TVWCS turns the screen off)" if screen is not None else ""),ident="sys:saver")
-                self.row("X switches the monitor off after",power.duration_text(x.dpms_off) if x.dpms_off else "Never",None,
-                         detail="DPMS power saving",ident="sys:dpms")
-            if s.xss_lock:
-                self.row("Locks when the screen turns off","Yes",self.stop_xss_lock if s.xss_lock!="?" else None,
-                         detail="xss-lock is running"+((", started by TVWCS's session config" if os.environ.get("TVWCS_SESSION") else ", started by your i3 config")+". Choose this to stop it" if s.xss_lock!="?" else
-                                                       ". Remove it from the file that starts it to stop the screen locking"),
-                         icon="system-lock-screen-symbolic",fallback="🔒",ident="sys:xss")
+        self.note("In a TVWCS session the computer locks with swaylock on a dark screen: type your password and press Enter. "
+                  "In another session, Lock uses that desktop's own screen locker." if tv_mode() else
+                  "This is not a TVWCS session, so Lock uses this desktop's own screen locker, such as swaylock.")
         l=s.logind
         if l.available:
+            self.section("WHAT THE SYSTEM DOES BY ITSELF")
             action={"ignore":"Nothing","suspend":"Sleep","hibernate":"Hibernate","hybrid-sleep":"Hybrid sleep","suspend-then-hibernate":"Sleep, then hibernate",
                     "poweroff":"Shut down","lock":"Lock"}.get(l.idle_action,l.idle_action)
             self.row("The system's idle action",action+(f" after {power.duration_text(l.idle_seconds)}" if l.idle_action!="ignore" and l.idle_seconds else ""),None,
                      detail="logind's IdleAction, set in /etc/systemd/logind.conf",ident="sys:logind")
             if l.lid: self.row("Closing the lid",{"suspend":"Sleep","ignore":"Nothing","poweroff":"Shut down","lock":"Lock","hibernate":"Hibernate"}.get(l.lid,l.lid),None,
                                detail="logind's HandleLidSwitch",ident="sys:lid")
-        self.note(("Change “Turn off the screen after” to let TVWCS decide instead of X. " if s.session=="X11" else "")+
-                  "logind's settings are changed in /etc/systemd/logind.conf, as root.")
+            self.note("logind's settings are changed in /etc/systemd/logind.conf, as root.")
 
     def idle_rows(self, s, times, option, heading):
-        """The four times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
+        """The three times of one set: "idle" (plugged in, or a computer without a battery) or "idle_battery"."""
         self.section(heading); tag="" if option=="idle" else "bat"
-        if features.installed(features.screensaver()):
-            self.row(power.LABELS["screensaver"],power.duration_text(times["screensaver"]),lambda:self.choose("screensaver",times["screensaver"],option=option),
-                     icon="video-display-symbolic",fallback="▭",ident=f"idle{tag}:screensaver")
-        screen=times["screen_off"]
-        self.row(power.LABELS["screen_off"],self.system_screen_text(s) if screen is None else power.duration_text(screen),
-                 lambda:self.choose("screen_off",screen,system=True,option=option),icon="video-display-symbolic",fallback="🖵",ident=f"idle{tag}:screen_off")
+        self.row(power.LABELS["screen_off"],power.duration_text(times["screen_off"]),lambda:self.choose("screen_off",times["screen_off"],option=option),
+                 icon="video-display-symbolic",fallback="🖵",ident=f"idle{tag}:screen_off")
         self.row(power.LABELS["lock"],power.duration_text(times["lock"]),lambda:self.choose("lock",times["lock"],option=option),
-                 detail="" if s.locker else "No screen locker is installed (such as i3lock, or swaylock on sway)",
+                 detail="" if s.locker else "swaylock is not installed",
                  icon="system-lock-screen-symbolic",fallback="🔒",ident=f"idle{tag}:lock")
         self.row(power.LABELS["sleep"],power.duration_text(times["sleep"]),lambda:self.choose("sleep",times["sleep"],option=option),
                  detail="" if s.can_sleep else "Nothing on this computer can make it sleep",
@@ -519,61 +439,15 @@ class PowerPage(Page):
             store=ConfigStore(); store.settings["battery_critical"]["percent"]=int(key); store.save(); tell_tvwcs("reload"); self.refresh(quiet=True)
         self.win.choose_option("Nearly empty means",[(str(p),f"{p}%") for p in power.CRITICAL_PERCENTS],str(self.state.critical["percent"]),picked)
 
-    def choose_logo(self):
+    def choose(self, action, current, option="idle"):
+        options=[(str(v),power.duration_text(v)) for v in power.CHOICES]
         def picked(key):
-            if key=="image": self.ask_image(); return
-            store=ConfigStore(); store.settings["screensaver_logo"]=key; store.save(); self.redraw()
-        self.win.choose_option("Screen saver logo",list(SCREENSAVER_LOGOS.items()),ConfigStore().settings["screensaver_logo"],picked)
-    def ask_image(self, error=""):
-        def got(path):
-            full=os.path.expanduser(path.strip())
-            if not os.path.isfile(full): self.ask_image(f"There is no file at {path.strip() or '(nothing typed)'}."); return
-            store=ConfigStore(); store.settings["screensaver_logo"]="image"; store.settings["screensaver_image"]=path.strip(); store.save(); self.redraw()
-        self.win.ask_text("Your own logo","The picture's path, such as ~/Pictures/logo.png. A picture with a transparent background looks best.",got,
-                          ConfigStore().settings["screensaver_image"] or "~/Pictures/",error=error)
-    def preview_saver(self):
-        from tvwcs.lockscreen import launcher
-        from tvwcs import screensaver
-        problem=screensaver.start(launcher(),preview=True)
-        if problem: self.win.notice("Screen saver",problem)
-    def stop_xss_lock(self):
-        path=self.state.xss_lock
-        self.win.confirm("Stop locking when the screen turns off",
-                         "xss-lock locks the screen every time it turns off, even with “Lock after” set to Never, so a TV wakes up "
-                         f"to a password prompt. TVWCS will turn it off in {path.replace(str(Path.home()),'~',1)} (keeping a copy of the file as "
-                         f"{os.path.basename(path)}.before-tvwcs) and stop it now. “Lock after” still locks when you choose a time.",
-                         "Stop it",lambda:self.act(lambda:power.stop_xss_lock(path),"Stopping xss-lock…","Power and sleep"),danger=False)
-
-    def toggle_saver_on_lock(self, on=None):
-        store=ConfigStore(); on=not store.settings["screensaver_on_lock"] if on is None else on
-        store.settings["screensaver_on_lock"]=on; store.save(); tell_tvwcs("reload")
-        self.point_xss_lock(store.settings); self.redraw()
-    def saver_on_lock_on(self): self.toggle_saver_on_lock(True)
-    def point_xss_lock(self, settings):
-        """xss-lock (locking when the screen turns off) locks the same way as Lock: through `tvwcs lock` when TVWCS's
-        lock screen or the screen saver while locked is chosen, else with the locker it ran before."""
-        path=getattr(self.state,"xss_lock","")
-        if not path and self.state.session=="X11": path=power.i3_config_path() or ""   # its line is there even when it is not running now
-        if path and path!="?":
-            from tvwcs.lockscreen import launcher
-            why=power.use_tvwcs_locker(path,f"{launcher()} lock --nofork" if tv_mode() else "")
-            if why: self.win.notice("Lock screen",why)
-
-    @staticmethod
-    def system_screen_text(s):
-        if s.session=="sway": return "Never (sway)"
-        x=s.xtimers; t=min([v for v in (x.saver,x.dpms_off) if v] or [0])
-        return f"{power.duration_text(t)} (X)" if t else "Never (X)"
-
-    def choose(self, action, current, system=False, option="idle"):
-        options=([("system","Let the system decide")] if system else [])+[(str(v),power.duration_text(v)) for v in power.CHOICES]
-        def picked(key):
-            value=None if key=="system" else int(key)
+            value=int(key)
             store=ConfigStore(); store.settings[option][action]=value; store.save(); tell_tvwcs("reload")
             if action in ("lock","sleep") and value and not (self.state.locker if action=="lock" else self.state.can_sleep):
                 self.win.notice(power.LABELS[action].replace(" after",""),"Saved, but this computer has nothing to do that with yet.")
             self.refresh(quiet=True)
-        self.win.choose_option(power.LABELS[action],options,"system" if current is None else str(current),picked)
+        self.win.choose_option(power.LABELS[action],options,str(current),picked)
 
 # ====================================================================== Sound
 class SoundPage(Page):
@@ -697,9 +571,8 @@ class SoundPage(Page):
 
 # ====================================================================== Displays
 class DisplaysPage(Page):
-    """Resolution, refresh rate and scale of each display; with several, which are on, where each one is and (X11) the
-    primary one. On X11 the scale is one for the session, with fractional scales behind a switch. A change that can
-    leave a screen blank or unreadable goes back by itself unless it is kept."""
+    """Resolution, refresh rate and scale of each display; with several, which are on and where each one is. A change
+    that can leave a screen blank or unreadable goes back by itself unless it is kept."""
     key="displays"; title="Displays"; icon="video-display-symbolic"; fallback="🖵"; poll=5
     KEEP_SECONDS=15
     def read(self):
@@ -707,10 +580,9 @@ class DisplaysPage(Page):
         if s.available:
             names=self.monitor_names()
             for o in s.outputs: o.label=o.label or names.get(o.name,"")
-            if s.backend=="xrandr": s.tearing=display.read_tearing()
         return s
     def monitor_names(self):
-        """Connector -> the display's own name, from GDK (it reads the displays' EDID on X11)."""
+        """Connector -> the display's own name, from GDK."""
         gd=Gdk.Display.get_default(); monitors=gd.get_monitors() if gd else None; names={}
         for i in range(monitors.get_n_items() if monitors is not None else 0):
             m=monitors.get_item(i); label=" ".join(x for x in ((m.get_manufacturer() or ""),(m.get_model() or "")) if x).strip()
@@ -725,15 +597,6 @@ class DisplaysPage(Page):
         if not s.available: self.note(s.message); return
         outs=s.outputs; on=[o for o in outs if o.enabled]; where=display.placements(outs); ref=display.reference(outs)
         if len(outs)>1 and on: self.add(self.preview(outs))
-        x11=s.backend=="xrandr"
-        if x11 and on:
-            self.section("SCALE")
-            now=display.session_scale(outs)
-            self.scale_buttons("scale:all",display.scale_choices(outs,s.fractional,now,s.max_size),now,lambda v:self.change_all(display.scaled(outs,v),True),
-                               "Makes text and controls bigger on every display")
-            self.row("Fractional scaling",_on_off(s.fractional),self.toggle_fractional,
-                     detail="Also offers 125 %, 150 %, 175 % and more. Those are a little less sharp, and use more of the graphics card",
-                     ident="scale:fractional",value_css="state-on" if s.fractional else "setting-value")
         for i,o in enumerate(outs,1):
             self.section(f"{i} · {o.title}".upper()+(f"  ({o.name})" if o.label else ""))
             if len(outs)>1:
@@ -745,9 +608,8 @@ class DisplaysPage(Page):
             rates=mode.rates if mode else []
             if o.rate or rates:
                 self.row("Refresh rate",display.rate_text(o.rate) if o.rate else "—",(lambda o=o:self.choose_rate(o)) if len(rates)>1 else None,ident=f"{o.name}:rate")
-            if not x11:
-                self.scale_buttons(f"{o.name}:scale",display.scale_choices([o],True,o.scale),o.scale,lambda v,o=o:self.change(o,True,scale=v),
-                                   "Makes text and controls bigger")
+            self.scale_buttons(f"{o.name}:scale",display.scale_choices([o],o.scale),o.scale,lambda v,o=o:self.change(o,True,scale=v),
+                               "Makes text and controls bigger")
             if len(on)>1:
                 if o is ref:
                     other=next((x for x in on if where.get(x.name,("",""))[1]==o.name),None)
@@ -755,23 +617,8 @@ class DisplaysPage(Page):
                 else:
                     rel,anchor=where[o.name]; value=display.RELATION_TEXT[rel].format(next(x.title for x in outs if x.name==anchor))
                 self.row("Position",value,lambda o=o:self.choose_place(o),ident=f"{o.name}:place")
-                if s.can_set_primary:
-                    self.row("Primary display","Yes" if o.primary else "No",(lambda o=o:self.change(o,False,primary=True)) if not o.primary else None,
-                             detail="" if o.primary else "Make this the primary display",ident=f"{o.name}:primary")
-        t=getattr(s,"tearing",None)
-        if x11 and t is not None and (t.kind or t.nvidia_settings):
-            self.section("TEARING")
-            if t.kind:
-                name="Force full composition pipeline (NVIDIA)" if t.kind=="nvidia" else "TearFree (Xorg)"
-                self.row("Tear-free video",_on_off(t.on),lambda:self.toggle_tearing(t),detail=name+". Stops lines where two frames meet in videos and games",
-                         ident="tear:on",value_css="state-on" if t.on else "setting-value")
-            if t.nvidia_settings:
-                self.row("NVIDIA settings","",self.open_nvidia_settings,icon="preferences-desktop-display-symbolic",fallback="🖵",ident="tear:nvidia",
-                         detail="Opens NVIDIA's own settings. It may need a mouse to use")
         notes=[f"A new resolution, refresh rate, scale or display switched on or off goes back after {self.KEEP_SECONDS} seconds unless you keep it, "
                "in case a display cannot show it."]
-        if x11: notes.append("Some open apps use a new scale only once they are started again, and window titles at the next log-in.")
-        if len(on)>1 and s.can_set_primary: notes.append("The primary display holds the status bar's tray and is where the session starts.")
         notes.append("What you keep is used again at the next log-in, as long as the same displays are connected.")
         self.note(" ".join(notes))
 
@@ -786,7 +633,6 @@ class DisplaysPage(Page):
         for i,o in on:
             shift=seen.get((o.x,o.y),0); seen[(o.x,o.y)]=shift+1   # mirrored displays sit on each other: offset a little
             w,h=o.size; box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); box.add_css_class("display-box")
-            if o.primary: box.add_css_class("primary")
             box.set_size_request(max(S(24),round(w*k)),max(S(24),round(h*k))); box.set_overflow(Gtk.Overflow.HIDDEN)
             number=Gtk.Label(label=str(i)); number.add_css_class("display-number"); number.set_vexpand(True); box.append(number)
             name=Gtk.Label(label=o.title); name.add_css_class("display-name"); name.set_ellipsize(Pango.EllipsizeMode.END); name.set_margin_bottom(S(4))
@@ -794,19 +640,6 @@ class DisplaysPage(Page):
             fixed.put(box,round((o.x-minx)*k)+shift*S(8),round((o.y-miny)*k)+shift*S(8))
         return fixed
 
-    def toggle_tearing(self, t):
-        on=not t.on
-        def work():
-            problem=display.set_tearing(t,on)
-            if not problem: display.save_tearing(on)
-            return problem
-        self.act(work,"Changing tear-free video…","Displays")
-    def open_nvidia_settings(self):
-        def go():
-            try: subprocess.Popen(["nvidia-settings"],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            except OSError as exc: self.win.notice("NVIDIA settings",f"Could not open it: {exc}")
-        self.win.confirm("Open NVIDIA settings?","NVIDIA's settings app is made for a mouse and keyboard: a remote may not be able to use it.",
-                         "Open",go,danger=False)
     def scale_buttons(self, ident, choices, current, pick, detail):
         """Scale: one button per scale (75 % to 200 %), the one in use marked."""
         head=Gtk.Label(label="Scale"); head.set_xalign(0); head.set_margin_top(S(6)); self.add(head)
@@ -823,22 +656,6 @@ class DisplaysPage(Page):
         mode=o.mode()
         self.win.choose_option(f"Resolution · {o.title}",[(m.key,display.mode_text(m)+(" (recommended)" if m.preferred else "")) for m in o.modes],
                                mode.key if mode else None,lambda key:self.change(o,True,mode=key))
-    def choose_scale(self, o):
-        """sway: any scale, display by display."""
-        self.win.choose_option(f"Scale · {o.title}",[(v,display.scale_text(v)) for v in display.scale_choices([o],True,o.scale)],
-                               o.scale,lambda v:self.change(o,True,scale=v))
-    def choose_session_scale(self):
-        outs=self.state.outputs; now=display.session_scale(outs)
-        self.win.choose_option("Scale",[(v,display.scale_text(v)) for v in display.scale_choices(outs,self.state.fractional,now,self.state.max_size)],now,
-                               lambda v:self.change_all(display.scaled(outs,v),True))
-    def toggle_fractional(self):
-        on=not self.state.fractional
-        try: display.set_fractional(on)
-        except OSError as exc: self.win.notice("Displays",f"Could not save the choice: {exc}"); return
-        now=display.session_scale(self.state.outputs)
-        if not on and not display.is_whole(now):   # back to a whole step: the nearest one
-            self.change_all(display.scaled(self.state.outputs,float(max(1,math.floor(now+0.5)))),True)
-        else: self.refresh(quiet=True)
     def choose_rate(self, o):
         mode=o.mode()
         self.win.choose_option(f"Refresh rate · {o.title}",[(r,display.rate_text(r)) for r in mode.rates],o.rate,lambda r:self.change(o,True,rate=r))
@@ -875,7 +692,7 @@ class DisplaysPage(Page):
             in_background(lambda:display.apply(s,old),done,lambda exc:done(str(exc)))
         self.win.countdown("Displays",message,self.KEEP_SECONDS,"Keep",lambda:self.keep(s,new),"Go back",undo)
     def keep(self, s, outputs):
-        try: display.save(s,outputs)
+        try: display.save(outputs)
         except OSError as exc: self.win.notice("Displays",f"The change is in use, but could not be saved for the next log-in: {exc}")
         self.refresh(quiet=True)
 
@@ -944,14 +761,14 @@ class _Console:
         GLib.idle_add(lambda:(self.log_scroll.get_vadjustment().set_value(self.log_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
 
 class UpdatesPage(_SelfUpdate, _Console, Page):
-    """TVWCS's own updates, then the system's packages and Flatpak apps."""
+    """TVWCS's own updates, then the system's packages."""
     key="updates"; title="Software updates"; icon="software-update-available-symbolic"; fallback="⇩"
     MAX_ROWS=300
     def __init__(self, win):
         super().__init__(win); self.running=None; self.log=None; self.fetched=None
         self.finished=None; self.outcome=None   # the run that just ended, until the page is read again; then what came of it
     def read(self):
-        state=updates.read_state(); state.reboot=updates.reboot_needed()
+        state=updates.read_state(); state.reboot=updates.reboot_needed(); state.extras=ubuntu.installed_extras()
         if self.fetched and (state.checked or 0)<self.fetched: state.checked=self.fetched   # unchanged lists keep their old date
         return state
     def summary(self):
@@ -965,7 +782,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             self.note("Leave this running until it finishes. Settings can be closed; the update carries on.")
             self.add(self.console()); return
         self.draw_self_update()
-        self.section("SYSTEM AND APPS")
+        self.section("SYSTEM")
         if not s.available: self.note(s.message); return
         self.row("Check for updates",f"{s.total} available" if s.total else "Up to date",self.refresh,ident="check",
                  icon="view-refresh-symbolic",fallback="⟳")
@@ -985,7 +802,8 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         if self.outcome: self.note(self.outcome,"state-on")
         if self.log is not None and self.log.get_buffer().get_char_count():
             self.section("LAST RUN"); self.add(self.console())
-        for title,items in ((f"{m.label.upper()} PACKAGES" if m else "PACKAGES",s.updates),("FLATPAK APPS",s.flatpak)):
+        self.draw_ubuntu_extras(getattr(s,"extras",[]))
+        for title,items in ((f"{m.label.upper()} PACKAGES" if m else "PACKAGES",s.updates),):
             if not items: continue
             self.section(f"{title} ({len(items)})")
             for u in items[:self.MAX_ROWS]:
@@ -1006,10 +824,8 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
     def confirm_install(self):
         s=self.state; parts=[]
         if s.updates: parts.append(f"{len(s.updates)} package{'s' if len(s.updates)!=1 else ''} from {s.manager.label}")
-        if s.flatpak: parts.append(f"{len(s.flatpak)} Flatpak app{'s' if len(s.flatpak)!=1 else ''}")
         steps=[]
         if s.updates: steps.append((list(s.manager.install_argv),True))
-        if s.flatpak: steps.append((list(updates.FLATPAK.install_argv),False))
         self.win.confirm("Install updates?",f"Install {' and '.join(parts)} now? Apps being updated may need to be restarted afterwards.",
                          "Install",lambda:self.run_steps("Installing updates",steps),danger=False)
 
@@ -1034,346 +850,8 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             else: StreamedRun(argv,self._append,done)
         next_step(0)
 
-    def confirm_reboot(self):
-        command=command_for("reboot")
-        if not command: self.win.notice("Restart","Nothing on this system can restart it from here."); return
-        def go():
-            if privilege.needs_root(command): self.win.run_as_root(command,"Restart",lambda _l:None,lambda code,tail:code and self.win.notice("Restart",tail))
-            else:
-                def done(code,tail):
-                    if code and privilege.polkit_refused(tail): self.win.run_as_root(command,"Restart",lambda _l:None,lambda c,t:c and self.win.notice("Restart",t))
-                    elif code: self.win.notice("Restart",tail)
-                StreamedRun(command,lambda _l:None,done)
-        self.win.confirm("Restart now?","Restart the computer now? Unsaved work in open applications may be lost.","Restart",go)
-
-# ====================================================================== Apps (Flatpak, from Flathub)
-def _shorten(text, limit):
-    """Text cut at a paragraph or sentence end near `limit` characters."""
-    if len(text)<=limit: return text
-    cut=text[:limit]; end=max(cut.rfind("\n\n"),cut.rfind(". ")+1)
-    return (cut[:end] if end>limit//2 else cut.rsplit(" ",1)[0]+" …").rstrip()
-
-class AppsPage(_Console, Page):
-    """A store of Flathub's apps, with tabs along the top: Search (a search bar to type in, with a keyboard button for
-    the on-screen keyboard), Categories (two rows of category buttons, Featured first, over a grid of tiles), Installed,
-    and Settings (where apps come from and what is shown, explained on the page). Selecting a tile shows the app, with
-    Install, or Open and Remove."""
-    key="apps"; title="Apps"; icon="system-software-install-symbolic"; fallback="▦"
-    COLUMNS=4; STEP=24; SEARCH_DELAY_MS=600
-    TABS=(("search","system-search-symbolic","🔍","Search"),("categories","view-grid-symbolic","▦","Categories"),
-          ("installed","emblem-ok-symbolic","✓","Installed"),("settings","emblem-system-symbolic","⚙","Settings"))
-    def __init__(self, win):
-        super().__init__(win); self.log=None; self.tab="categories"; self.category="featured"; self.query=""; self.limit=self.STEP
-        self.running=None; self.outcome=None; self.tiles_from=0; self.refresh_focus=None
-        self.entry=None; self._search_timer=0; self._filling=False
-    @property
-    def view(self):
-        """What the tiles show: "search", "installed" or a category's key."""
-        return self.category if self.tab=="categories" else self.tab
-    def read(self): return flatpak.read_state()
-    def redraw(self):
-        typing=self.entry is not None and self.win._in(self.win.get_focus(),self.entry)
-        super().redraw()
-        if typing and self.entry.get_root() is not None:   # still typing: no text selected, the cursor at the end
-            self.entry.grab_focus_without_selecting(); self.entry.set_position(-1)
-        if self.refresh_focus and not self.busy and not self.win.modal_open:
-            self.focus_tiles(self.refresh_focus); self.refresh_focus=None
-    def summary(self):
-        s=self.state
-        if not s or not s.flatpak: return ""
-        return (f"{len(s.catalog)} apps on Flathub · " if s.catalog else "")+f"{len(s.installed)} installed"
-
-    def draw(self, s):
-        self.tiles_from=0
-        if self.running:
-            self.row(self.running,"Working…",None,icon="emblem-synchronizing-symbolic",fallback="⟳",ident="running")
-            self.note("Leave this running until it finishes."); self.add(self.console()); return
-        if not s.flatpak:
-            argv=flatpak.install_flatpak_argv()
-            steps=[(argv,True)]+[(a,False) for a in flatpak.setup_argv()]
-            self.row("Install Flatpak and Flathub","",(lambda:self.run_steps("Installing Flatpak",steps,"Flatpak is installed and Flathub is set up.")) if argv else None,
-                     detail="Installs Flatpak with the package manager, then adds Flathub. Asks for your password.",icon="system-software-install-symbolic",fallback="⇩",ident="get-flatpak")
-            self.note("Apps here come from Flathub through Flatpak, which keeps each app with what it needs, apart from the system."
-                      +("" if argv else " No supported package manager was found to install Flatpak with."))
-            self.draw_ubuntu_extras()
-            self.last_run(); return
-        if s.catalog is not None: self.toolbar(s)
-        if s.problem: self.note(s.problem,"error")
-        if self.outcome: self.note(self.outcome,"state-on")
-        if s.catalog is None:   # nothing to browse yet: setting Flathub up comes first; installed apps can still be removed
-            if "system" in s.remote:
-                self.row("Download Flathub's list of apps","",self.setup,detail="Flathub is set up on this computer, but its list of apps has not been downloaded.",
-                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
-                self.note("This also adds Flathub for you, so apps install for you without a password. Flathub is where most Linux apps are "
-                          "published, from Kodi and VLC to Steam and web browsers.")
-            else:
-                self.row("Set up Flathub","",self.setup,detail="Adds Flathub for you (no password needed) and downloads its list of apps.",
-                         icon="folder-download-symbolic",fallback="⇩",ident="setup")
-                self.note("Flathub is where most Linux apps are published, from Kodi and VLC to Steam and web browsers.")
-            if s.installed: self.draw_apps(s,"installed")
-        elif self.tab=="settings": self.draw_settings(s)
-        elif self.tab=="search":
-            self.search_bar()
-            if self.query: self.draw_apps(s,"search")
-            else: self.note("Type an app's name, or what it does, such as “video player”. With a remote, choose ⌨ to type on the on-screen keyboard.")
-        elif self.tab=="categories":
-            self.category_buttons(); self.draw_apps(s,self.category)
-        else: self.draw_apps(s,"installed")
-        self.last_run()
-
-    def last_run(self):
-        if self.log is not None and self.log.get_buffer().get_char_count(): self.section("LAST RUN"); self.add(self.console())
-
-    # ---------------------------------------------------------- the tabs, and what is under them
-    def toolbar(self, s):
-        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); bar.set_homogeneous(True); bar.set_margin_bottom(S(8))
-        made=[]
-        for key,icon,fallback,label in self.TABS:
-            if key=="installed": label=f"{label} ({len(s.installed)})"
-            b=Gtk.Button(); b.add_css_class("app-tool")
-            if key==self.tab: b.add_css_class("current")
-            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); line.set_halign(Gtk.Align.CENTER)
-            line.append(glyph(icon,fallback,20)); l=Gtk.Label(label=label); l.set_ellipsize(Pango.EllipsizeMode.END); line.append(l)
-            b.set_child(line); b.connect("clicked",lambda _b,k=key:self.pick_tab(k)); bar.append(b); made.append(b)
-        self.add(bar); g=self.register(*made,ident="tool"); g.entry=made[[k for k,*_ in self.TABS].index(self.tab)]   # ↑ lands on the open tab
-
-    def pick_tab(self, key):
-        """A tab's button stays selected; ↓ goes into what it shows. Search puts the selection in its search bar."""
-        if key==self.tab and key!="search": return
-        self.tab=key; self.limit=self.STEP; self.redraw()
-        if key=="search": GLib.idle_add(lambda:(self.focus_search(),GLib.SOURCE_REMOVE)[1])
-
-    def search_bar(self):
-        """The keyboard button (the on-screen keyboard, for a remote) and the search bar, which searches as you type.
-        The bar is kept from one drawing to the next, so typing in it is never interrupted."""
-        if self.entry is None:
-            self.entry=Gtk.Entry(); self.entry.set_hexpand(True); self.entry.add_css_class("search-bar")
-            self.entry.set_placeholder_text("Search Flathub")
-            self.entry.connect("changed",lambda *_:self._typed()); self.entry.connect("activate",lambda *_:self._search_now())
-        parent=self.entry.get_parent()
-        if parent is not None: parent.remove(self.entry)
-        if " ".join(self.entry.get_text().split())!=self.query: self._fill(self.query)
-        line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_margin_bottom(S(4))
-        keyboard=self.button("input-keyboard-symbolic","⌨","Type with the on-screen keyboard",self.ask_search); keyboard.add_css_class("square")
-        line.append(keyboard); line.append(self.entry); self.add(line)
-        g=self.register(keyboard,self.entry,ident="search"); g.entry=keyboard if tv_mode() else self.entry
-    def focus_search(self):
-        w=self._ids.get("search" if tv_mode() else "search#1")
-        if w is self.entry and w is not None: w.grab_focus_without_selecting(); w.set_position(-1)
-        elif w is not None: w.grab_focus()
-    def _fill(self, text):
-        self._filling=True; self.entry.set_text(text); self._filling=False
-    def _typed(self):
-        if self._filling: return
-        if self._search_timer: GLib.source_remove(self._search_timer)
-        self._search_timer=GLib.timeout_add(self.SEARCH_DELAY_MS,self._search_now)
-    def _search_now(self):
-        if self._search_timer: GLib.source_remove(self._search_timer); self._search_timer=0
-        text=" ".join(self.entry.get_text().split())
-        if text!=self.query: self.query=text; self.limit=self.STEP; self.redraw()
-        return GLib.SOURCE_REMOVE
-    def ask_search(self):
-        def search(text):
-            self.query=" ".join(text.split()); self.limit=self.STEP
-            if self.entry is not None: self._fill(self.query)
-            self.redraw(); GLib.idle_add(lambda:(self.focus_tiles(),GLib.SOURCE_REMOVE)[1])
-        self.win.ask_text("Search Flathub","Type an app's name, or what it does.",search,initial=self.query,ok_label="Search")
-
-    def category_buttons(self):
-        """Every category, as two rows of buttons; the one shown is marked."""
-        cats=flatpak.CATEGORIES; half=(len(cats)+1)//2
-        for start in (0,half):
-            line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(6)); line.set_homogeneous(True); line.set_margin_bottom(S(6)); made=[]
-            for key,label,_c in cats[start:start+half]:
-                b=Gtk.Button(label=label); b.add_css_class("app-tool")
-                if key==self.category: b.add_css_class("current")
-                b.connect("clicked",lambda _b,k=key:self.pick_category(k)); line.append(b); made.append(b)
-            for _ in range(len(made),half): line.append(Gtk.Box())   # the second row's buttons keep the first row's width
-            self.add(line); g=self.register(*made); g.column=True
-            for (key,_l,_c),b in zip(cats[start:start+half],made): self._ids[f"cat:{key}"]=b
-    def pick_category(self, key):
-        if key!=self.category: self.category=key; self.limit=self.STEP; self.redraw()
-
-    def listed(self, s, view):
-        if view=="installed":
-            known=s.catalog.by_id if s.catalog else {}
-            return sorted((known.get(i.id) or flatpak.App(i.id,i.name,version=i.version) for i in s.installed),key=lambda a:a.name.casefold())
-        if s.catalog is None: return []
-        apps=s.catalog.search(self.query) if view=="search" else s.catalog.category(view)
-        if not ConfigStore().settings["flatpak_unverified"]: apps=[a for a in apps if a.verified]   # Apps > Settings > Unverified apps
-        return apps
-
-    def draw_apps(self, s, view):
-        apps=self.listed(s,view)
-        if view=="installed": heading="INSTALLED"
-        elif view=="search": heading="RESULTS"
-        else: heading=flatpak.CATEGORY_LABELS[view].upper()
-        self.section(f"{heading} ({len(apps)})")
-        if not apps:
-            self.note({"installed":"No Flatpak apps are installed yet. Find one under Categories or Search.",
-                       "search":"Nothing on Flathub matches that. Try fewer or other words."}.get(view,"Nothing here yet.")); return
-        grid=Gtk.Grid(); grid.set_column_homogeneous(True); grid.set_row_spacing(S(8)); grid.set_column_spacing(S(8)); grid.set_margin_top(S(4))
-        shown=apps[:self.limit]; self.tiles_from=len(self.groups)
-        for start in range(0,len(shown),self.COLUMNS):
-            row=[]
-            for col,a in enumerate(shown[start:start+self.COLUMNS]):
-                t=self.tile(a,s.is_installed(a.id)); grid.attach(t,col,start//self.COLUMNS,1,1); row.append(t)
-            for col in range(len(row),self.COLUMNS): grid.attach(Gtk.Box(),col,start//self.COLUMNS,1,1)   # keeps the tiles their size
-            g=self.register(*row); g.column=True
-            for t,a in zip(row,shown[start:start+self.COLUMNS]): self._ids[f"app:{a.id}"]=t
-        self.add(grid)
-        if len(apps)>self.limit:
-            self.row(f"Show more ({len(apps)-self.limit} more)","",lambda:self.more(apps),icon="go-down-symbolic",fallback="↓",ident="more")
-
-    def app_icon(self, a, size):
-        paths=[a.icon] if a.icon else []
-        for base in (flatpak.user_dir(),flatpak.SYSTEM_DIR):   # an installed app's own icon, in whichever size it brought
-            paths+=[str(base/f"exports/share/icons/hicolor/{d}/apps/{a.id}.{ext}") for d,ext in
-                    (("128x128","png"),("256x256","png"),("scalable","svg"),("512x512","png"),("96x96","png"),("64x64","png"),("48x48","png"))]
-        path=next((p for p in paths if os.path.isfile(p)),None)
-        if path is None: return glyph("application-x-executable-symbolic","▦",size)
-        img=Gtk.Image.new_from_file(path); img.set_pixel_size(S(size)); return img
-
-    def tile(self, a, installed):
-        b=Gtk.Button(); b.add_css_class("app-tile")
-        box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); box.set_valign(Gtk.Align.START)
-        icon=self.app_icon(a,64); icon.set_margin_bottom(S(4)); box.append(icon)
-        name=Gtk.Label(label=a.name); name.add_css_class("app-name"); name.set_ellipsize(Pango.EllipsizeMode.END); name.set_max_width_chars(1); name.set_hexpand(True)
-        box.append(name)
-        summary=Gtk.Label(label=a.summary or (f"Version {a.version}" if a.version else a.id)); summary.add_css_class("row-detail"); summary.set_wrap(True); summary.set_wrap_mode(Pango.WrapMode.WORD_CHAR); summary.set_lines(2)
-        summary.set_ellipsize(Pango.EllipsizeMode.END); summary.set_max_width_chars(1); summary.set_justify(Gtk.Justification.CENTER); box.append(summary)
-        if installed: badge=Gtk.Label(label="Installed"); badge.add_css_class("state-on"); box.append(badge)
-        b.set_child(box); b.set_tooltip_text(a.name); b.connect("clicked",lambda *_:self.details(a)); return b
-
-    def focus_tiles(self, ident=None):
-        target=self._ids.get(ident) if ident else None
-        if target is not None and usable(target): target.grab_focus(); return
-        if self.tiles_from: self.win._focus_first(self.groups[self.tiles_from:])
-        else: self.win._focus_first(self.groups)
-    def more(self, apps):
-        first=apps[self.limit] if len(apps)>self.limit else None
-        self.limit+=self.STEP; self.redraw()
-        if first is not None: self.focus_tiles(f"app:{first.id}")
-
-    # ---------------------------------------------------------- an app
-    def details(self, a):
-        s=self.state; inst=s.is_installed(a.id); win=self.win
-        win._begin_modal(a.name)
-        head=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(16)); head.set_margin_bottom(S(10))
-        head.append(self.app_icon(a,96))
-        facts=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); facts.set_valign(Gtk.Align.CENTER)
-        version=(inst.version if inst else "") or a.version
-        lines=[a.developer," · ".join(x for x in (f"Version {version}" if version else "",a.license) if x)]
-        if a.verified: lines.append("✓ Verified on Flathub")
-        for text in lines:
-            if text: l=Gtk.Label(label=text); l.set_xalign(0); l.add_css_class("muted"); facts.append(l)
-        if inst: l=Gtk.Label(label="Installed"+(" for everyone on this computer" if inst.installation=="system" else "")); l.set_xalign(0); l.add_css_class("state-on"); facts.append(l)
-        head.append(facts); win.modal_card.append(head)
-        if a.summary: win._message(a.summary,"app-summary")
-        if a.description: win._message(_shorten(a.description,600))
-        if inst: specs=[("Open",lambda:self.open_app(a),"active"),("Remove",lambda:self.remove(a,inst),"danger"),("Close",win.close_modal,None)]
-        else: specs=[("Install",lambda:self.install(a),"active"),("Close",win.close_modal,None)]
-        made=win._buttons(*specs)
-        win._finish_modal([made],win.close_modal,made[0] if inst else made[-1])   # Close first: a stray Enter never starts a download
-    def install(self, a):
-        self.win.close_modal(); s=self.state
-        steps=([] if "user" in s.remote else [(flatpak.setup_argv()[0],False)])+[(flatpak.install_argv(a.id),False)]
-        self.run_steps(f"Installing {a.name}",steps,f"{a.name} is installed. Open it here, or from Applications.",a.id)
-    def remove(self, a, inst):
-        argv,root=flatpak.uninstall_argv(inst)
-        self.win.confirm(f"Remove {a.name}?",f"{a.name} is removed from this computer"+(" for everyone, and this asks for your password" if root else "")
-                         +f". Its settings stay (in ~/.var/app/{a.id}), so installing it again keeps them.","Remove",
-                         lambda:self.run_steps(f"Removing {a.name}",[(argv,root)],f"{a.name} was removed.",a.id),
-                         back=lambda:self.details(a))
-    def open_app(self, a):
-        self.win.close_modal()
-        try: subprocess.Popen(flatpak.run_argv(a.id),start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        except OSError as exc: self.win.notice(a.name,f"Could not open {a.name}: {exc}"); return
-        self.win.close()   # out of the way of the app
-    def setup(self):
-        self.run_steps("Setting up Flathub",[(argv,False) for argv in flatpak.setup_argv()],"Flathub is set up.")
-
-    # ---------------------------------------------------------- the Settings tab
-    def draw_settings(self, s):
-        """The Apps settings, on the page: how apps are installed now, then each choice with what it does."""
-        unverified=ConfigStore().settings["flatpak_unverified"]
-        flathub=[r for r in s.remotes if r.name==flatpak.REMOTE]
-        where={"user":"for you","system":"for everyone on this computer"}
-        self.section("HOW APPS ARE INSTALLED")
-        on=[where[r.installation] for r in flathub if r.enabled]
-        self.note(("Flathub is set up "+" and ".join(on)+". " if on else "Flathub is not set up, or it is turned off. ")
-                  +"Apps installed here are installed for you only, in your home folder, so no password is needed and other users "
-                  "of this computer do not get them. Apps installed for everyone (by an administrator, with the system's software "
-                  f"tools) are listed under Installed too, and removing them asks for your password. {len(s.installed)} app"
-                  f"{'s are' if len(s.installed)!=1 else ' is'} installed. Updates to them come with the rest of the system's, on Software updates.")
-
-        self.section("REPOSITORIES")
-        self.note("A repository is a place Flatpak downloads apps from. Flathub is the main one, and the only one these tabs browse; "
-                  "apps from another repository can still be installed by their own instructions, and are updated from it. "
-                  "Turning a repository off keeps its apps, but they get no more updates.")
-        for r in s.remotes:
-            forget=None
-            if r.name!=flatpak.REMOTE:   # Flathub is always kept: it can be turned off
-                forget=self.button("user-trash-symbolic","✕",f"Remove {r.name}",lambda r=r:self.delete_remote(r),danger=True)
-            self.row(r.name,"On" if r.enabled else "Off",lambda r=r:self.toggle_remote(r),icon="folder-remote-symbolic",fallback="⇄",
-                     detail=" · ".join(x for x in ("For you" if r.installation=="user" else "For everyone (system)",r.url) if x)+". Select to turn it "+("off" if r.enabled else "on"),
-                     ident=f"remote:{r.name}:{r.installation}",extras=[forget],value_css="state-on" if r.enabled else "setting-value")
-        if not s.remotes: self.note("No repositories are set up.")
-        if not flathub:
-            self.row("Add Flathub again","",self.setup,icon="list-add-symbolic",fallback="+",ident="set:flathub",detail="Adds Flathub for you and downloads its list of apps")
-        self.row("Add a repository","",self.add_remote,icon="list-add-symbolic",fallback="+",ident="set:add",
-                 detail="From the address of its .flatpakrepo file, such as Flathub Beta's")
-
-        self.section("WHICH APPS ARE SHOWN")
-        self.row("Show unverified apps",_on_off(unverified),self.toggle_unverified,ident="set:unverified",value_css="state-on" if unverified else "setting-value",
-                 detail="Off is recommended")
-        self.note("Off: only apps whose publisher Flathub has verified to be the app's own developer are shown. "
-                  "On: also apps packaged by someone else, often a volunteer. Most work well, but their publisher is not checked, "
-                  "so install them only when you trust where they come from.")
-
-        self.section("THE LIST OF APPS")
-        age=updates.age_text(s.catalog.updated) if s.catalog else ""
-        self.row("Download the list of apps again","",self.setup,detail=f"Downloaded {age}" if age else "Not downloaded yet",
-                 icon="view-refresh-symbolic",fallback="⟳",ident="set:list")
-        self.note("Search and Categories use a copy of Flathub's list of apps kept on this computer. Download it again to see apps "
-                  "added since, and new versions.")
-
-        if s.installed:
-            self.section("REMOVE ALL APPS")
-            self.row("Uninstall every Flatpak app and runtime","",self.uninstall_all,icon="user-trash-symbolic",fallback="✕",ident="set:uninstall",
-                     detail=f"{len(s.installed)} app{'s' if len(s.installed)!=1 else ''}")
-            self.note("Removes every Flatpak app and the runtimes they share, for a fresh start. Each app's own settings and files "
-                      "in your home folder (~/.var/app) are kept.")
-
-        self.draw_ubuntu_extras()
-
-    def toggle_unverified(self):
-        store=ConfigStore(); store.settings["flatpak_unverified"]=not store.settings["flatpak_unverified"]; store.save()
-        self.redraw()
-    def add_remote(self, error=""):
-        def got(url):
-            url=url.strip()
-            if not url.startswith(("https://","http://")): self.add_remote("Type the repository's address, starting with https://."); return
-            self.run_steps("Adding a repository",[(flatpak.add_remote_argv(url),False)],f"{flatpak.remote_name(url)} is added.",focus="set:add")
-        self.win.ask_text("Add a repository","The address of the repository's .flatpakrepo file, such as https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo.",
-                          got,"https://",error=error)
-    def toggle_remote(self, r):
-        argv,root=flatpak.enable_remote_argv(r,not r.enabled)
-        self.run_steps(f"Turning {r.name} {'off' if r.enabled else 'on'}",[(argv,root)],f"{r.name} is {'off' if r.enabled else 'on'}.",
-                       focus=f"remote:{r.name}:{r.installation}")
-    def delete_remote(self, r):
-        argv,root=flatpak.delete_remote_argv(r)
-        self.win.confirm(f"Remove {r.name}?",f"Apps from {r.name} stop getting updates.","Remove",
-                         lambda:self.run_steps(f"Removing {r.name}",[(argv,root)],f"{r.name} is removed.",focus="set:add"))
-    def uninstall_all(self):
-        steps=flatpak.uninstall_all_steps(self.state.installed)
-        self.win.confirm("Uninstall every Flatpak app?",f"This uninstalls all {len(self.state.installed)} Flatpak apps and the runtimes they use, with their "
-                         "files. Their data in your home folder (~/.var/app) is kept."+(" It asks for your password for the system-wide ones." if len(steps)>1 else ""),
-                         "Uninstall all",lambda:self.run_steps("Uninstalling Flatpak apps",steps,"Every Flatpak app is uninstalled."))
-
-    def draw_ubuntu_extras(self):
+    def draw_ubuntu_extras(self, extras):
         """Ubuntu's Snap, cloud-init and Ubuntu Pro client, each offered for removal while it is installed (control_ubuntu)."""
-        extras=ubuntu.installed_extras()
         if not extras: return
         self.section("UBUNTU EXTRAS")
         for e,pkgs in extras:
@@ -1387,45 +865,19 @@ class AppsPage(_Console, Page):
         if apps: text+=f"\n\nSnap apps removed with it: {', '.join(apps)}."
         if also: text+=f"\n\nAlso removed, as they need it: {', '.join(also)}."
         text+=" It asks for your password."
-        self.win.confirm(f"Remove {e.name}?",text,"Remove",
-                         lambda:self.run_steps(f"Removing {e.name}",[(ubuntu.purge_argv([e.key]),True)],f"{e.name} is removed.",
-                                                       focus="set:list" if self.state.flatpak else "get-flatpak"))
+        self.win.confirm(f"Remove {e.name}?",text,"Remove",lambda:self.run_steps(f"Removing {e.name}",[(ubuntu.purge_argv([e.key]),True)]))
 
-    def ubuntu_extras(self):
-        """Ubuntu's Snap, cloud-init and Ubuntu Pro client, each offered for removal while it is installed (control_ubuntu)."""
-        extras=ubuntu.installed_extras()
-        if not extras: self.win.notice("Ubuntu extras","Snap, cloud-init and the Ubuntu Pro client are not installed."); return
-        def picked(key):
-            e,pkgs=next((e,p) for e,p in extras if e.key==key)
-            also=ubuntu.would_remove(pkgs); apps=ubuntu.snap_apps() if e.key=="snap" else []
-            text=e.what
-            if apps: text+=f"\n\nSnap apps removed with it: {', '.join(apps)}."
-            if also: text+=f"\n\nAlso removed, as they need it: {', '.join(also)}."
-            text+=" It asks for your password."
-            self.win.confirm(f"Remove {e.name}?",text,"Remove",lambda:self.run_steps(f"Removing {e.name}",[(ubuntu.purge_argv([e.key]),True)],f"{e.name} is removed."))
-        self.win.choose_option("Remove Ubuntu extras",[(e.key,f"{e.name} ({', '.join(p)})") for e,p in extras],None,picked)
-
-    def run_steps(self, label, steps, success, app_id=None, focus=None):
-        """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
-        self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
-        self.win._focus_first(self.groups)
-        def finish(problem=""):
-            self.running=None; self.set_status("")
-            if problem: self._append(f"\n✗ Stopped: {problem}")
-            else: self.outcome=success; self._append(f"\n✓ {success}")
-            target=focus or (f"app:{app_id}" if app_id else "tiles")
-            self.redraw(); self.focus_tiles(target); self.refresh_focus=target   # and again once the page has been read again
-            if problem: self.win.notice(label,problem)
-            self.refresh(quiet=True)
-        def next_step(i):
-            if i>=len(steps): finish(); return
-            argv,root=steps[i]; self._append("$ "+" ".join(argv))
-            def done(code,tail):
-                if code!=0: finish(tail.strip().splitlines()[-1] if tail.strip() else f"It stopped with exit status {code}."); return
-                next_step(i+1)
-            if root: self.win.run_as_root(argv,label,self._append,done)
-            else: StreamedRun(argv,self._append,done)
-        next_step(0)
+    def confirm_reboot(self):
+        command=command_for("reboot")
+        if not command: self.win.notice("Restart","Nothing on this system can restart it from here."); return
+        def go():
+            if privilege.needs_root(command): self.win.run_as_root(command,"Restart",lambda _l:None,lambda code,tail:code and self.win.notice("Restart",tail))
+            else:
+                def done(code,tail):
+                    if code and privilege.polkit_refused(tail): self.win.run_as_root(command,"Restart",lambda _l:None,lambda c,t:c and self.win.notice("Restart",t))
+                    elif code: self.win.notice("Restart",tail)
+                StreamedRun(command,lambda _l:None,done)
+        self.win.confirm("Restart now?","Restart the computer now? Unsaved work in open applications may be lost.","Restart",go)
 
 # ====================================================================== System information
 class SystemPage(Page):
@@ -1498,94 +950,6 @@ class SystemPage(Page):
             name=" ".join(x for x in ((m.get_manufacturer() or ""),(m.get_model() or "")) if x).strip() or (m.get_connector() or f"Display {i+1}")
             rows.append((name,f"{g.width*f} × {g.height*f}"+(f" at {hz:.0f} Hz" if hz else "")))
         return rows
-
-# ====================================================================== Terminal
-class TerminalPage(Page):
-    key="terminal"; title="Terminal"; icon="utilities-terminal-symbolic"; fallback="▮"; refreshable=False
-    enter_at_top=True   # coming in from the tabs lands on the buttons: once in the terminal, every arrow key is the shell's
-    def __init__(self, win):
-        super().__init__(win); self.terminal=None; self.child=None; self.process=None
-    def summary(self): return os.environ.get("SHELL","/bin/sh") if Vte is not None else "Command console"
-
-    def content(self):
-        box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(6)); box.set_margin_start(S(24)); box.set_margin_end(S(24)); box.set_margin_bottom(S(16))
-        bar=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); box.append(bar)
-        if Vte is not None:
-            restart=Gtk.Button(label="New session"); restart.connect("clicked",lambda *_:self.start(restart=True))
-            copy=Gtk.Button(label="Copy"); copy.connect("clicked",lambda *_:self.terminal.copy_clipboard_format(Vte.Format.TEXT))
-            paste=Gtk.Button(label="Paste"); paste.connect("clicked",lambda *_:self.terminal.paste_clipboard())
-            tab=Gtk.Button(label="Tab"); tab.set_tooltip_text("Send the Tab key to the shell (completes what you typed)")
-            tab.connect("clicked",lambda *_:self.send(b"\t"))
-            esc=Gtk.Button(label="Esc"); esc.set_tooltip_text("Send the Esc key to the shell")
-            esc.connect("clicked",lambda *_:self.send(b"\x1b"))
-            for b in (restart,copy,paste,tab,esc): bar.append(b)
-            hint=muted_label("↓ goes into the terminal, where every key goes to the shell. Esc or Back comes back up to these buttons. "
-                             "Ctrl+Shift+C and Ctrl+Shift+V copy and paste.")
-            hint.set_hexpand(True); hint.set_margin_start(S(12)); bar.append(hint)
-            self.terminal=Vte.Terminal(); self.terminal.set_vexpand(True); self.terminal.set_hexpand(True)
-            self.terminal.set_font_scale(max(1.0,self.win.app.scale)); self.terminal.set_scrollback_lines(5000)
-            fg=Gdk.RGBA(); fg.parse("#d0d0d0"); bg=Gdk.RGBA(); bg.parse("#0c0c0c"); self.terminal.set_colors(fg,bg,None)
-            self.terminal.connect("child-exited",self._exited)
-            keys=Gtk.EventControllerKey(); keys.connect("key-pressed",self._terminal_key); self.terminal.add_controller(keys)
-            frame=Gtk.Box(); frame.add_css_class("console-frame"); frame.append(self.terminal); box.append(frame)
-            self.groups=[NavGroup([restart,copy,paste,tab,esc]),NavGroup([self.terminal])]
-        else:
-            self.entry=Gtk.Entry(); self.entry.set_hexpand(True); self.entry.set_placeholder_text("Type a command, then Enter")
-            self.entry.connect("activate",lambda *_:self.run_command(self.entry.get_text()))
-            run=Gtk.Button(label="Run"); run.add_css_class("active"); run.connect("clicked",lambda *_:self.run_command(self.entry.get_text()))
-            stop=Gtk.Button(label="Stop"); stop.connect("clicked",lambda *_:self.process and self.process.stop())
-            keyboard=Gtk.Button(); keyboard.set_child(glyph("input-keyboard-symbolic","⌨")); keyboard.add_css_class("square"); keyboard.set_tooltip_text("Type the command on the on-screen keyboard")
-            keyboard.connect("clicked",lambda *_:self.win.ask_text("Command","Runs with sh -c in your home folder.",self.run_command,self.entry.get_text(),ok_label="Run"))
-            for w in (self.entry,run,stop,keyboard): bar.append(w)
-            box.append(muted_label("A full terminal needs VTE for GTK 4 (gir1.2-vte-3.91, vte4 or vte291-gtk4). Until then commands run here one at a time, without input."))
-            self.output=Gtk.TextView(); self.output.set_editable(False); self.output.set_cursor_visible(False); self.output.set_focusable(False)
-            self.output.add_css_class("console"); self.output.set_monospace(True); self.output.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-            scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_child(self.output); scroll.add_css_class("console-frame"); self.output_scroll=scroll; box.append(scroll)
-            self.groups=[NavGroup([self.entry,run,stop,keyboard])]
-        return box
-
-    def redraw(self): pass   # nothing here is drawn from a state
-    def shown(self):
-        if Vte is not None and self.child is None: self.start()
-    def captures_keys(self, focused):
-        return self.terminal is not None and focused is not None and (focused is self.terminal or focused.is_ancestor(self.terminal))
-
-    def start(self, restart=False):
-        if restart and self.child:
-            try: os.kill(self.child,9)
-            except OSError: pass
-        self.child=None; self.terminal.reset(True,True)
-        shell=os.environ.get("SHELL") or "/bin/sh"
-        def spawned(_term,pid,error,*_):
-            if error is not None or pid<0: self.terminal.feed(f"Could not start {shell}: {error.message if error else ''}\r\n".encode()); return
-            self.child=pid
-        self.terminal.spawn_async(Vte.PtyFlags.DEFAULT,os.path.expanduser("~"),[shell],None,GLib.SpawnFlags.DEFAULT,None,None,-1,None,spawned)
-        if restart: self.terminal.grab_focus()
-    def send(self, data):
-        """Type a key the remote has no button for (Tab, Esc) into the shell. The selection stays on the button, so it
-        can be pressed again (Tab twice lists the completions)."""
-        if self.child is not None: self.terminal.feed_child(list(data))
-    def _exited(self, *_):
-        self.child=None; self.terminal.feed(b"\r\n[The shell has ended. Choose New session to start another.]\r\n")
-    def _terminal_key(self, _controller, keyval, _keycode, state):
-        ctrl_shift=Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.SHIFT_MASK
-        if state & ctrl_shift==ctrl_shift and keyval in (Gdk.KEY_C,Gdk.KEY_c): self.terminal.copy_clipboard_format(Vte.Format.TEXT); return True
-        if state & ctrl_shift==ctrl_shift and keyval in (Gdk.KEY_V,Gdk.KEY_v): self.terminal.paste_clipboard(); return True
-        return False
-
-    def run_command(self, command):
-        command=(command or "").strip()
-        if not command: return
-        if self.process is not None and self.process.proc is not None and self.process.proc.poll() is None:
-            self.win.notice("Terminal","A command is still running. Stop it first."); return
-        self.entry.set_text(""); self._out(f"$ {command}")
-        def done(code,_tail):
-            self.process=None; self._out(f"[exit status {code}]\n" if code else "")
-        self.process=StreamedRun(["sh","-c",f"cd ~ && {command}"],self._out,done,env=None)
-    def _out(self, line):
-        if not line: return
-        buf=self.output.get_buffer(); buf.insert(buf.get_end_iter(),line+"\n")
-        GLib.idle_add(lambda:(self.output_scroll.get_vadjustment().set_value(self.output_scroll.get_vadjustment().get_upper()),GLib.SOURCE_REMOVE)[1])
 
 # ====================================================================== Network
 class NetworkPage(Page):
@@ -1754,10 +1118,9 @@ class NetworkPage(Page):
 
 # ====================================================================== Storage
 class StoragePage(Page):
-    """The drives in the computer and plugged into it (open, close, switch off before unplugging), and network shares
-    (connect, disconnect, add, forget). See control_storage."""
+    """The drives in the computer and plugged into it (open, close, switch off before unplugging). See control_storage."""
     key="storage"; title="Storage"; icon="drive-harddisk-symbolic"; fallback="🖴"; poll=5
-    def read(self): return storage.read_state(ConfigStore().settings["network_shares"])
+    def read(self): return storage.read_state()
     def summary(self):
         s=self.state
         return f"{len(s.drives)} drive{'s' if len(s.drives)!=1 else ''}" if s else ""
@@ -1769,23 +1132,6 @@ class StoragePage(Page):
         if not s.udisks: self.note("Install udisks2 to open and close drives here.","error")
         self.note("Each drive's partitions are listed under it. Mounting a partition makes its files readable, in the folder shown "
                   "under it. Unmount it, or switch the drive off with ⏏, before unplugging it.")
-        self.section("NETWORK SHARES")
-        if not features.installed(features.BY_KEY["samba"]):
-            self.row("Install network shares (Samba)","",lambda:install_feature(self,features.BY_KEY["samba"]),icon="folder-remote-symbolic",fallback="⇄",
-                     ident="share:feature",detail="To connect to Windows, Samba, NFS or SSH shares. Installs "+", ".join(features.BY_KEY["samba"].packages))
-            return
-        missing=[p for p,ok in (("libglib2.0-bin (the gio command)",s.gio),("gvfs-backends",s.smb)) if not ok]
-        if missing: self.note("Connecting to network shares needs "+" and ".join(missing)+". Install it with sudo apt install "
-                              +" ".join(m.split()[0] for m in missing)+".","error")
-        for sh in s.shares: self.share_row(sh,s)
-        if not s.shares: self.note("No network shares yet.")
-        self.row("Add a network share","",self.add_share if s.gio else None,icon="list-add-symbolic",fallback="+",ident="share:add",
-                 detail="A folder shared by another computer or a NAS, such as smb://nas/videos")
-        self.note("Shares from Windows or Samba start with smb://, NFS with nfs://, SSH with sftp://. Their files appear in "
-                  f"/run/user/{os.getuid()}/gvfs/ and in file managers. Passwords are not stored by TVWCS.")
-        samba=features.BY_KEY["samba"]
-        self.row("Uninstall network shares (Samba)","",lambda:uninstall_feature(self,samba),icon="user-trash-symbolic",fallback="✕",ident="share:remove",
-                 detail="Removes "+", ".join(samba.packages)+". The shares listed here are kept for when it is installed again")
 
     def drive_rows(self, d, s):
         kind="Inside the computer" if not d.removable else ("USB drive" if d.transport=="usb" else "Removable drive")
@@ -1823,44 +1169,9 @@ class StoragePage(Page):
             return storage.power_off(d.path)
         self.act(work,f"Switching off {d.title}…","Storage",after=lambda:None)
 
-    def share_row(self, sh, s):
-        forget=self.button("user-trash-symbolic","✕",f"Forget {sh.address}",lambda sh=sh:self.win.confirm("Forget this share?",
-                           f"Remove {storage.share_label(sh.address)} from the list"+(" and disconnect it?" if sh.connected else "?"),"Forget",lambda:self.forget(sh)),danger=True)
-        go=(lambda sh=sh:self.act(lambda:storage.disconnect(sh.address),"Disconnecting…","Network share")) if sh.connected else (lambda sh=sh:self.connect(sh.address))
-        self.row(storage.share_label(sh.address),"Connected" if sh.connected else "Not connected",go if s.gio else None,
-                 detail=sh.path if sh.connected else sh.address,icon="folder-remote-symbolic",fallback="⇄",ident=f"share:{sh.address}",
-                 extras=[forget],value_css="state-on" if sh.connected else "setting-value")
-
-    def add_share(self, error="", initial="smb://"):
-        def got(address):
-            address=address.strip(); problem=storage.valid_address(address)
-            if problem: self.add_share(problem,address); return
-            store=ConfigStore()
-            if not any(storage.same_share(address,x) for x in store.settings["network_shares"]): store.settings["network_shares"].append(address); store.save()
-            self.connect(address)
-        self.win.ask_text("Add a network share","The share's address, such as smb://nas/videos or smb://192.168.0.10/music.",got,initial,ok_label="Next",error=error)
-    def connect(self, address):
-        def with_user(user):
-            if not user.strip():
-                self.act(lambda:storage.connect(address),f"Connecting to {storage.share_label(address)}…","Network share"); return
-            self.win.ask_text("Password",f"The password for {user.strip()} on {urlparse_host(address)}. It is used to connect and not stored by TVWCS.",
-                              lambda pw:self.act(lambda:storage.connect(address,user.strip(),pw),f"Connecting to {storage.share_label(address)}…","Network share"),
-                              secret=True,ok_label="Connect")
-        self.win.ask_text("User name",f"Your user name on {urlparse_host(address)}. Leave it empty to connect as a guest.",with_user,"",ok_label="Next")
-    def forget(self, sh):
-        def work():
-            problem=storage.disconnect(sh.address) if sh.connected else ""
-            store=ConfigStore(); store.settings["network_shares"]=[x for x in store.settings["network_shares"] if not storage.same_share(x,sh.address)]; store.save()
-            return problem
-        self.act(work,"Forgetting the share…","Network share")
-
-def urlparse_host(address):
-    from urllib.parse import urlparse
-    return urlparse(address).hostname or address
-
 # ====================================================================== Date and time
 class DateTimePage(Page):
-    """The time zone (a region, then a city), the clock set from the network, and the Quick Menu's 12/24-hour clock."""
+    """The time zone, the clock set from the network, and the Quick Menu's 12/24-hour clock."""
     key="datetime"; title="Date and time"; icon="preferences-system-time-symbolic"; fallback="🕓"; poll=20
     def read(self): return timedate.read_state(),ConfigStore().settings["clock_24h"]
     def summary(self):
@@ -1870,10 +1181,8 @@ class DateTimePage(Page):
         self.section("NOW")
         self.row("Time",timedate.clock_text(now,hours24),None,detail=timedate.date_text(now),icon="preferences-system-time-symbolic",fallback="🕓",ident="dt:now")
         self.section("TIME ZONE")
-        region,city=timedate.split_zone(s.timezone)
-        self.row("Region",region,self.choose_region,ident="dt:region")
-        self.row("City",city,lambda:self.choose_city(region),ident="dt:city")
-        self.note("Choosing a city sets the time zone for the whole computer. It may ask for your password.")
+        self.row("Time zone",timedate.zone_label(s.timezone),self.choose_zone,ident="dt:zone")
+        self.note("The time zone is set for the whole computer. It may ask for your password.")
         self.section("NETWORK TIME")
         if s.timedatectl:
             self.row("Set the time from the network",_on_off(s.ntp),self.switch_ntp,
@@ -1881,9 +1190,6 @@ class DateTimePage(Page):
                             ("Turn it on to keep the clock right by itself" if s.can_ntp else "No network time service is installed (such as systemd-timesyncd or chrony)"),
                      ident="dt:ntp",value_css="state-on" if s.ntp else "setting-value")
         else: self.row("Set the time from the network","Unknown",None,detail="Needs systemd's timedatectl",ident="dt:ntp")
-        self.section("SET THE TIME BY HAND")
-        self.row("Set the time",timedate.clock_text(now,hours24),self.set_by_hand if s.timedatectl else None,
-                 detail=("Turns network time off first" if s.ntp else "The date and the time of day") if s.timedatectl else "Needs systemd's timedatectl",ident="dt:set")
         self.section("QUICK MENU CLOCK")
         self.row("Clock",'24-hour (14:05)' if hours24 else "12-hour (2:05 PM)",self.choose_clock,ident="dt:clock")
         self.note("How the time at the bottom of the Quick Menu is written.")
@@ -1908,106 +1214,13 @@ class DateTimePage(Page):
             self.win.notice("Network time","Install a network time service first, such as systemd-timesyncd (or chrony), with your package manager."); return
         self.focus_after="dt:ntp"
         self.as_root_if_needed(timedate.ntp_argv(not s.ntp),"Network time","Turning network time "+("off…" if s.ntp else "on…"))
-    def choose_region(self):
-        s=self.state[0]; groups=timedate.regions(s.zones); current,_city=timedate.split_zone(s.timezone)
-        if not groups: self.win.notice("Time zone","No time zones were found on this computer (/usr/share/zoneinfo is empty)."); return
-        self.win.choose_option("Region",[(r,f"{r}  ·  {len(c)} cit{'ies' if len(c)!=1 else 'y'}") for r,c in groups.items()],current,
-                               lambda r:GLib.idle_add(lambda:(self.choose_city(r),GLib.SOURCE_REMOVE)[1]))
-    def choose_city(self, region):
-        s=self.state[0]; cities=timedate.regions(s.zones).get(region,[])
-        if not cities: self.choose_region(); return
+    def choose_zone(self):
+        s=self.state[0]; zones=timedate.zone_choices(s.zones)
+        if not zones: self.win.notice("Time zone","No time zones were found on this computer (/usr/share/zoneinfo is empty)."); return
         def picked(zone):
             if zone==s.timezone or not timedate.valid_zone(zone,s.zones): return
             self.as_root_if_needed(timedate.timezone_argv(zone,s.timedatectl),"Time zone",f"Setting the time zone to {timedate.zone_label(zone)}…")
-        self.win.choose_option(f"City · {region}",cities,s.timezone if s.timezone in dict(cities) else None,picked)
-    # ---------------------------------------------------------- setting the time by hand
-    def set_by_hand(self):
-        s=self.state[0]
-        if s.ntp:
-            self.win.confirm("Turn network time off?","The time can only be set by hand while it is not set from the network. "
-                             "Turn network time off now? You can turn it on again here.","Turn off",
-                             lambda:self.as_root_if_needed(timedate.ntp_argv(False),"Network time","Turning network time off…",after=self.set_by_hand_now),danger=False)
-            return
-        self.set_by_hand_now()
-    def set_by_hand_now(self):
-        import datetime
-        self.time_fields(datetime.datetime.now().replace(second=0,microsecond=0))
-    def apply_time(self, when):
-        self.win.close_modal()
-        self.as_root_if_needed(timedate.set_time_argv(when),"Set the time",f"Setting the time to {when:%H:%M}…")
-    def time_fields(self, when):
-        """A box for each of year, month, day, hour and minute (typed in, or changed with the ▲ and ▼ above and below
-        it), hour:minute, and AM/PM with the 12-hour clock. ← → move between the boxes, ↑ ↓ to the ▲ and ▼ rows."""
-        win=self.win; win._begin_modal("Set the time"); hours24=self.state[1]
-        state={"when":when,"pm":timedate.hour_12(when.hour)[1]}
-        error=win._message("","error"); error.set_visible(False)
-        row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); row.set_halign(Gtk.Align.CENTER)
-        ups=[]; downs=[]; entries={}; boxes=[]
-        names={"year":"Year","month":"Month","day":"Day","hour":"Hour","minute":"Minute"}
-        def show():
-            w=state["when"]
-            for f,e in entries.items():
-                v=getattr(w,f)
-                if f=="hour" and not hours24: v=timedate.hour_12(v)[0]
-                e.set_text(f"{v:04d}" if f=="year" else f"{v:02d}")
-            if not hours24: style_ampm()
-        def typed():
-            """The boxes as a time, or raises ValueError."""
-            return timedate.from_fields(*(entries[f].get_text() for f in timedate.FIELDS),pm=None if hours24 else state["pm"])
-        def move(field,delta):
-            try: state["when"]=typed()
-            except ValueError: pass   # a box being typed in: move from the last good time
-            state["when"]=timedate.adjust(state["when"],field,delta)
-            if field=="hour": state["pm"]=state["when"].hour>=12
-            error.set_visible(False); show()
-        def column(field):
-            col=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4))
-            up=Gtk.Button(label="▲"); up.connect("clicked",lambda _b:move(field,1)); col.append(up); ups.append(up)
-            e=Gtk.Entry(); e.add_css_class("time-field"); e.set_alignment(0.5); e.set_max_length(4 if field=="year" else 2)
-            e.set_width_chars(4 if field=="year" else 2); e.set_max_width_chars(4 if field=="year" else 2); e.set_input_purpose(Gtk.InputPurpose.DIGITS)
-            e.connect("activate",lambda *_:submit()); entries[field]=e; boxes.append(e); col.append(e)
-            down=Gtk.Button(label="▼"); down.connect("clicked",lambda _b:move(field,-1)); col.append(down); downs.append(down)
-            n=Gtk.Label(label=names[field]); n.add_css_class("muted"); col.append(n); return col
-        for field in ("year","month","day"): row.append(column(field))
-        gap=Gtk.Box(); gap.set_size_request(S(18),-1); row.append(gap)
-        row.append(column("hour"))
-        colon=Gtk.Label(label=":"); colon.add_css_class("time-colon"); colon.set_valign(Gtk.Align.CENTER); row.append(colon)
-        row.append(column("minute"))
-        ampm=None
-        if not hours24:   # one button: the current half of the day stands out, the other is dimmed
-            ampm=Gtk.Button(); ampm.add_css_class("ampm"); ampm.set_valign(Gtk.Align.CENTER)
-            pair=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); am=Gtk.Label(label="AM"); pm=Gtk.Label(label="PM")
-            pair.append(am); pair.append(pm); ampm.set_child(pair); ampm.set_tooltip_text("Switch between AM and PM")
-            def style_ampm():
-                for label,on in ((am,not state["pm"]),(pm,state["pm"])):
-                    label.remove_css_class("ampm-on" if not on else "ampm-off"); label.add_css_class("ampm-on" if on else "ampm-off")
-            def flip():
-                try: state["when"]=typed()
-                except ValueError: pass
-                state["pm"]=not state["pm"]; state["when"]=state["when"].replace(hour=timedate.hour_24(timedate.hour_12(state["when"].hour)[0],state["pm"]))
-                show()
-            ampm.connect("clicked",lambda _b:flip()); row.append(ampm); boxes.append(ampm)
-        win.modal_card.append(row)
-        def submit():
-            try: when=typed()
-            except ValueError as exc: error.set_text(str(exc)); error.set_visible(True); return
-            self.apply_time(when)
-        for i,e in enumerate(boxes):   # ← → move between the boxes (in a box they would only move its cursor)
-            keys=Gtk.EventControllerKey(); keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-            def key(_c,keyval,_code,_state,i=i):
-                if keyval not in (Gdk.KEY_Left,Gdk.KEY_Right): return False
-                j=i+(1 if keyval==Gdk.KEY_Right else -1)
-                if 0<=j<len(boxes): boxes[j].grab_focus()
-                return True
-            keys.connect("key-pressed",key); e.add_controller(keys)
-            if isinstance(e,Gtk.Entry):
-                focus=Gtk.EventControllerFocus(); focus.connect("enter",lambda _c,e=e:GLib.idle_add(lambda:(e.select_region(0,-1),GLib.SOURCE_REMOVE)[1])); e.add_controller(focus)
-        show()
-        cancel,ok=win._buttons(("Cancel",win.close_modal,None),("Set the time",submit,"active"))
-        groups=[]
-        for widgets in (ups,boxes,downs):
-            g=NavGroup(widgets); g.column=True; groups.append(g)
-        win._finish_modal(groups+[NavGroup([cancel,ok])],win.close_modal,entries["hour"])
+        self.win.choose_option("Time zone",zones,s.timezone if s.timezone in dict(zones) else None,picked)
 
     def choose_clock(self):
         def picked(key):
@@ -2038,27 +1251,6 @@ def install_feature(page, f, after=None):
     page.win.confirm(f"Install {f.label}?",f"{f.what} It needs {', '.join(missing)}, which will be installed now. It asks for your password.",
                      "Install",go,danger=False)
 
-def uninstall_feature(page, f):
-    """Remove a feature's packages (features.py), asking first and naming everything apt would take with them."""
-    if not shutil.which("apt-get"):
-        page.win.notice(f.label,f"Remove {', '.join(f.packages)} (the Debian names) with your package manager."); return
-    def ask(going):
-        going=going or list(f.packages)
-        others=[p for p in going if p not in f.packages]
-        lines=[]
-        def done(code, tail):
-            page.set_status("")
-            if code: page.win.notice(f.label,("\n".join(lines[-6:]) or tail or "The packages could not be removed.").strip()); return
-            tell_tvwcs("reload"); page.refresh(quiet=True)
-        def go():
-            page.set_status(f"Removing {', '.join(going)}…")
-            page.win.run_as_root(features.remove_argv(list(f.packages)),f"Removing {f.label}",lines.append,done)
-        page.win.confirm(f"Uninstall {f.label}?",f"This removes {', '.join(f.packages)}"
-                         +(f", and with it {', '.join(others)}, which need{'s' if len(others)==1 else ''} it" if others else "")
-                         +". It can be installed again here. It asks for your password.","Uninstall",go)
-    page.set_status("Checking what would be removed…")
-    in_background(lambda:features.removals(list(f.packages)),lambda going:(page.set_status(""),ask(going)),lambda _exc:(page.set_status(""),ask([])))
-
 # ====================================================================== User
 class UserPage(Page):
     """This user's account (name, password) and logging in: the login screen in use and the automatic login."""
@@ -2067,4 +1259,4 @@ class UserPage(Page):
     def summary(self): return login_ui.role(self.state[0]) if self.state else ""   # "Administrator" or "Standard User", small and grey beside "User"
     def draw(self, state): login_ui.draw_user(self,state)
 
-PAGES=(AppearancePage,UserPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,AppsPage,UpdatesPage,SystemPage,TerminalPage,NetworkPage,StoragePage)
+PAGES=(AppearancePage,UserPage,HotkeysPage,SoundPage,DisplaysPage,PowerPage,BluetoothPage,DateTimePage,UpdatesPage,SystemPage,NetworkPage,StoragePage)

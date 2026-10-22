@@ -1,7 +1,7 @@
 """Ubuntu's own extras that a TV computer does without: Snap (snapd), cloud-init and the Ubuntu Pro client. No GTK
 dependency.
 
-Settings > Apps and install.sh offer to remove (purge) each of them, only on Ubuntu and its family and only while it is
+Settings > Software updates and install.sh offer to remove (purge) each of them, only on Ubuntu and its family and only while it is
 installed. Nothing is pinned: a package that needs snapd (Ubuntu's firefox and chromium-browser packages are only
 there to install the Snap) brings it back.
 
@@ -21,8 +21,7 @@ class Extra:
 
 EXTRAS=(
     Extra("snap","Snap (snapd)",("snapd",),
-          "Ubuntu's second app store and the service that runs its apps. Removing it removes every Snap app with it. "
-          "Apps from Flathub (here in Apps) are not touched."),
+          "Ubuntu's second app store and the service that runs its apps. Removing it removes every Snap app with it."),
     Extra("cloud-init","cloud-init",("cloud-init","cloud-init-base","cloud-initramfs-copymods","cloud-initramfs-dyn-netconf"),
           "Sets up cloud servers and virtual machines when they first start. A computer at home does not need it; "
           "it only adds to the start-up time. The network settings it wrote in /etc/netplan are kept."),
