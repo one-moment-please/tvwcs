@@ -67,31 +67,27 @@ Other distributions and systems without systemd are not supported. [TODO.md](TOD
 
 ## Install
 
-TVWCS comes as Debian packages, attached to each [release](https://github.com/one-moment-please/tvwcs/releases):
+TVWCS comes as a Debian package, **tvwcs**, attached to each [release](https://github.com/one-moment-please/tvwcs/releases): the Quick Menu, Applications, Settings and the **TVWCS** session. apt installs what it needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
 
-- **tvwcs**: the Quick Menu, Applications, Settings and the **TVWCS** session. apt installs what it needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
-- **tvwcs-boot-logo**: the TVWCS logo while the computer starts and shuts down, instead of lines of text (a Plymouth theme). Optional; **Settings › User** turns it on and off.
-
-The installer picks the release, asks a few questions and installs the packages with apt. Run it in a terminal (not as root):
+The installer picks the release, asks a few questions and installs the package with apt. Run it in a terminal (not as root):
 
 ```bash
 wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
 ```
 
-With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the packages next to it, or to download another release. Or install the .deb files yourself: `sudo apt install ./tvwcs_5.0.0_all.deb`.
+With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the package next to it, or to download another release. Or install the .deb yourself: `sudo apt install ./tvwcs_5.1.0_all.deb`.
 
 ### What the installer asks
 
 1. **Which version:** the latest release, the prerelease when there is one, or one of the two releases before the latest.
-2. **The TVWCS logo at startup**, instead of the start-up text.
-3. **Logging in automatically into TVWCS.** With no login screen, it installs greetd (a small login screen with a text login) and offers to log you straight into TVWCS. With greetd, LightDM or SDDM, it offers the automatic login. With another login screen, choose **TVWCS** there.
-4. **Your usual sway session.** TVWCS always has its own **TVWCS** session at the login screen, in TV mode. It asks whether to also add TVWCS to your usual sway session, in desktop mode (one `include /usr/share/tvwcs/tvwcs.conf` line in its config).
+2. **Logging in automatically into TVWCS.** With no login screen, it installs greetd (a small login screen with a text login) and offers to log you straight into TVWCS. With greetd, LightDM or SDDM, it offers the automatic login. With another login screen, choose **TVWCS** there.
+3. **Your usual sway session.** TVWCS always has its own **TVWCS** session at the login screen, in TV mode. It asks whether to also add TVWCS to your usual sway session, in desktop mode (one `include /usr/share/tvwcs/tvwcs.conf` line in its config).
 
 It asks all its questions first and changes nothing until you agree to the list of what it will do. Every file of yours it changes is backed up first as `<file>.tvwcs-backup`. Your own data (channels, favorites, settings, hotkeys) is kept in `~/.config/tvwcs/`.
 
 **Upgrading from 4.x:** run the installer in a terminal once (4.x's updater can't install packages, and says so). It removes the old copy in `~/.local/share/tvwcs` and TVWCS's old login screen: another login screen installed on the computer takes over, or else greetd's text login, and the automatic login is kept. TV mode now runs on sway: the first TVWCS session makes its sway config from sway's standard one (`~/.config/tvwcs/sway-session.conf`). TVWCS is taken out of an i3 config.
 
-**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs tvwcs-boot-logo`). It also takes TVWCS out of your usual sway config, and puts greetd back to its plain text login when it was starting TVWCS.
+**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs`). It also takes TVWCS out of your usual sway config, and puts greetd back to its plain text login when it was starting TVWCS.
 
 **For scripted installs:** `TVWCS_VERSION=latest` (or `package`, or a version such as `5.0.0`) answers which version.
 
@@ -131,7 +127,7 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
 | **Appearance** (`appearance`) | Interface size (Automatic is TV size in TV mode and desktop size otherwise), dark or light theme (passed on to apps that follow the system's choice), accent colour, background colour, closing TVWCS when it loses focus (on by default), and the screen edge margin for TVs that cut off the edges (overscan), set on a full-screen preview with a slider. |
-| **User** (`user`) | Your name and password, with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM). The login screen in use, and switching to another one installed. **TVWCS logo at startup**, on or off (it installs or removes the tvwcs-boot-logo package). The application to open at login (none, the last one used, or one you choose). |
+| **User** (`user`) | Your name and password, with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM). The login screen in use, and switching to another one installed. The application to open at login (none, the last one used, or one you choose). |
 | **Remote and hotkeys** (`hotkeys`) | The Quick Menu key for the keyboard, remote and gamepad (clearing one asks first), and the apps that have a hotkey of their own (give one with ✎ on the app). **Reset all hotkeys** puts back the defaults and removes the app hotkeys. |
 | **Sound** (`sound`) | Volume and mute for the output and the input in use. The others are folded under "2 inactive outputs" or "1 inactive input", which open and close. **Allow over-amplification** lets volumes go up to 150 % (off by default: volumes stop at 100 %). |
 | **Displays** (`displays`) | Resolution, refresh rate, arrangement and scale for each display: a row of buttons from 75 % to 200 %. A change goes back after 15 seconds unless you keep it. |

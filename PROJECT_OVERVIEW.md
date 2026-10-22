@@ -129,14 +129,13 @@ Debian and its family (apt), with systemd. Support for Arch, Fedora, Void, Alpin
 
 ## Packages and installer
 
-One repository, two Debian packages, built by `scripts/build-debs.sh` with plain `dpkg-deb` (no compiling) and attached to each GitHub release:
+One repository and one Debian package, built by `scripts/build-debs.sh` with plain `dpkg-deb` (no compiling) and attached to each GitHub release:
 
-- **tvwcs**: the Python package in `/usr/lib/tvwcs`, `/usr/bin/tvwcs`, `/usr/bin/tvwcs-session` (TVWCS's sway session: it makes `~/.config/tvwcs/sway-session.conf` from `/etc/sway/config` the first time, writes default hotkeys, exports `TVWCS_SESSION` and runs sway), the session entry `tvwcs-sway.desktop`, `/usr/share/tvwcs/tvwcs.conf` and the Settings launcher. Its dependencies are what apt installs with it.
-- **tvwcs-boot-logo**: a Plymouth script theme (`data/plymouth/tvwcs`, the logo from `data/tvwcs-logo.svg`) and a GRUB drop-in adding `splash`; its scripts set the theme and update the initramfs and GRUB. Settings › User installs it from the running version's release and removes it.
+**tvwcs**: the Python package in `/usr/lib/tvwcs`, `/usr/bin/tvwcs`, `/usr/bin/tvwcs-session` (TVWCS's sway session: it makes `~/.config/tvwcs/sway-session.conf` from `/etc/sway/config` the first time, writes default hotkeys, exports `TVWCS_SESSION` and runs sway), the session entry `tvwcs-sway.desktop`, `/usr/share/tvwcs/tvwcs.conf` and the Settings launcher. Its dependencies are what apt installs with it. It conflicts with 5.0.x's tvwcs-boot-logo, so apt removes that.
 
 There is no login screen of TVWCS's own (from 5.0). `loginscreen.py` sets the automatic login where the login screen in use keeps it: greetd's initial session, LightDM's or SDDM's settings. Without a login screen, the installer sets up greetd with its text login (agreety). `loginscreen.py migrate` removes 4.x's greeter: another graphical login screen takes over, else greetd's text login, keeping the automatic login.
 
-`install.sh` (POSIX sh, at the repository root) runs in a terminal, on its own (`wget -qO- …/main/install.sh | bash`, then it downloads the chosen release's packages) or from an unpacked `tvwcs.tar.gz` (it then offers the packages next to it). It asks everything first (version, boot logo, automatic login, desktop mode in the usual sway config), then installs with apt. Upgrading from 4.x it removes `~/.local/share/tvwcs` and what 4.x put elsewhere (its session files, i3 include lines, console start lines). Without a terminal (4.x's in-app updater) it says to run it in one. `--remove` purges the packages. The in-app updater (`selfupdate.py`) downloads the release's .deb files and installs them with `apt-get install` as root.
+`install.sh` (POSIX sh, at the repository root) runs in a terminal, on its own (`wget -qO- …/main/install.sh | bash`, then it downloads the chosen release's packages) or from an unpacked `tvwcs.tar.gz` (it then offers the packages next to it). It asks everything first (version, automatic login, desktop mode in the usual sway config), then installs with apt. Upgrading from 4.x it removes `~/.local/share/tvwcs` and what 4.x put elsewhere (its session files, i3 include lines, console start lines). Without a terminal (4.x's in-app updater) it says to run it in one. `--remove` purges the packages. The in-app updater (`selfupdate.py`) downloads the release's .deb files and installs them with `apt-get install` as root.
 
 ## Where things live
 
@@ -159,13 +158,13 @@ Logic modules have no GTK dependency and are tested without a display.
 | Area | Modules |
 |---|---|
 | Core | `model` (profiles, settings, layout, search), `applications` (discovery, window matching), `workspaces`, `ownership`, `profile_draft`, `pinlock`, `hotkeys` |
-| System | `window_manager` (sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `cursor`, `features`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `loginscreen`, `bootlogo`, `account`, `appearance` (light/dark for apps, background colour) |
+| System | `window_manager` (sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `cursor`, `features`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `loginscreen`, `account`, `appearance` (light/dark for apps, background colour) |
 | Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_datetime`, `control_storage`, `control_updates`, `control_ssh`, `control_sysinfo` |
 | GTK interface | `main` (app, CLI), `ui_window` (Quick Menu, Applications, dialogs, on-screen keyboard), `ui_editors` (profile editor), `ui_control` and `ui_control_pages` (Settings), `widgets`, `theme` |
 
 ```
 package/tvwcs/   modules                  package/tests/  unit tests
-package/bin/     the tvwcs launcher       data/           tvwcs.conf, the session, the Settings .desktop file, the boot logo
+package/bin/     the tvwcs launcher       data/           tvwcs.conf, the session, the Settings .desktop file
 scripts/         tests, packages, release packaging/      each package's control file and scripts
 docs/            Debian guide, release process
 ```

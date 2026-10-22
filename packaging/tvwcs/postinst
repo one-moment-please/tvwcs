@@ -1,5 +1,14 @@
 #!/bin/sh
 # Compile TVWCS's Python files once, as root: its users cannot write the bytecode next to them.
+# 5.0.x's tvwcs-boot-logo, which this package conflicts with, leaves its GRUB drop-in behind when apt removes it (it is
+# a conffile, kept until a purge): without it the computer shows its start-up text again.
 set -e
-if [ "$1" = configure ]; then python3 -m compileall -q /usr/lib/tvwcs/tvwcs >/dev/null 2>&1 || true; fi
+if [ "$1" = configure ]; then
+    python3 -m compileall -q /usr/lib/tvwcs/tvwcs >/dev/null 2>&1 || true
+    LOGO=/etc/default/grub.d/tvwcs-boot-logo.cfg
+    if [ -f "$LOGO" ] && ! dpkg-query -W -f='${db:Status-Abbrev}' tvwcs-boot-logo 2>/dev/null | grep -q '^ii'; then
+        rm -f "$LOGO"
+        if command -v update-grub >/dev/null 2>&1 && [ -f /boot/grub/grub.cfg ]; then update-grub || true; fi
+    fi
+fi
 exit 0

@@ -8,7 +8,6 @@
 # agree to the list of what it will do:
 #   - with TVWCS installed: upgrade, install a different version (the prerelease, or one of the two releases before
 #     the latest) or remove TVWCS;
-#   - the TVWCS logo while the computer starts (the tvwcs-boot-logo package), instead of the start-up text;
 #   - logging in automatically into TVWCS's session. Without a login screen, greetd is installed for it;
 #   - adding TVWCS to your usual sway session (one include line in its config), where it runs in desktop mode;
 #   - on Ubuntu, removing Snap, cloud-init and the Ubuntu Pro client, each asked.
@@ -193,7 +192,7 @@ choose_version() {   # -> WANT (a version, or "package" for the .deb files next 
     esac
     read_releases || RELEASES=""
     set --; DEF=1
-    if [ -n "$PACKAGED" ]; then set -- "$@" "TVWCS $PKG_VERSION (the packages next to this script)"; fi
+    if [ -n "$PACKAGED" ]; then set -- "$@" "TVWCS $PKG_VERSION (the package next to this script)"; fi
     [ -z "$LATEST" ] || set -- "$@" "TVWCS $LATEST, the latest release"
     OTHERS=$(other_versions)
     for V in $(echo "$OTHERS" | cut -d' ' -f1); do
@@ -208,15 +207,9 @@ choose_version() {   # -> WANT (a version, or "package" for the .deb files next 
 }
 
 ask_questions() {
-    LS=$(login_screen); ME=$(id -un); FROM_4=""; MIGRATE=""; AUTO=""; GREETD_NEW=""; DESKTOP=""; OLD_INCLUDE=""; LOGO=""
+    LS=$(login_screen); ME=$(id -un); FROM_4=""; MIGRATE=""; AUTO=""; GREETD_NEW=""; DESKTOP=""; OLD_INCLUDE=""
     [ -d "$OLD_DEST" ] && FROM_4=1
     if old_greeter || [ -d "$LOCAL/lib/tvwcs-greeter" ]; then MIGRATE=1; fi
-    if pkg_installed tvwcs-boot-logo; then LOGO=keep; fi
-
-    heading "The TVWCS logo at startup"
-    say "TVWCS can show its logo while the computer starts and shuts down, instead of lines of text (it installs Plymouth)."
-    if [ -n "$LOGO" ]; then ask_yes "Keep showing the TVWCS logo at startup?" && LOGO=1 || LOGO=""
-    else ask_no "Show the TVWCS logo at startup?" && LOGO=1 || LOGO=""; fi
 
     heading "Logging in"
     if [ -n "$MIGRATE" ]; then
@@ -286,8 +279,7 @@ summary() {
     heading "TVWCS will now"
     if [ "$WANT" = package ]; then say "  install the TVWCS $PKG_VERSION packages from $PACKAGED"; else say "  download and install TVWCS $WANT"; fi
     say "  install the packages TVWCS needs with apt (asks for your password)"
-    if [ -n "$LOGO" ]; then say "  show the TVWCS logo at startup (tvwcs-boot-logo, with Plymouth)"
-    elif pkg_installed tvwcs-boot-logo; then say "  remove the TVWCS logo at startup"; fi
+    ! pkg_installed tvwcs-boot-logo || say "  remove the TVWCS logo at startup (TVWCS no longer has one)"
     [ -z "$MIGRATE" ] || say "  remove TVWCS's old login screen"
     [ -z "$GREETD_NEW" ] || say "  install greetd and use its text login"
     [ -z "$AUTO" ] || say "  log $AUTO in automatically into TVWCS at startup"
@@ -322,16 +314,16 @@ remove_old_copy() {   # what TVWCS 4.x put outside its folder, then the folder i
 
 install_all() {
     if [ "$WANT" = package ]; then D=$WORK/debs; mkdir -p "$D"; chmod 755 "$WORK" "$D"
-        cp "$PACKAGED/tvwcs_${PKG_VERSION}_all.deb" "$D/"; [ -z "$LOGO" ] || cp "$PACKAGED/tvwcs-boot-logo_${PKG_VERSION}_all.deb" "$D/"
+        cp "$PACKAGED/tvwcs_${PKG_VERSION}_all.deb" "$D/"
         chmod 644 "$D"/*.deb; V=$PKG_VERSION
-    else download_debs "$WANT" tvwcs ${LOGO:+tvwcs-boot-logo} || fail "the download did not work."; V=$WANT; fi
+    else download_debs "$WANT" tvwcs || fail "the download did not work."; V=$WANT; fi
     set -- "$WORK/debs/tvwcs_${V}_all.deb"
-    [ -z "$LOGO" ] || set -- "$@" "$WORK/debs/tvwcs-boot-logo_${V}_all.deb"
     [ -z "$GREETD_NEW" ] || set -- "$@" greetd
     say "Installing the packages (apt asks for nothing; sudo may ask for your password)..."
     as_root apt-get update -q || warn "apt-get update did not finish; installing with the package lists there are."
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$@" || fail "apt-get could not install TVWCS."
-    if [ -z "$LOGO" ] && pkg_installed tvwcs-boot-logo; then as_root env DEBIAN_FRONTEND=noninteractive apt-get remove -y tvwcs-boot-logo || warn "The TVWCS logo at startup could not be removed."; fi
+    if pkg_installed tvwcs-boot-logo; then   # 5.0.x's; the tvwcs package conflicts with it, so this is only for older versions
+        as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs-boot-logo || warn "The TVWCS logo at startup could not be removed."; fi
     if [ -n "$MIGRATE" ]; then loginscreen_root migrate $AUTO || fail "TVWCS's old login screen could not be removed."
     elif [ -n "$GREETD_NEW" ]; then loginscreen_root greetd $AUTO || fail "greetd could not be set up."
     elif [ -n "$AUTO" ]; then loginscreen_root autologin "$AUTO" || warn "The automatic login could not be set."; fi
@@ -349,7 +341,7 @@ install_all() {
 
 remove_all() {
     heading "Remove TVWCS?"
-    say "This removes the tvwcs and tvwcs-boot-logo packages$(CFG=$(sway_config); [ -n "$CFG" ] && has_include "$CFG" && echo " and TVWCS's include line in $CFG")."
+    say "This removes the tvwcs package$(CFG=$(sway_config); [ -n "$CFG" ] && has_include "$CFG" && echo " and TVWCS's include line in $CFG")."
     say "Your settings in $TVCONF are kept unless you choose to delete them."
     ask_no "Remove TVWCS now?" || { say "Nothing was changed."; exit 0; }
     KEEP=1; ask_no "Also delete your TVWCS settings ($TVCONF)?" && KEEP="" || :
@@ -358,7 +350,8 @@ remove_all() {
         as_root sh -c 'cp "$1" "$1.tvwcs-backup" && printf "%s\n" "[terminal]" "vt = 7" "" "[default_session]" "command = \"agreety --cmd /bin/sh\"" "user = \"_greetd\"" > "$1"' sh "$ETC/greetd/config.toml"
     fi
     for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs tvwcs-boot-logo || fail "apt-get could not remove TVWCS."
+    # shellcheck disable=SC2046
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_installed tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."
     CFG=$(sway_config)
     if [ -n "$CFG" ] && has_include "$CFG"; then backup "$CFG"
         sed -i -e '/^# TVWCS (desktop mode): its hotkeys/d' -e '/^[[:space:]]*include[[:space:]].*\/usr\/share\/tvwcs\/tvwcs\.conf/d' "$CFG"; fi

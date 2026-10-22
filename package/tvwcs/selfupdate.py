@@ -3,8 +3,8 @@ the newest prerelease), compare it with the running version, download its .deb p
 apt. Each merged change is released as a prerelease first and marked latest once it has been tested, so "the latest
 release" is also what a prerelease rolls back to.
 
-A release has one .deb per package: tvwcs (the program), and tvwcs-boot-logo (the logo shown while the computer starts,
-installed from Settings > User). An update installs the new version of each one installed here.
+A release has one .deb, tvwcs. (5.0.x also had tvwcs-boot-logo; the tvwcs package now conflicts with it, so apt
+removes it with the update.)
 No GTK here, so it can be tested without a display; the Settings panel runs these calls on a worker thread."""
 from __future__ import annotations
 import json, os, re, shutil, subprocess, tempfile, urllib.error, urllib.request
@@ -14,7 +14,7 @@ from pathlib import Path
 GITHUB_REPO="one-moment-please/tvwcs"
 LATEST_URL=f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_URL=f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=30"
-PACKAGES=("tvwcs","tvwcs-boot-logo")
+PACKAGES=("tvwcs",)
 LIB="/usr/lib/tvwcs"        # where the tvwcs package puts the Python package
 MAX_DOWNLOAD=50*1024*1024   # a release's .deb is a few hundred KB; anything near this is not one
 TIMEOUT=20
@@ -128,7 +128,3 @@ def install_argv(files):
     """The root command that installs downloaded .deb files with apt, with the packages they need. A rollback is an
     older version, so downgrades are allowed."""
     return ["env","DEBIAN_FRONTEND=noninteractive","apt-get","install","-y","--allow-downgrades",*[str(f) for f in files]]
-
-def deb_url(name, version):
-    """The download address of one package of one release (Settings > User installs the boot logo of this version)."""
-    return f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{name}_{version}_all.deb"
