@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.2 — 2026-10-22
+
+- Logging into the TVWCS session from LightDM's login screen (as on Linux Mint) no longer sometimes ends back at the login screen after 10 seconds. LightDM switches to the session's console a moment after starting it, and the libseat in Ubuntu 24.04 and Linux Mint 22 (0.8.0) checks only once, when sway starts, so it could miss the switch ("Timeout waiting session to become active"). The session now waits until logind says it is active before starting sway (at most 5 seconds; usually 0.1–0.2 s). The plain "Sway" session isn't TVWCS's and can still hit it there.
+
 ## 5.2.1 — 2026-10-22
 
 - The TVWCS session no longer flashes sway's bar at startup. Its sway config (`~/.config/tvwcs/sway-session.conf`) is made without the standard config's bar, so swaybar never starts; before, it showed for a moment until TV mode hid it. A config made by an earlier version has its bar blocks commented out once, the next time the session starts. Your usual sway session and its bar are not changed.

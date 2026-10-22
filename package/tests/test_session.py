@@ -47,6 +47,19 @@ class SessionConfigTests(unittest.TestCase):
         env={"HOME":str(d),"PATH":f"{d/'bin'}:/usr/bin:/bin","TVWCS_SWAY_STANDARD_CONFIG":str(d/"standard")}
         subprocess.run(["sh",str(SESSION)],env=env,check=True,stdin=subprocess.DEVNULL)
         return d/".config"/"tvwcs"/"sway-session.conf"
+    def test_waits_for_logind_to_make_the_session_active(self):
+        with tempfile.TemporaryDirectory() as d:
+            # LightDM switches to the session's console a moment after starting it; sway's libseat 0.8 checks only once
+            b=Path(d)/"bin"; b.mkdir(); n=Path(d)/"asked"; s=Path(d)/"sway-asked"
+            (b/"loginctl").write_text(f"#!/bin/sh\necho x >> {n}\n[ $(wc -l < {n}) -ge 3 ] && echo yes || echo no\n")
+            (b/"sway").write_text(f"#!/bin/sh\nwc -l < {n} > {s}\n")
+            for f in b.iterdir(): f.chmod(0o755)
+            env={"HOME":d,"PATH":f"{b}:/usr/bin:/bin","TVWCS_SWAY_STANDARD_CONFIG":"/dev/null","XDG_SESSION_ID":"c3"}
+            subprocess.run(["sh",str(SESSION)],env=env,check=True,stdin=subprocess.DEVNULL)
+            self.assertEqual(s.read_text().strip(),"3")
+            (b/"loginctl").write_text("#!/bin/sh\nexit 1\n"); (b/"sway").write_text("#!/bin/sh\n"); t=time.monotonic()   # no such session: no wait
+            subprocess.run(["sh",str(SESSION)],env=env,check=True,stdin=subprocess.DEVNULL)
+            self.assertLess(time.monotonic()-t,1)
     def live(self, cfg): return [l for l in cfg.read_text().splitlines() if l.strip() and not l.lstrip().startswith("#")]
     def test_a_new_config_has_no_bar(self):
         with tempfile.TemporaryDirectory() as d:
