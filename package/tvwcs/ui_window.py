@@ -134,7 +134,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         # On a TV the field is three characters wide, with what to type beside it; it stretches once letters (or a fourth
         # digit) show it is a search. At a desk it is one full-width field.
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); line.append(self.search_entry)
-        self.channel_hint=Gtk.Label(label="Type a channel number, or letters to search"); self.channel_hint.add_css_class("channel-hint")
+        self.channel_hint=Gtk.Label(label="Channel number or search"); self.channel_hint.add_css_class("channel-hint")
         self.channel_hint.set_xalign(0); self.channel_hint.set_hexpand(True); self.channel_hint.set_wrap(True); line.append(self.channel_hint)
         body.append(line); self._search_narrow=None; self._shape_search()
         # what a status icon (or ⏻) unfolds: above the status row, a little indented, like a row's options
@@ -189,9 +189,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         power.connect("clicked",lambda *_:self.toggle_status_panel("power")); icons.append(power); self._status_buttons["power"]=power
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); bar.append(line)
         clock=Gtk.Button(); clock.add_css_class("clock-button"); clock.set_hexpand(True); clock.set_tooltip_text("Date and time")
-        text=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); text.set_halign(Gtk.Align.START)
-        self.clock_time=Gtk.Label(); self.clock_time.add_css_class("clock-time"); self.clock_time.set_xalign(0); text.append(self.clock_time)
-        self.clock_date=Gtk.Label(); self.clock_date.add_css_class("clock-date"); self.clock_date.set_xalign(0); text.append(self.clock_date)
+        # one line: the time, then the date to its right, on the same baseline
+        text=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); text.set_halign(Gtk.Align.START)
+        self.clock_time=Gtk.Label(); self.clock_time.add_css_class("clock-time"); self.clock_time.set_valign(Gtk.Align.BASELINE); text.append(self.clock_time)
+        self.clock_date=Gtk.Label(); self.clock_date.add_css_class("clock-date"); self.clock_date.set_valign(Gtk.Align.BASELINE); text.append(self.clock_date)
         clock.set_child(text); clock.connect("clicked",lambda *_:self.app.open_settings("datetime")); line.append(clock)
         guide=Gtk.Button(); guide.set_child(glyph("view-grid-symbolic","⊞",22)); guide.add_css_class("square"); guide.add_css_class("status-icon"); guide.set_valign(Gtk.Align.CENTER)
         # ⊞ is on screen when it is clicked: open or close Applications here and now (show_mode would first ask the

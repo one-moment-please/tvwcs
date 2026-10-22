@@ -23,7 +23,7 @@ TVWCS has two modes:
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications pane open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">In desktop mode, "TVWCS" and ✕ close at the top (TV mode has no header). Below: one list of your favorites, then the other open applications (by workspace; ▴ unfolds the apps that share one, above it), then the search field. Favorites have a grey ★, and open apps a thin band down their left side. At the bottom, two rows: icons for network, volume, Bluetooth and the battery that each unfold a panel, with ⏻ power at the right; below them the clock and, in the bottom-right corner, ⊞, which opens Applications.</td>
+    <td valign="top">In desktop mode, "TVWCS" and ✕ close at the top (TV mode has no header). Below: one list of your favorites, then the other open applications (by workspace; ▴ unfolds the apps that share one, above it), then the search field. Favorites have a grey ★, and open apps a thin band down their left side. At the bottom, two rows: icons for network, volume, Bluetooth and the battery that each unfold a panel, with ⏻ power at the right; below them the time with the date beside it and, in the bottom-right corner, ⊞, which opens Applications.</td>
     <td valign="top"><b>Channels</b> lists apps you gave a number. <b>All applications</b> lists every app by category; OK/Enter folds a category. ☆ makes an app a favorite, ✎ edits it.</td>
   </tr>
   <tr>
