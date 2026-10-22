@@ -24,17 +24,17 @@ SYSTEM_ACTIONS=(
 )
 
 POWER_MENU=("lock","sleep","reboot","shutdown","logout")   # the power menu's order; logout only with a login screen
-DISPLAY_MANAGERS=("gdm","gdm3","lightdm","sddm","lxdm","xdm","slim","greetd","ly","entrance","emptty")
 
 def login_manager_installed(exists=os.path.exists, which=shutil.which):
-    """True when a login screen (display manager) is installed. Without one, logging out of sway only leaves a text
-    console, so the power menu offers Log out only with one."""
+    """True when a login screen (display manager) runs at start-up. Without one, logging out of sway only leaves a
+    text console, or with Settings' automatic login on the console starts TVWCS again, so the power menu offers Log
+    out only with one. One installed but not set up to start (greetd is only suggested by the package) does not count.
+    `which` is accepted for older callers."""
     if exists("/etc/systemd/system/display-manager.service"): return True
     try:
         with open("/etc/X11/default-display-manager",encoding="utf-8") as f:
-            if f.read().strip(): return True
-    except OSError: pass
-    return any(which(name) for name in DISPLAY_MANAGERS)
+            return bool(f.read().strip())
+    except OSError: return False
 
 def power_menu(settings=None, display_manager=None):
     """The actions the Quick Menu's power menu offers, in order. `settings` is accepted for older callers."""

@@ -35,5 +35,5 @@ class SystemActionTests(unittest.TestCase):
         self.assertEqual(ids({"quick_lock_button":False},True),["lock","sleep","reboot","shutdown","logout"])
     def test_finds_a_login_screen(self):
         self.assertTrue(login_manager_installed(lambda p:p=="/etc/systemd/system/display-manager.service",lambda n:None))
-        self.assertTrue(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))
+        self.assertFalse(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))   # installed, not started
 if __name__=="__main__": unittest.main()
