@@ -10,7 +10,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_bindings
-from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, default_of, display_name, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, is_4k, scale_key, tv_mode as in_tv_mode
+from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, default_of, display_name, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, corner_top, is_4k, scale_key, tv_mode as in_tv_mode
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import appearance, cursor, power, privilege, quick_status, tv_mode
@@ -254,20 +254,21 @@ class TVWCSApp(Gtk.Application):
             try: width=self.window.apps_width()
             except Exception as exc: print(f"Cannot measure the Applications pane: {exc}",file=sys.stderr)
         if not guide and self.window is not None:
-            # the Quick Menu alone is only as tall as its contents, in the bottom-left corner
+            # the Quick Menu alone is only as tall as its contents, in its corner
             try: height=self.window.quick_height(quick_width)
             except Exception as exc: print(f"Cannot measure the Quick Menu: {exc}",file=sys.stderr)
-        self.layout=compute_layout(area,round(s["margin"]*f),quick_width,guide,options,width,height)
+        self.layout=compute_layout(area,round(s["margin"]*f),quick_width,guide,options,width,height,corner=s["quick_corner"])
     def fit_quick_menu(self):
         """The Quick Menu's contents changed (search results, favorites): resize it to fit them."""
         w=self.window
         if w is None or not w.is_visible() or w.guide_open: return
         before=self.layout; self._update_layout(False,False,area=self._area)
         if before is not None and (before.y,before.height)==(self.layout.y,self.layout.height): return
-        # The window grows and shrinks upwards, its bottom row kept still. Left to GTK it would grow downwards from its
-        # old top (its bottom row off the screen) and only then jump up into place: a flicker.
+        # In a bottom corner the window grows and shrinks upwards, its bottom row kept still. Left to GTK it would grow
+        # downwards from its old top (its bottom row off the screen) and only then jump up into place: a flicker. In a top
+        # corner growing downwards is what it should do, so it is resized at once.
         w.set_default_size(self.layout.width,self.layout.height)
-        if before is None or self.layout.height>=before.height:
+        if before is None or self.layout.height>=before.height or corner_top(self.store.settings["quick_corner"]):
             self.apply_geometry(mapped=True)   # taller: moved and resized now, before GTK draws the new contents
             return
         # shorter: GTK first draws the new contents at the bottom of the window as it is, then it is made smaller
@@ -696,13 +697,14 @@ class TVWCSApp(Gtk.Application):
     def reload_options(self):
         """The Settings app changed TVWCS's options (the Options page): read them again, and apply the interface size
         and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
-        old=scale_key(self.store.settings); look=(self.store.settings["theme"],self.store.settings["wallpaper"])
+        old=scale_key(self.store.settings); look=(self.store.settings["theme"],self.store.settings["wallpaper"]); corner=self.store.settings["quick_corner"]
         self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
         self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.apply_bar(); self.watch.updates_changed()
         if (self.store.settings["theme"],self.store.settings["wallpaper"])!=look: self.apply_look()
         if self.window is None: return
         if scale_key(self.store.settings)!=old: set_scale(self.scale_factor)
-        if self.window.is_visible(): self.apply_scale() if scale_key(self.store.settings)!=old else self.window._build()
+        moved=self.store.settings["quick_corner"]!=corner   # placed and laid out again, like a new size
+        if self.window.is_visible(): self.apply_scale() if scale_key(self.store.settings)!=old or moved else self.window._build()
     def open_settings(self,page=None):
         """A status icon or panel's settings button, opening its page (or channel 000, with no page): the Settings app, a
         separate application. It opens where any app would in this mode: an open Settings window is brought up that way,

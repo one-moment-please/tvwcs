@@ -71,6 +71,21 @@ def clear_box(box):
     while child:
         nxt=child.get_next_sibling(); box.remove(child); child=nxt
 
+def flip_children(box):
+    """Put a box's children in the opposite order (a Quick Menu in a top corner is stacked the other way up)."""
+    kids=[]; child=box.get_first_child()
+    while child: kids.append(child); child=child.get_next_sibling()
+    after=None
+    for c in reversed(kids): box.reorder_child_after(c,after); after=c
+
+KEEP_LTR="keep-ltr"   # a widget (and what is in it) that stays left to right in a mirrored Quick Menu: a volume slider
+def mirror(widget):
+    """Lay a widget and everything in it out right to left (a Quick Menu in a right-hand corner). GTK does not pass a
+    widget's direction on to its children, so each is set; widgets added later need their own call."""
+    if widget.has_css_class(KEEP_LTR): return
+    widget.set_direction(Gtk.TextDirection.RTL); child=widget.get_first_child()
+    while child: mirror(child); child=child.get_next_sibling()
+
 def muted_label(text):
     l=Gtk.Label(label=text); l.set_xalign(0); l.set_wrap(True); l.add_css_class("muted"); return l
 

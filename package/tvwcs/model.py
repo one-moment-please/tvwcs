@@ -72,6 +72,12 @@ MARGIN_RANGE=(0,120)
 # Channels run from 000 to 999. Channel 000 goes to TVWCS's own Settings app, once, on a new or updated install.
 CHANNEL_MIN,CHANNEL_MAX=0,999
 SETTINGS_DESKTOP_ID="com.tvwcs.ControlPanel.desktop"
+# Settings > Appearance > Quick Menu corner: the corner of the screen the Quick Menu sits in. Its layout mirrors to
+# match: on the right its rows run right to left (Applications opens to its left), at the top its lists grow downwards.
+CORNERS={"bottom-left":"Bottom left","bottom-right":"Bottom right","top-left":"Top left","top-right":"Top right"}
+DEFAULT_CORNER="bottom-left"
+def corner_right(corner) -> bool: return str(corner or "").endswith("right")
+def corner_top(corner) -> bool: return str(corner or "").startswith("top")
 # Settings > Appearance > Theme: TVWCS's light or dark look; applications that follow the desktop's colour scheme follow it.
 THEMES={"dark":"Dark","light":"Light"}
 # Settings > Appearance > Background colour: what shows where no application is open, and behind the Quick Menu.
@@ -96,8 +102,10 @@ DEFAULT_SETTINGS={
     "lock_command":"",              # empty = auto-detect a screen locker (desktop mode; TV mode uses TVWCS's lock screen)
     "scale":"",                     # key of SCALE_PRESETS, or "" for the mode's own size (scale_key)
     "close_on_click_outside":True,  # close TVWCS when it loses focus (another window takes it)
+    "hide_options_buttons":False,   # hide the Quick Menu rows' ⋯ buttons; ← on a row (or a right-click) still opens its options
     "update_prereleases":False,     # TVWCS's updater also offers prereleases (releases not yet tested and marked latest)
     "clock_24h":False,              # the Quick Menu's clock shows 14:05 instead of 2:05 PM
+    "quick_corner":DEFAULT_CORNER,  # CORNERS: where the Quick Menu sits, its layout mirrored to match
     "theme":"dark",                 # THEMES: TVWCS's look, passed on to applications that follow the desktop's colour scheme
     "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
     "keyboard":"hidden",            # KEYBOARDS: the on-screen keyboard as it was last left (hidden, full or the number pad)
@@ -148,9 +156,10 @@ def _clean_settings(raw) -> dict:
     # Before 4.0, "Used on" (use) set the size along with it: a size that only followed it now follows the mode
     if raw.get("use") in ("tv","desktop") and raw.get("scale")==AUTO_SCALE[raw["use"]=="tv"]: s["scale"]=""
     if raw.get("theme") in THEMES: s["theme"]=raw["theme"]
+    if raw.get("quick_corner") in CORNERS: s["quick_corner"]=raw["quick_corner"]
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
     if raw.get("keyboard") in KEYBOARDS: s["keyboard"]=raw["keyboard"]
-    for key in ("close_on_click_outside","update_prereleases","clock_24h","channel_zero_done",
+    for key in ("close_on_click_outside","hide_options_buttons","update_prereleases","clock_24h","channel_zero_done",
                 "audio_boost"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
@@ -341,24 +350,26 @@ class Layout:
     def guide_width(self) -> int:
         return 0 if not self.guide_open else max(0,self.width-self.quick_width-self.margin)
 
-def compute_layout(area, margin, quick_width, guide_open, options_open=False, guide_width=None, quick_height=None) -> Layout:
-    """Panels left to right: Quick Menu | Applications (tabbed), each pair separated by one `margin`.
-    The Quick Menu sits at the left of `area` (the usable workspace rectangle) with `margin` px above,
-    below and to its left. The tabbed Applications pane fills the rest; Settings is a tab inside it, so
-    the window no longer grows when it opens. The window spans only what is open. `options_open` is
+def compute_layout(area, margin, quick_width, guide_open, options_open=False, guide_width=None, quick_height=None, corner=DEFAULT_CORNER) -> Layout:
+    """Panels side by side: Quick Menu | Applications (tabbed), separated by one `margin`; mirrored (Applications |
+    Quick Menu) when `corner` is on the right. The Quick Menu sits at that side of `area` (the usable workspace
+    rectangle) with `margin` px above, below and beside it. The tabbed Applications pane fills the rest; Settings is a tab
+    inside it, so the window no longer grows when it opens. The window spans only what is open. `options_open` is
     accepted for compatibility with older callers and ignored. `guide_width` (desktop use) caps the Applications pane
     at what its contents need, so the window does not fill the screen. `quick_height` (desktop use, Applications closed)
-    shrinks the Quick Menu to what its contents need, kept in the bottom-left corner with the same margins."""
+    shrinks the Quick Menu to what its contents need, kept in its corner (CORNERS) with the same margins."""
     ax,ay,aw,ah=(int(area[k]) for k in ("x","y","width","height"))
     margin=max(0,min(int(margin),aw//4,ah//4))
     full=max(1,aw-2*margin); height=max(1,ah-2*margin)
     qw=max(1,min(int(quick_width),int(full*0.45)))
     width=full
     if guide_width: width=max(qw+margin+1,min(full,qw+margin+int(guide_width)))
+    if not guide_open: width=qw
+    x=ax+aw-margin-width if corner_right(corner) else ax+margin
     if quick_height and not guide_open:
         h=max(1,min(height,int(quick_height)))
-        return Layout(ax+margin,ay+ah-margin-h,qw,h,qw,margin,False)
-    return Layout(ax+margin,ay+margin,width if guide_open else qw,height,qw,margin,bool(guide_open))
+        return Layout(x,ay+margin if corner_top(corner) else ay+ah-margin-h,qw,h,qw,margin,False)
+    return Layout(x,ay+margin,width,height,qw,margin,bool(guide_open))
 
 # ---------------------------------------------------------------- badges
 

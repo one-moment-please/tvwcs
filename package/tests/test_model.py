@@ -63,6 +63,14 @@ class SettingsAndProfileTests(unittest.TestCase):
             s=ConfigStore(path).settings
             self.assertEqual((s["scale"],s["close_on_click_outside"],s["keyboard"]),("",False,"hidden"))
             self.assertEqual(s["hotkeys"],{"keyboard":{"menu":"Mod1"},"remote":{"menu":"F2"},"gamepad":{"menu":"F7"}}); self.assertEqual((s["startup"]["mode"],s["startup"]["profile_id"]),("app","p1"))
+    def test_quick_menu_corner_and_options_buttons(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"c.json"
+            s=ConfigStore(path).settings; self.assertEqual((s["quick_corner"],s["hide_options_buttons"]),("bottom-left",False))
+            path.write_text(json.dumps({"settings":{"quick_corner":"top-right","hide_options_buttons":True}}))
+            s=ConfigStore(path).settings; self.assertEqual((s["quick_corner"],s["hide_options_buttons"]),("top-right",True))
+            path.write_text(json.dumps({"settings":{"quick_corner":"middle","hide_options_buttons":"yes"}}))
+            s=ConfigStore(path).settings; self.assertEqual((s["quick_corner"],s["hide_options_buttons"]),("bottom-left",False))
     def test_open_at_login_is_one_choice(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"
@@ -268,6 +276,16 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(compute_layout(self.AREA,20,460,False,quick_height=5000).height,1010)   # never taller than the screen
         l=compute_layout(self.AREA,20,460,True,quick_height=400)   # Applications open: the full height
         self.assertEqual((l.y,l.height),(50,1010))
+    def test_quick_menu_in_each_corner(self):
+        area=self.AREA; right=area["x"]+area["width"]; bottom=area["y"]+area["height"]
+        for corner,(x,y) in {"bottom-left":(20,bottom-20-400),"bottom-right":(right-20-460,bottom-20-400),
+                             "top-left":(20,50),"top-right":(right-20-460,50)}.items():
+            l=compute_layout(area,20,460,False,quick_height=400,corner=corner)
+            self.assertEqual((l.x,l.y,l.width,l.height),(x,y,460,400),corner)
+    def test_applications_open_to_the_left_of_a_right_hand_quick_menu(self):
+        l=compute_layout(self.AREA,20,460,True,guide_width=800,corner="bottom-right")
+        self.assertEqual(l.x+l.width,1920-20)   # the Quick Menu (at the right of the window) keeps its margin
+        self.assertEqual(l.width,460+20+800); self.assertEqual((l.y,l.height),(50,1010))
     def test_small_screen_is_clamped(self):
         l=compute_layout({"x":0,"y":0,"width":800,"height":600},20,460,True)
         self.assertLessEqual(l.quick_width,int((800-40)*0.45)); self.assertGreater(l.guide_width,0)

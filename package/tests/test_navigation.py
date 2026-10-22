@@ -130,6 +130,22 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual([order.index(g) for g in (a[0],*b[0].options,b[0])],[1,2,3,4])
         W.focus=b[3]; win._move_group(-1); self.assertIs(W.focus,o2)   # ↑ from the row: its nearest option
         win._move_group(-1); self.assertIs(W.focus,o1); win._move_group(-1); self.assertIs(W.focus,a[3])
+    def test_a_top_corner_reverses_the_navigation_order(self):
+        win=make_window(); a=options_row(win,expanded=True); b=options_row(win,expanded=True)
+        o1,o2=W("option 2"),W("option 1"); b[0].options=[NavGroup([o1]),NavGroup([o2])]
+        bottom=win._ordered_groups("quick")
+        win.app.store.settings={"quick_corner":"top-left"}
+        self.assertEqual(win._ordered_groups("quick"),bottom[::-1])
+        W.focus=b[3]; win._move_group(1); self.assertIs(W.focus,o2)   # ↓ from the row: its nearest option, below it
+    def test_down_goes_through_the_results_in_a_top_corner(self):
+        win=make_window(); win.app.store.settings={"quick_corner":"top-right"}
+        win._search_results=[1,2,3]; win._select_result=MagicMock(); win.search_entry.get_text=lambda:"fire"; W.focus=win.search_entry
+        win._key_pressed(None,ui_window.Gdk.KEY_Down,0,0); win._select_result.assert_called_once_with(1)
+    def test_right_hand_corner_swaps_left_and_right(self):
+        win=make_window(); win.app.store.settings={"quick_corner":"bottom-right"}; win._move_within_group=MagicMock(return_value=True); W.focus=W("row")
+        win._key_pressed(None,ui_window.Gdk.KEY_Right,0,0); win._move_within_group.assert_called_once_with(-1)
+        win._modal_groups=[NavGroup([W("key")])]; win._move_within_group.reset_mock()   # a dialog keeps its order
+        win._key_pressed(None,ui_window.Gdk.KEY_Right,0,0); win._move_within_group.assert_called_once_with(1)
     def test_left_and_right_stay_on_an_option(self):
         win=make_window(); g=options_row(win,expanded=True)[0]; opt=W("option"); item=NavGroup([opt]); item.option_item=True; g.options=[item]; W.focus=opt
         self.assertTrue(win._move_within_group(1)); self.assertTrue(win._move_within_group(-1)); win.app.show_panels.assert_not_called(); self.assertIs(W.focus,opt)

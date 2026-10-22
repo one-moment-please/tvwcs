@@ -13,7 +13,7 @@ from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, 
 from tvwcs import __version__, features, power, privilege, selfupdate
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (SCALE_LABELS, THEMES, WALLPAPERS, ConfigStore, accent_name, is_4k, scale_choices,
+from tvwcs.model import (CORNERS, SCALE_LABELS, THEMES, WALLPAPERS, ConfigStore, accent_name, corner_right, is_4k, scale_choices,
                          scale_key, tv_mode)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for
@@ -236,6 +236,11 @@ class AppearancePage(_ConfigPage):
 
         self.section("BEHAVIOR")
         self.option("Close TVWCS when it loses focus","close_on_click_outside","Clicking another window, or another window opening, closes the Quick Menu.")
+        self.option("Options buttons (⋯) on Quick Menu rows","hide_options_buttons","Even hidden, a row's options open by pressing "
+                    +("→" if corner_right(st["quick_corner"]) else "←")+" on it, or by right-clicking it.",invert=True)
+        self.row("Quick Menu corner",CORNERS[st["quick_corner"]],self.choose_corner,ident="opt:quick_corner")
+        self.note("The corner of the screen the Quick Menu sits in. Its layout mirrors to match: in a right-hand corner it runs "
+                  "right to left and Applications opens to its left; in a top corner its lists and menus open downwards.")
         self.row("Screen edge margin",f"{st['margin']} px",self.choose_margin,ident="opt:margin")
         self.note("Many TVs cut off the edges of the picture (overscan). This opens a full-screen preview: move the slider until the "
                   "Quick Menu and Applications are fully on screen.")
@@ -257,13 +262,16 @@ class AppearancePage(_ConfigPage):
     def choose_wallpaper(self):
         self.win.choose_swatch("Background colour","Six greys, six colours and the same colours darker.",WALLPAPERS,self.state.settings["wallpaper"],
                                lambda c:self.change(lambda s:s.settings.update(wallpaper=c)))
+    def choose_corner(self):
+        self.win.choose_option("Quick Menu corner",list(CORNERS.items()),self.state.settings["quick_corner"],
+                               lambda c:self.change(lambda s:s.settings.update(quick_corner=c)))
     def choose_margin(self):
         from tvwcs.ui_margin import MarginPreview
         st=self.state.settings
         def done(margin):
             if margin is not None and margin!=st["margin"]: self.change(lambda s:s.settings.update(margin=int(margin)))
             GLib.idle_add(lambda:(self._ids.get("opt:margin") is not None and self._ids["opt:margin"].grab_focus(),GLib.SOURCE_REMOVE)[1])
-        MarginPreview(self.win,st["margin"],st["quick_width"],self.win.app.scale,st["accent"],done)
+        MarginPreview(self.win,st["margin"],st["quick_width"],self.win.app.scale,st["accent"],done,corner=st["quick_corner"])
 
 # ====================================================================== Remote and hotkeys
 class HotkeysPage(_ConfigPage):
