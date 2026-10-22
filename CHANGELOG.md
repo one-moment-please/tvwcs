@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.1 — 2026-10-22
+
+- The TVWCS session no longer flashes sway's bar at startup. Its sway config (`~/.config/tvwcs/sway-session.conf`) is made without the standard config's bar, so swaybar never starts; before, it showed for a moment until TV mode hid it. A config made by an earlier version has its bar blocks commented out once, the next time the session starts. Your usual sway session and its bar are not changed.
+
 ## 5.2.0 — 2026-10-22
 
 - **Settings › Appearance › Quick Menu corner:** the Quick Menu can sit in any corner of the screen, not only the bottom left. Its layout mirrors to match. In a right-hand corner its rows, status icons and clock run right to left, ← and → swap (→ on a row opens its options), and Applications opens to its left. In a top corner the clock and status icons are at the top, then the search field; the favorites and open apps, the search results, a row's options and the status panels all open downwards, and ↑ and ↓ swap to match. The Screen edge margin preview shows the chosen corner. Dialogs and the on-screen keyboard keep their usual layout.

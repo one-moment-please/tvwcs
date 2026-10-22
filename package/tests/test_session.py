@@ -1,4 +1,4 @@
-import os, tempfile, time, unittest
+import os, subprocess, tempfile, time, unittest
 from pathlib import Path
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir, session_key
 
@@ -22,4 +22,47 @@ class SessionTests(unittest.TestCase):
             cmd.write_bytes(b"python3\0-m\0tvwcs.main\0"); self.assertTrue(is_tvwcs_process(os.getpid(),proc))
             cmd.write_bytes(b"/usr/bin/firefox\0"); self.assertFalse(is_tvwcs_process(os.getpid(),proc))
             self.assertFalse(is_tvwcs_process(2**22+12345,proc)); self.assertFalse(is_tvwcs_process("x",proc))
+
+SESSION=Path(__file__).resolve().parents[2]/"data"/"tvwcs-session"
+STANDARD="""# Default config for sway
+set $mod Mod4
+bar {
+    position top
+    status_command while date +'%Y-%m-%d %X'; do sleep 1; done
+    colors {
+        statusline #ffffff
+    }
+}
+mode "resize" {
+    bindsym Left resize shrink width 10px
+}
+include /etc/sway/config.d/*
+"""
+class SessionConfigTests(unittest.TestCase):
+    """tvwcs-session's config: made from sway's standard one, without its bar (swaybar would flash before TV mode hid it)."""
+    def run_session(self, d):
+        d=Path(d); (d/"bin").mkdir(exist_ok=True); sway=d/"bin"/"sway"
+        sway.write_text("#!/bin/sh\necho \"$@\" > \"$HOME/sway-args\"\n"); sway.chmod(0o755)
+        (d/"standard").write_text(STANDARD)
+        env={"HOME":str(d),"PATH":f"{d/'bin'}:/usr/bin:/bin","TVWCS_SWAY_STANDARD_CONFIG":str(d/"standard")}
+        subprocess.run(["sh",str(SESSION)],env=env,check=True,stdin=subprocess.DEVNULL)
+        return d/".config"/"tvwcs"/"sway-session.conf"
+    def live(self, cfg): return [l for l in cfg.read_text().splitlines() if l.strip() and not l.lstrip().startswith("#")]
+    def test_a_new_config_has_no_bar(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg=self.run_session(d); live=self.live(cfg)
+            self.assertFalse([l for l in live if l.lstrip().startswith(("bar","position","status_command","colors","statusline"))])
+            self.assertIn('mode "resize" {',live); self.assertIn("    bindsym Left resize shrink width 10px",live)
+            self.assertIn("include /etc/sway/config.d/*",live); self.assertEqual(live[-1],"include /usr/share/tvwcs/tvwcs.conf")
+            self.assertEqual(live.count("}"),1)   # the resize mode's: the bar's are commented out with it
+            self.assertEqual((Path(d)/"sway-args").read_text().split(),["-c",str(cfg)])
+    def test_an_older_config_loses_its_bar_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg=Path(d)/".config"/"tvwcs"/"sway-session.conf"; cfg.parent.mkdir(parents=True)
+            cfg.write_text("# made by 5.2.0\n"+STANDARD+"include /usr/share/tvwcs/tvwcs.conf\n")
+            self.run_session(d); live=self.live(cfg)
+            self.assertFalse([l for l in live if l.lstrip().startswith("bar")]); self.assertIn("set $mod Mod4",live)
+            self.assertFalse((cfg.parent/"sway-session.conf.tmp").exists())
+            with cfg.open("a") as f: f.write("bar {\n    position bottom\n}\n")   # a bar added afterwards is kept
+            self.run_session(d); self.assertIn("bar {",self.live(cfg))
 if __name__=="__main__": unittest.main()
