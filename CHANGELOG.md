@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.4.1 — 2026-10-22
+
+**Quick Menu**
+- The date is beside the time, on one line.
+- On a TV, the hint beside the channel field is shorter ("Channel number or search"), so it fits on one line and the menu is a little smaller.
+- New README screenshots and demo videos.
+
 ## 4.4.0 — 2026-10-22
 
 **Ubuntu LTS support** (tested on Ubuntu 26.04.1 LTS)

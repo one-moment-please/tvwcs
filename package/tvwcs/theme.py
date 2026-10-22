@@ -70,7 +70,7 @@ button.clock-button { padding: 4px 8px; }
 window.pointer button.clock-button:hover, window.pointer button.status-icon:hover { background: @RAISED@; }
 button.clock-button:focus, button.clock-button:focus-visible, button.status-icon:focus, button.status-icon:focus-visible { background: @ACCENT@; outline: 3px solid #ffffff; outline-offset: -3px; }
 .clock-time { font-size: 22px; font-weight: 300; }
-.clock-date { color: @MUTED@; font-size: 12px; }
+.clock-date { color: @MUTED@; font-size: 15px; }
 button:focus .clock-date { color: #ffffff; }
 button.status-wide { padding: 0 8px; }
 .status-count { font-size: 14px; font-weight: 700; }
