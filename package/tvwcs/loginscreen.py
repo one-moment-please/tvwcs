@@ -364,7 +364,10 @@ class Changer:
             if user:
                 if not _USER.fullmatch(user): raise SystemExit(f"Unexpected user name: {user}")
                 self.write(GETTY_DROPIN,GETTY_TEXT.format(user=user))
-            else: self.remove(GETTY_DROPIN)
+            else:
+                self.remove(GETTY_DROPIN)
+                try: path(GETTY_DROPIN).parent.rmdir()   # only when it holds nothing else
+                except OSError: pass
             self.systemctl("daemon-reload")
             if not user and console_autologin():
                 raise SystemExit("Another file in /etc/systemd/system/getty@tty1.service.d logs someone in automatically; change it there.")

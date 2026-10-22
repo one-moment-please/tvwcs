@@ -61,7 +61,7 @@ class RootTests(unittest.TestCase):
         self.assertIn("ExecStart=\nExecStart=-/sbin/agetty -o '-p -f -- \\\\u' --noclear --autologin tv %I $TERM",dropin.read_text())
         self.assertEqual(loginscreen.autologin(""),("tv","tvwcs-sway")); self.assertIn(["systemctl","daemon-reload"],self.c.calls)
         self.c.set_autologin("",unit="")
-        self.assertFalse(dropin.exists()); self.assertEqual(loginscreen.autologin(""),("",""))
+        self.assertFalse(dropin.parent.exists()); self.assertEqual(loginscreen.autologin(""),("",""))
         with self.assertRaises(SystemExit): self.c.set_autologin("tv; rm -rf /",unit="")
     def test_the_consoles_own_automatic_login_is_read_and_kept(self):
         d=self.etc/"systemd"/"system"/"getty@tty1.service.d"; d.mkdir(parents=True)
