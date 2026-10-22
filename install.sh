@@ -95,6 +95,11 @@ pkg_installed() {   # pkg_installed <package>
     if [ -n "${TVWCS_PACKAGES+set}" ]; then case " $TVWCS_PACKAGES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; fi
     dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii'
 }
+pkg_known() {   # pkg_known <package>: installed, or removed with its settings left ("rc"), so that a purge does something
+    pkg_installed "$1" && return 0
+    [ -z "${TVWCS_PACKAGES+set}" ] || return 1
+    dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^rc'
+}
 installed_version() { if [ -f "$LIB/VERSION" ]; then cat "$LIB/VERSION"; elif [ -f "$OLD_DEST/VERSION" ]; then cat "$OLD_DEST/VERSION"; fi; }
 
 # ---- login screens
@@ -226,8 +231,10 @@ ask_questions() {
         say "$ME is logged in on the first console at startup (TVWCS 4.x set this up). TVWCS 5 uses greetd for it instead."
         GREETD_NEW=1; AUTO=$ME
     else
+        WHO=""; [ "$LS" != greetd ] || WHO=$(autologin_user)
         case "$LS" in greetd|lightdm|sddm)
-            ask_no "Log $ME in automatically into TVWCS at startup, without $(login_screen_name "$LS")?" && AUTO=$ME || : ;;
+            if [ -n "$WHO" ]; then say "$WHO is still logged in automatically into TVWCS."; AUTO=$WHO
+            else ask_no "Log $ME in automatically into TVWCS at startup, skipping the login screen?" && AUTO=$ME || :; fi ;;
         *) say "$(login_screen_name "$LS") is the login screen: choose \"TVWCS\" there. (TVWCS cannot set its automatic login.)" ;; esac
     fi
 
@@ -322,7 +329,7 @@ install_all() {
     say "Installing the packages (apt asks for nothing; sudo may ask for your password)..."
     as_root apt-get update -q || warn "apt-get update did not finish; installing with the package lists there are."
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$@" || fail "apt-get could not install TVWCS."
-    if pkg_installed tvwcs-boot-logo; then   # 5.0.x's; the tvwcs package conflicts with it, so this is only for older versions
+    if pkg_known tvwcs-boot-logo; then   # 5.0.x's: the tvwcs package conflicts with it, so apt removed it; purged, nothing of it stays
         as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs-boot-logo || warn "The TVWCS logo at startup could not be removed."; fi
     if [ -n "$MIGRATE" ]; then loginscreen_root migrate $AUTO || fail "TVWCS's old login screen could not be removed."
     elif [ -n "$GREETD_NEW" ]; then loginscreen_root greetd $AUTO || fail "greetd could not be set up."
@@ -351,7 +358,7 @@ remove_all() {
     fi
     for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
     # shellcheck disable=SC2046
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_installed tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_known tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."
     CFG=$(sway_config)
     if [ -n "$CFG" ] && has_include "$CFG"; then backup "$CFG"
         sed -i -e '/^# TVWCS (desktop mode): its hotkeys/d' -e '/^[[:space:]]*include[[:space:]].*\/usr\/share\/tvwcs\/tvwcs\.conf/d' "$CFG"; fi

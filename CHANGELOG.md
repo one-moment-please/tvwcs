@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.1.2 — 2026-10-22
+
+- Installer, upgrading with greetd already logging you into TVWCS: it says the automatic login is kept, instead of asking again (the question read as if greetd would be removed), and its last line says a restart logs in by itself.
+- The installer purges 5.0's tvwcs-boot-logo when apt has only removed it, so nothing of it stays in dpkg. `install.sh --remove` does the same.
+
 ## 5.1.1 — 2026-10-22
 
 - greetd's text login now uses its full path, /usr/sbin/agreety. Debian doesn't have it on the login screen's PATH, so after logging out of TVWCS (or after `install.sh --remove`) there was no login at all, only "agreety: not found". Updating fixes a config 5.0 wrote. Found testing in a Debian 13 VM.
