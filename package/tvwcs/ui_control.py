@@ -7,10 +7,9 @@ colour chosen in its Options (a change to them is drawn at once), and it works w
 - In a page, ↑ / ↓ move between rows and ← / → along a row; Esc (or the remote's Back key) goes back to the tabs,
   and from the tabs closes Settings.
 - Dialogs are drawn over the window, as in TVWCS. Text (a Wi-Fi password, an address) is typed on a keyboard, or on
-  the on-screen keyboard with the D-pad.
-- In the terminal every key goes to the shell; Esc (or Back) goes up to the buttons above it."""
+  the on-screen keyboard with the D-pad."""
 from __future__ import annotations
-import os, signal, subprocess, sys, threading, time
+import os, subprocess, sys, threading, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -168,10 +167,7 @@ class ControlWindow(Gtk.ApplicationWindow):
         page=self.page; focused=self.get_focus()
         ident=next((i for i,w in page._ids.items() if w is focused),None) if page is not None and self._area(focused)=="page" else None
         for p in self.pages:
-            p.hidden(); child=getattr(p,"child",None)   # the terminal's shell goes with its widget
-            if child:
-                try: os.kill(child,signal.SIGHUP)
-                except OSError: pass
+            p.hidden()
         self.pages=[]; self.page=None; self.tab_buttons={}; self._last_page_focus={}; self._modal_groups=[]; self._text=None
         set_scale(self.app.scale); self.set_default_size(S(1180),S(760)); self._build()
         new=self.page_by_key(page.key if page is not None else "") or self.pages[0]
@@ -256,7 +252,7 @@ class ControlWindow(Gtk.ApplicationWindow):
     def enter_page(self, page=None):
         """Move the selection into the page: back to where it was in it, else onto its first row."""
         page=page or self.page; self.show_page(page)
-        last=None if getattr(page,"enter_at_top",False) else self._last_page_focus.get(page.key)
+        last=self._last_page_focus.get(page.key)
         if last is not None and usable(last) and self._in(last,page.root) and last.grab_focus(): return True
         return self._focus_first(page.groups) or self._focus_first(page.nav_groups()) or True   # the first row, not ⟳
 
@@ -331,10 +327,6 @@ class ControlWindow(Gtk.ApplicationWindow):
     def _key_pressed(self, _controller, keyval, _keycode, state):
         if self._capture is not None and self._capture_key(keyval,state): return True
         focused=self.get_focus()
-        if self.page is not None and not self._modal_groups and self.page.captures_keys(focused):
-            if keyval in (Gdk.KEY_Back,Gdk.KEY_Escape):   # up to the page's buttons; the shell gets Esc from its Esc button
-                self._focus_first(self.page.groups) or self.tab_buttons[self.page.key].grab_focus(); return True
-            return False   # every other key belongs to the terminal
         if keyval in (Gdk.KEY_Escape,Gdk.KEY_Back): self.back(); return True
         editable=isinstance(focused,Gtk.Editable) or isinstance(focused,Gtk.Text)
         if self._text is not None and not editable and self._text_key(keyval): return True

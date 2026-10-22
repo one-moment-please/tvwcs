@@ -27,7 +27,7 @@ POWER_MENU=("lock","sleep","reboot","shutdown","logout")   # the power menu's or
 DISPLAY_MANAGERS=("gdm","gdm3","lightdm","sddm","lxdm","xdm","slim","greetd","ly","entrance","emptty")
 
 def login_manager_installed(exists=os.path.exists, which=shutil.which):
-    """True when a login screen (display manager) is installed. Without one, logging out of i3 or sway only leaves a text
+    """True when a login screen (display manager) is installed. Without one, logging out of sway only leaves a text
     console, so the power menu offers Log out only with one."""
     if exists("/etc/systemd/system/display-manager.service"): return True
     try:
@@ -42,11 +42,8 @@ def power_menu(settings=None, display_manager=None):
     by_id={a.id:a for a in SYSTEM_ACTIONS}
     return [by_id[i] for i in POWER_MENU if i!="logout" or dm]
 
-def _sway(env,which): return bool(env.get("SWAYSOCK")) and bool(which("swaymsg"))
-
 def logout_command(env=None, which=shutil.which):
-    env=os.environ if env is None else env
-    return ["swaymsg","exit"] if _sway(env,which) else ["i3-msg","exit"]
+    return ["swaymsg","exit"] if which("swaymsg") else None
 
 POWER_VERBS={"sleep":"suspend","reboot":"reboot","shutdown":"poweroff"}
 
@@ -68,9 +65,7 @@ def lock_command(configured="", env=None, which=shutil.which):
             parts=shlex.split(configured)
             if parts: return parts
         except ValueError: pass
-    candidates=[]
-    if _sway(env,which): candidates.append(["swaylock","-f","-c","000000"])
-    candidates+= [["i3lock","-c","000000"],["cinnamon-screensaver-command","--lock"],["xdg-screensaver","lock"],["loginctl","lock-session"]]
+    candidates=[["swaylock","-f","-c","000000"],["loginctl","lock-session"]]
     return next((cmd for cmd in candidates if which(cmd[0])),None)
 
 def command_for(action_id, settings=None, env=None, which=shutil.which, systemd=None):
@@ -84,6 +79,6 @@ def command_for(action_id, settings=None, env=None, which=shutil.which, systemd=
 
 def unavailable_message(action_id):
     if action_id=="lock":
-        return ("No screen locker was found. Install one (such as i3lock, or swaylock on sway), or set "
+        return ("No screen locker was found. Install swaylock, or set "
                 "\"lock_command\" in ~/.config/tvwcs/config.json.")
     return "Nothing on this system can do that: TVWCS needs systemd (systemctl) for sleep, reboot and shut down."

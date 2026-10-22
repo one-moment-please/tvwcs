@@ -1,5 +1,5 @@
 import unittest
-from tvwcs.window_manager import I3WindowManager
+from tvwcs.window_manager import WindowManager
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME
 
 def con(i,title,cls,urgent=False):
@@ -14,10 +14,10 @@ TREE={"type":"root","nodes":[
   {"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","nodes":[],"floating_nodes":[con(18,"Hidden 1","h"),con(19,"Hidden 2","h")]}],"floating_nodes":[]},
 ],"floating_nodes":[]}
 
-class FakeWM(I3WindowManager):
+class FakeWM(WindowManager):
     """i3 adapter whose IPC is replaced by a recorder."""
     def __init__(self,workspaces=(),outputs=()):
-        super().__init__(); self.binary="/bin/i3-msg"; self.xdotool=None; self.sent=[]; self._ws=list(workspaces); self._out=list(outputs)
+        super().__init__(); self.binary="/usr/bin/swaymsg"; self.sent=[]; self._ws=list(workspaces); self._out=list(outputs)
     def _tree(self): return TREE
     def workspaces(self): return self._ws
     def outputs(self): return self._out
@@ -105,9 +105,8 @@ class WindowManagerTests(unittest.TestCase):
     def test_sway_uses_swaymsg_and_lists_wayland_windows(self):
         from unittest import mock
         with mock.patch("tvwcs.window_manager.shutil.which",lambda name:f"/usr/bin/{name}"):
-            sway=I3WindowManager(env={"SWAYSOCK":"/run/sway.sock"}); i3=I3WindowManager(env={})
-        self.assertEqual((sway.binary,sway.xdotool),("/usr/bin/swaymsg",None))   # the pointer comes from sway's focus
-        self.assertEqual((i3.binary,i3.xdotool),("/usr/bin/i3-msg","/usr/bin/xdotool"))
+            sway=WindowManager()
+        self.assertEqual(sway.binary,"/usr/bin/swaymsg")
         tree=TREE["nodes"][0]["nodes"][1]["nodes"]
         tree.append({"type":"con","id":40,"window":None,"app_id":"org.gnome.Nautilus","name":"Files","nodes":[],"floating_nodes":[]})
         tree.append({"type":"con","id":41,"window":None,"app_id":None,"name":"split container","nodes":[],"floating_nodes":[]})

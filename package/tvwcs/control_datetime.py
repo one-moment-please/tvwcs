@@ -1,11 +1,11 @@
-"""Date and time for Settings: the time zone (picked as a region, then a city), whether the clock is set from the
-network (NTP), and the clock shown at the bottom of the Quick Menu. No GTK dependency.
+"""Date and time for Settings: the time zone (picked from one list), whether the clock is set from the network (NTP),
+and the clock shown at the bottom of the Quick Menu. No GTK dependency.
 
-systemd's timedatectl reads and changes these. polkit usually wants a password for changes, and i3 and sway run no
-polkit agent to ask for it, so the panel runs the same command as root when polkit refuses. Without timedatectl the
+systemd's timedatectl reads and changes these. polkit usually wants a password for changes, and sway runs no polkit
+agent to ask for it, so the panel runs the same command as root when polkit refuses. Without timedatectl the
 time zone is read from the /etc/localtime link and set by pointing that link at another zone (as root)."""
 from __future__ import annotations
-import datetime, os, time
+import os, time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -86,14 +86,9 @@ def split_zone(zone):
     if len(parts)>2: city+=", "+", ".join(p.replace("_"," ") for p in reversed(parts[1:-1]))
     return parts[0],city
 
-def regions(zones):
-    """{region: [(zone, city), ...]} with the regions and the cities in alphabetical order (Other last)."""
-    out={}
-    for z in zones:
-        if z.split("/")[0] in _NOT_REGIONS: continue
-        region,city=split_zone(z); out.setdefault(region,[]).append((z,city))
-    for cities in out.values(): cities.sort(key=lambda c:c[1].casefold())
-    return dict(sorted(out.items(),key=lambda kv:(kv[0]==OTHER,kv[0])))
+def zone_choices(zones):
+    """[(zone, label)] for Settings' one list of time zones, sorted by label: "Paris (Europe)", "UTC"."""
+    return sorted(((z,zone_label(z)) for z in zones if z.split("/")[0] not in _NOT_REGIONS),key=lambda c:c[1].casefold())
 
 def zone_label(zone):
     region,city=split_zone(zone)
@@ -105,53 +100,6 @@ def ntp_argv(on): return ["timedatectl","set-ntp","true" if on else "false"]
 def timezone_argv(zone, timedatectl=True):
     if timedatectl: return ["timedatectl","set-timezone",zone]
     return ["ln","-sfn",str(ZONEINFO/zone),str(LOCALTIME)]
-
-def set_time_argv(when):
-    """Set the clock to a datetime (local time). timedatectl refuses while network time is on."""
-    return ["timedatectl","set-time",when.strftime("%Y-%m-%d %H:%M:00")]
-
-# Settings > Date and time > Set the time: a box for each of year, month, day, hour and minute, each with ▲ and ▼
-FIELDS=("year","month","day","hour","minute")
-def adjust(when, field, delta):
-    """`when` with one field moved by `delta`, wrapping within its range (day 31 + 1 is day 1 of the same month; a
-    month change keeps the day inside the new month). Years stay between 2000 and 2099."""
-    if field=="minute": return when.replace(minute=(when.minute+delta)%60)
-    if field=="hour": return when.replace(hour=(when.hour+delta)%24)
-    if field=="day":
-        days=_days_in(when.year,when.month); return when.replace(day=(when.day-1+delta)%days+1)
-    if field=="month":
-        month=(when.month-1+delta)%12+1; return when.replace(month=month,day=min(when.day,_days_in(when.year,month)))
-    if field=="year":
-        year=min(2099,max(2000,when.year+delta)); return when.replace(year=year,day=min(when.day,_days_in(year,when.month)))
-    raise ValueError(field)
-def _days_in(year, month):
-    nxt=datetime.date(year+(month==12),month%12+1,1); return (nxt-datetime.timedelta(days=1)).day
-
-def hour_12(hour):
-    """A 24-hour hour as (1-12, pm)."""
-    return (hour%12 or 12),hour>=12
-def hour_24(hour, pm):
-    """1-12 and AM/PM as a 24-hour hour (12 AM is 0, 12 PM is 12)."""
-    return hour%12+(12 if pm else 0)
-
-def from_fields(year, month, day, hour, minute, pm=None):
-    """The time typed in the boxes (text or numbers). `pm` is None for 24-hour time, else whether PM is chosen.
-    Raises ValueError saying what is wrong."""
-    def number(text, name):
-        t=str(text).strip()
-        if not t.isdigit(): raise ValueError(f"The {name} must be a number.")
-        return int(t)
-    y,mo,d,h,mi=(number(v,n) for v,n in zip((year,month,day,hour,minute),FIELDS))
-    if not 2000<=y<=2099: raise ValueError("The year must be between 2000 and 2099.")
-    if not 1<=mo<=12: raise ValueError("The month must be between 1 and 12.")
-    if not 1<=d<=_days_in(y,mo): raise ValueError(f"The day must be between 1 and {_days_in(y,mo)} in that month.")
-    if pm is None:
-        if not 0<=h<=23: raise ValueError("The hour must be between 0 and 23.")
-    else:
-        if not 1<=h<=12: raise ValueError("The hour must be between 1 and 12.")
-        h=hour_24(h,pm)
-    if not 0<=mi<=59: raise ValueError("The minute must be between 0 and 59.")
-    return datetime.datetime(y,mo,d,h,mi)
 
 def valid_zone(zone, zones):
     return zone in zones and ".." not in zone and not zone.startswith("/")

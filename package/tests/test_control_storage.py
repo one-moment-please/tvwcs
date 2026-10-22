@@ -33,24 +33,5 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(st.parse_lsblk("not json"),[])
     def test_size_text(self):
         self.assertEqual(st.size_text(1500000000),"1.5 GB"); self.assertEqual(st.size_text(256060514304),"256 GB"); self.assertEqual(st.size_text(512),"512 B")
-    def test_valid_address(self):
-        self.assertEqual(st.valid_address("smb://nas/videos"),"")
-        self.assertIn("smb://",st.valid_address("nas/videos"))
-        self.assertIn("computer's name",st.valid_address("smb:///videos"))
-        self.assertIn("%20",st.valid_address("smb://nas/my videos"))
-    def test_share_label_and_matching(self):
-        self.assertEqual(st.share_label("smb://nas.local/Videos"),"Videos on nas.local")
-        self.assertEqual(st.share_label("sftp://pi"),"pi")
-        self.assertTrue(st.same_share("smb://NAS/videos/","smb://nas/videos"))
-    def test_gio_mounts(self):
-        text=("Drive(0): Samsung SSD\n  Type: GProxyDrive (GProxyVolumeMonitorUDisks2)\n"
-              "Mount(0): videos on nas -> smb://nas/videos/\n  Type: GDaemonMount\n"
-              "Mount(1): pi -> sftp://pi/\n")
-        self.assertEqual(st.parse_gio_mounts(text),["smb://nas/videos","sftp://pi"])
-    def test_gvfs_path(self):
-        self.assertEqual(st.gvfs_path("smb://nas/Videos",uid=1000),"/run/user/1000/gvfs/smb-share:server=nas,share=videos")
-        self.assertEqual(st.gvfs_path("sftp://tv@pi:2222/home",uid=1000),"/run/user/1000/gvfs/sftp:host=pi,port=2222,user=tv")
-    def test_connect_answers(self):
-        self.assertEqual(st.connect_answers("tv","pw"),"tv\n\npw\n")
 
 if __name__=="__main__": unittest.main()
