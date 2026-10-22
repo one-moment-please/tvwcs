@@ -26,7 +26,7 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(F.install_argv(["unclutter-xfixes"],run=lambda *a,**k:Done())[-1],"unclutter-xfixes")
     def test_the_screen_saver_on_sway_also_needs_gtk4_layer_shell(self):
         self.assertEqual(F.screensaver({}).packages,("python3-gi-cairo",))
-        self.assertEqual(F.screensaver({"SWAYSOCK":"/run/sway"}).packages,("python3-gi-cairo","gir1.2-gtk4layershell-1.0"))
+        self.assertEqual(F.screensaver({"SWAYSOCK":"/run/sway"}).packages,("python3-gi-cairo","gir1.2-gtk4layershell-1.0","libgtk4-layer-shell0"))
         self.assertFalse(F.applies(F.BY_KEY["sway_saver"],{})); self.assertTrue(F.applies(F.BY_KEY["sway_saver"],{"SWAYSOCK":"/run/sway"}))
     def test_removing_a_feature_names_what_goes_with_it(self):
         self.assertEqual(F.remove_argv(["gvfs-backends"])[-3:],["remove","-y","gvfs-backends"])
