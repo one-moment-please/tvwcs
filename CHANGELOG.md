@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.6.0 — 2026-10-22
+
+- **`tvwcs` on its own does what fits where you type it.** At a text console with no graphical session it starts the TVWCS session (in TV mode). In a sway session TVWCS isn't part of, it opens Settings and offers to add TVWCS to it: one `include /usr/share/tvwcs/tvwcs.conf` line in your sway config (backed up first as `config.tvwcs-backup`), then sway reloads, TVWCS starts in desktop mode and Settings asks for the key that opens the Quick Menu. Where TVWCS already runs, it shows the Quick Menu. In GNOME, KDE or an X11 session it opens Settings. `tvwcs start` starts the launcher itself, as sway's config now does.
+- **Settings outside sway:** the pages that only work in sway (Appearance, Remote and hotkeys, Displays, Power and sleep, and User's logging-in rows) are shown turned off, with a note saying where they work. The other pages (sound, Bluetooth, the network, updates and so on) work as before.
+- **Settings › Remote and hotkeys › Add TVWCS to sway**, in a sway session TVWCS isn't part of yet.
+- **No login screen needed.** On a computer without one, **Settings › User › Log in automatically after startup** now works: the first text console logs you in (a getty drop-in, `/etc/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf`) and your shell profile starts the TVWCS session there. Logging out starts it again; if the session stops straight away, the console stays at the shell instead of trying over and over. The installer uses this too, instead of installing greetd. Switching to a login screen, `install.sh --remove` and removing the package end it.
+- **Installing the package changes no settings.** greetd is now only suggested by the package instead of recommended, so `apt install tvwcs` no longer installs a login screen. Computers already using greetd keep it.
+
 ## 5.5.0 — 2026-10-22
 
 - **The lock screen matches TVWCS's theme and says it is locked.** Each screen shows a padlock, "Locked" and "Type your password, then press Enter". In the Modern theme it uses Modern's dark or light colours with your accent colour. In the Retro theme it's a TV menu box in your Retro colour and pixel fonts, on the Retro background (gray, blue or TV static). swaylock's ring now stays on screen below the text, so it's clear where the password goes, and it is drawn in the theme's colours too. This applies everywhere TVWCS locks: Lock in the power menu, the idle lock, and Lock the screen when TVWCS starts.

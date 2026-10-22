@@ -74,10 +74,10 @@ The rest is done from the other computer.
    |---|---|
    | **Which version?** | Enter (the latest release). |
    | **Show the TVWCS logo at startup?** | `y` for the logo instead of lines of text while the computer starts. |
-   | **Log … in automatically into TVWCS at startup?** | Enter (yes). On a fresh Debian with no desktop there is no login screen, so greetd is installed with a text login, for after you log out. |
+   | **Log … in automatically into TVWCS at startup?** | Enter (yes). On a fresh Debian with no desktop there is no login screen, so the first text console logs you in and starts TVWCS. |
    | **Go ahead?** | Enter (yes). sudo asks for your password. |
 
-5. Restart (`sudo reboot`). The computer logs straight into TVWCS. To log in by hand instead, open **Settings › User** (channel 000) and turn off **Log in automatically after startup**; greetd then asks for your user name and password as text. Anyone who switches the computer on gets your session with the automatic login, which suits a TV.
+5. Restart (`sudo reboot`). The computer logs straight into TVWCS. To log in by hand instead, open **Settings › User** (channel 000) and turn off **Log in automatically after startup**; the text console then asks for your user name and password, and typing `tvwcs` starts TVWCS. Anyone who switches the computer on gets your session with the automatic login, which suits a TV.
 
 Type channel 000 in the Quick Menu to open **Settings**.
 
@@ -95,5 +95,5 @@ Type channel 000 in the Quick Menu to open **Settings**.
 - **`Could not resolve hostname livingroom.local`:** use the IP address. Check that Avahi runs on the TV computer (`systemctl status avahi-daemon`). Some routers block these announcements between Wi-Fi and wired devices.
 - **`Connection refused`:** the SSH server is not running. On the TV computer: `sudo systemctl enable --now ssh`.
 - **The installer asks no questions:** you signed in without `-t`.
-- **The TV still shows a text login:** restart (`sudo reboot`): greetd takes over from the next start.
+- **The TV still shows a text login:** log in and type `tvwcs`, or restart (`sudo reboot`): the automatic login starts from the next start.
 - **No sound:** restart once (`sudo reboot`), then choose the output on the **Sound** page of Settings. HDMI outputs not in use yet are listed there too.

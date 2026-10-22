@@ -12,7 +12,7 @@ Changes take effect at the next start: a running login screen (and the session i
 Changing the system needs root: `python3 -m tvwcs.loginscreen <command>` is what Settings and install.sh run as root.
 TVWCS_ROOT puts every system path under another folder (the tests), and then nothing is run."""
 from __future__ import annotations
-import json, os, re, shlex, shutil, subprocess, sys
+import json, os, pwd, re, shlex, shutil, subprocess, sys
 from pathlib import Path
 
 SESSION="tvwcs-sway"                                # TVWCS's session (/usr/share/wayland-sessions/tvwcs-sway.desktop)
@@ -38,7 +38,29 @@ KNOWN={"gdm3":("GNOME's login screen (GDM)",True),"gdm":("GNOME's login screen (
        "lightdm":("LightDM",False),"lxdm":("LXDM",False),"xdm":("XDM",False),"slim":("SLiM",False),"greetd":("greetd",True),
        "ly":("Ly",True),"emptty":("emptty",True),"nodm":("nodm",False),"entrance":("Entrance",False),"lemurs":("lemurs",True)}
 GRAPHICAL=("gdm3","gdm","sddm","lightdm","lxdm","slim","ly","emptty","lemurs")   # switched to when TVWCS's old greeter goes
-AUTOLOGIN=("greetd","lightdm","sddm")              # the login screens whose automatic login TVWCS can set
+AUTOLOGIN=("greetd","lightdm","sddm","")           # the login screens whose automatic login TVWCS can set ("": none, the text console)
+# Without a login screen: the first text console logs the user in (a getty drop-in), and their shell profile starts
+# TVWCS's session there
+GETTY_DROPIN="/etc/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf"
+GETTY_DROPIN_DIRS=("/etc/systemd/system/getty@.service.d","/etc/systemd/system/getty@tty1.service.d")   # in the order systemd applies them
+GETTY_TEXT="""# Written by TVWCS (Settings > User): the first text console logs {user} in automatically at start-up, and their
+# shell profile starts TVWCS's session. Delete this file to undo it.
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty -o '-p -f -- \\\\u' --noclear --autologin {user} %I $TERM
+"""
+PROFILE_BEGIN="# >>> TVWCS: start TVWCS's session at a login on the first text console (Settings > User; delete to undo) >>>"
+PROFILE_END="# <<< TVWCS <<<"
+# Back at the console after the session: logging out has the automatic login start it again. Not when it stopped
+# straight away (it would only stop again, over and over): the console then stays logged in, at the shell.
+PROFILE_BODY="""if [ -z "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ] && [ -x /usr/bin/tvwcs-session ]; then
+    tvwcs_started=$(date +%s)
+    /usr/bin/tvwcs-session
+    if [ $(( $(date +%s) - tvwcs_started )) -ge 20 ]; then exit 0; fi
+    echo "TVWCS's session stopped straight away, so it is not started again. Type tvwcs to try again."
+fi"""
+PROFILE_FILES=(".profile",".bash_profile",".bash_login",".zprofile")
+_USER=re.compile(r"[a-z_][a-z0-9_.-]*\$?")
 
 def path(p) -> Path:
     """A system path, under TVWCS_ROOT when the tests set it."""
@@ -164,9 +186,32 @@ def _conf_files(main, folder):
     except OSError: pass
     return files
 
+def console_autologin() -> str:
+    """Who the first text console logs in automatically (agetty --autologin in a getty drop-in), or ""."""
+    who=""
+    for d in GETTY_DROPIN_DIRS:
+        try: files=sorted(path(d).glob("*.conf"))
+        except OSError: continue
+        for f in files:
+            try: text=f.read_text(encoding="utf-8")
+            except OSError: continue
+            for line in text.splitlines():
+                m=re.fullmatch(r"\s*ExecStart\s*=\s*(.*?)\s*",line)
+                if not m: continue
+                try: argv=shlex.split(m.group(1).lstrip("-@+!:"))
+                except ValueError: argv=m.group(1).split()
+                who=""
+                for i,a in enumerate(argv):
+                    if a in ("--autologin","-a") and i+1<len(argv): who=argv[i+1]
+                    elif a.startswith("--autologin="): who=a.split("=",1)[1]
+    return who
+
 def autologin(unit=None) -> tuple:
     """(user, session id) logged in automatically at start-up by the login screen in use, or ("", "")."""
     unit=active_unit() if unit is None else unit
+    if unit=="":
+        who=console_autologin()
+        return (who,SESSION) if who else ("","")
     if unit=="greetd":
         init=greetd_config().get("initial_session",{})
         who=init.get("user","")
@@ -186,6 +231,58 @@ def autologin(unit=None) -> tuple:
 
 def autologin_supported(unit=None) -> bool:
     return (active_unit() if unit is None else unit) in AUTOLOGIN
+
+# ---------------------------------------------------------------------- the shell profile (as the user)
+def profile_file(home=None, shell=None):
+    """The profile the user's login shell reads at a console login, where TVWCS's session is started; None for a
+    shell TVWCS does not know (fish...)."""
+    home=Path(home or Path.home())
+    if shell is None:
+        try: shell=pwd.getpwuid(os.getuid()).pw_shell
+        except KeyError: shell=""
+    shell=os.path.basename(shell or "sh")
+    if shell=="bash":   # bash reads the first of these that exists
+        return next((home/n for n in (".bash_profile",".bash_login") if (home/n).exists()),home/".profile")
+    if shell in ("sh","dash","ksh","mksh"): return home/".profile"
+    if shell=="zsh": return Path(os.environ.get("ZDOTDIR") or home)/".zprofile"
+    return None
+
+def _profiles(home=None):
+    home=Path(home or Path.home())
+    return [home/n for n in PROFILE_FILES]+([Path(os.environ["ZDOTDIR"])/".zprofile"] if os.environ.get("ZDOTDIR") else [])
+
+def profile_starts(home=None) -> bool:
+    """A shell profile of the user's starts TVWCS's session at a login on the first console."""
+    for f in _profiles(home):
+        try:
+            if PROFILE_BEGIN in f.read_text(encoding="utf-8",errors="replace").splitlines(): return True
+        except OSError: pass
+    return False
+
+def set_profile(on, home=None, shell=None) -> str:
+    """Add TVWCS's lines to the user's shell profile (on) or take them out of every one; "" when it worked, else why not."""
+    try:
+        for f in _profiles(home):
+            try: lines=f.read_text(encoding="utf-8").splitlines()
+            except FileNotFoundError: continue
+            if PROFILE_BEGIN not in lines: continue
+            out=[]; skip=False
+            for line in lines:
+                if line==PROFILE_BEGIN: skip=True; continue
+                if skip and line==PROFILE_END: skip=False; continue
+                if not skip: out.append(line)
+            while out and not out[-1].strip(): out.pop()
+            f.write_text("\n".join(out)+("\n" if out else ""),encoding="utf-8")
+        if not on: return ""
+        f=profile_file(home,shell)
+        if f is None: return ("Your login shell is not one TVWCS knows (it knows bash, sh, dash and zsh). Make it start "
+                              "/usr/bin/tvwcs-session at a login on /dev/tty1 yourself.")
+        try: text=f.read_text(encoding="utf-8")
+        except FileNotFoundError: text=""
+        if text and not text.endswith("\n"): text+="\n"
+        f.write_text(f"{text}\n{PROFILE_BEGIN}\n{PROFILE_BODY}\n{PROFILE_END}\n",encoding="utf-8")
+        return ""
+    except OSError as exc: return f"Could not change your shell profile: {exc}"
 
 def greetd_text(greeter_command, user, autologin_to=None, vt=GREETD_VT) -> str:
     """greetd's config. autologin_to: (user, command) for the initial session, which logs that user in at start-up (the
@@ -222,6 +319,7 @@ class Changer:
         """Make `unit` the login screen at the next start: the old one is disabled, never stopped."""
         old=active_unit()
         if old and old!=unit: self.systemctl("disable",f"{old}.service")
+        if self.remove(GETTY_DROPIN): self.systemctl("daemon-reload")   # the text console's automatic login (no login screen) would log in too
         link=path("/etc/systemd/system/display-manager.service")
         if os.environ.get("TVWCS_ROOT"):   # what systemctl enable / disable would do to the alias
             if link.is_symlink(): link.unlink()
@@ -262,6 +360,14 @@ class Changer:
             else:
                 self.remove(SDDM_AUTOLOGIN)
                 if autologin(unit)[0]: raise SystemExit("SDDM's own settings log someone in automatically; change it in /etc/sddm.conf.")
+        elif unit=="":
+            if user:
+                if not _USER.fullmatch(user): raise SystemExit(f"Unexpected user name: {user}")
+                self.write(GETTY_DROPIN,GETTY_TEXT.format(user=user))
+            else: self.remove(GETTY_DROPIN)
+            self.systemctl("daemon-reload")
+            if not user and console_autologin():
+                raise SystemExit("Another file in /etc/systemd/system/getty@tty1.service.d logs someone in automatically; change it there.")
         else: raise SystemExit(f"TVWCS cannot change the automatic login of {name(unit)}; use its own settings.")
         self.out(f"From the next start, {user} is logged in automatically." if user else "From the next start, nobody is logged in automatically.")
 
@@ -314,13 +420,17 @@ USAGE="""Usage (as root): python3 -m tvwcs.loginscreen <command>
   switch UNIT                                  use another installed login screen (sddm...) from the next start
   greetd [USER]                                use greetd's text login, logging USER in automatically
   migrate [USER]                               remove TVWCS 4.x's own login screen
-Without root: status"""
+Without root: status | profile on|off   (profile: start TVWCS's session at a login on the first text console)"""
 
 def main(argv):
     args=list(argv)
     if not args: print(USAGE,file=sys.stderr); return 2
     cmd=args.pop(0)
     if cmd=="status": print(json.dumps(status(),indent=1)); return 0
+    if cmd=="profile" and args in (["on"],["off"]):
+        problem=set_profile(args==["on"])
+        if problem: print(problem,file=sys.stderr); return 1
+        return 0
     if os.geteuid()!=0 and not os.environ.get("TVWCS_ROOT"): print("This needs root.",file=sys.stderr); return 1
     c=Changer()
     try:

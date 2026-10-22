@@ -8,7 +8,8 @@
 # agree to the list of what it will do:
 #   - with TVWCS installed: upgrade, install a different version (the prerelease, or one of the two releases before
 #     the latest) or remove TVWCS;
-#   - logging in automatically into TVWCS's session. Without a login screen, greetd is installed for it;
+#   - logging in automatically into TVWCS's session. Without a login screen, the first text console logs in and starts
+#     it (typing tvwcs there starts it too);
 #   - adding TVWCS to your usual sway session (one include line in its config), where it runs in desktop mode;
 #   - on Ubuntu, removing Snap, cloud-init and the Ubuntu Pro client, each asked.
 # apt installs the packages TVWCS needs with it. Supported: Debian and its family (apt), with systemd.
@@ -212,7 +213,7 @@ choose_version() {   # -> WANT (a version, or "package" for the .deb files next 
 }
 
 ask_questions() {
-    LS=$(login_screen); ME=$(id -un); FROM_4=""; MIGRATE=""; AUTO=""; GREETD_NEW=""; DESKTOP=""; OLD_INCLUDE=""
+    LS=$(login_screen); ME=$(id -un); FROM_4=""; MIGRATE=""; AUTO=""; OLD_CONSOLE=""; DESKTOP=""; OLD_INCLUDE=""
     [ -d "$OLD_DEST" ] && FROM_4=1
     if old_greeter || [ -d "$LOCAL/lib/tvwcs-greeter" ]; then MIGRATE=1; fi
 
@@ -225,11 +226,11 @@ ask_questions() {
         if [ -n "$WHO" ]; then say "$WHO is still logged in automatically into TVWCS."; AUTO=$WHO
         elif ask_no "Log $ME in automatically into TVWCS at startup?"; then AUTO=$ME; fi
     elif [ -z "$LS" ] && [ ! -f "$GETTY_OVERRIDE" ]; then
-        say "There is no login screen here. TVWCS installs greetd, a small one with a text login."
-        GREETD_NEW=1; ask_yes "Log $ME in automatically into TVWCS at startup?" && AUTO=$ME || :
+        say "There is no login screen here: log in at the text console and type tvwcs to start TVWCS."
+        ask_yes "Log $ME in automatically into TVWCS at startup, on the first text console?" && AUTO=$ME || :
     elif [ -z "$LS" ]; then
-        say "$ME is logged in on the first console at startup (TVWCS 4.x set this up). TVWCS 5 uses greetd for it instead."
-        GREETD_NEW=1; AUTO=$ME
+        say "$ME is logged in on the first console at startup (TVWCS 4.x set this up), and still is, into TVWCS's session."
+        OLD_CONSOLE=1; AUTO=$ME
     else
         WHO=""; [ "$LS" != greetd ] || WHO=$(autologin_user)
         case "$LS" in greetd|lightdm|sddm)
@@ -288,8 +289,7 @@ summary() {
     say "  install the packages TVWCS needs with apt (asks for your password)"
     ! pkg_installed tvwcs-boot-logo || say "  remove the TVWCS logo at startup (TVWCS no longer has one)"
     [ -z "$MIGRATE" ] || say "  remove TVWCS's old login screen"
-    [ -z "$GREETD_NEW" ] || say "  install greetd and use its text login"
-    [ -z "$AUTO" ] || say "  log $AUTO in automatically into TVWCS at startup"
+    [ -z "$AUTO" ] || say "  log $AUTO in automatically into TVWCS at startup$([ -n "$LS" ] || echo ", on the first text console")"
     [ -z "$FROM_4" ] || say "  remove TVWCS 4.x from $OLD_DEST (your settings in $TVCONF are kept)"
     [ -z "$OLD_INCLUDE" ] || say "  point TVWCS's include line in $OLD_INCLUDE at the package (backup: $OLD_INCLUDE.tvwcs-backup)"
     [ -z "$DESKTOP" ] || say "  add TVWCS to $DESKTOP (backup: $DESKTOP.tvwcs-backup)"
@@ -311,13 +311,18 @@ remove_old_copy() {   # what TVWCS 4.x put outside its folder, then the folder i
             say "Removed TVWCS from $C (i3 is not supported from TVWCS 5; backup: $C.tvwcs-backup)."
         fi
     done
+    remove_old_console_login
+    rm -rf "$OLD_DEST"
+}
+remove_old_console_login() {   # TVWCS 4.x's automatic login on the first console, which started its window manager
     if [ -f "$GETTY_OVERRIDE" ] && grep -q TVWCS "$GETTY_OVERRIDE"; then as_root rm -f "$GETTY_OVERRIDE"; fi
     for F in "$HOME/.profile" "$HOME/.bash_profile" "$HOME/.bash_login" "${ZDOTDIR:-$HOME}/.zprofile" "$CONFIG_HOME/fish/conf.d/tvwcs-autostart.fish"; do
         [ -f "$F" ] && grep -qxF "$START_BEGIN" "$F" || continue
         awk -v b="$START_BEGIN" -v e="$START_END" '$0 == b {skip=1} !skip {print} $0 == e {skip=0}' "$F" > "$WORK/profile" && cat "$WORK/profile" > "$F"
     done
-    rm -rf "$OLD_DEST"
 }
+# Without a login screen: the shell profile starts TVWCS's session at a login on the first console (as this user)
+console_profile() { env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$LIB" python3 -m tvwcs.loginscreen profile "$1"; }
 
 install_all() {
     if [ "$WANT" = package ]; then D=$WORK/debs; mkdir -p "$D"; chmod 755 "$WORK" "$D"
@@ -325,14 +330,15 @@ install_all() {
         chmod 644 "$D"/*.deb; V=$PKG_VERSION
     else download_debs "$WANT" tvwcs || fail "the download did not work."; V=$WANT; fi
     set -- "$WORK/debs/tvwcs_${V}_all.deb"
-    [ -z "$GREETD_NEW" ] || set -- "$@" greetd
     say "Installing the packages (apt asks for nothing; sudo may ask for your password)..."
     as_root apt-get update -q || warn "apt-get update did not finish; installing with the package lists there are."
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$@" || fail "apt-get could not install TVWCS."
     if pkg_known tvwcs-boot-logo; then   # 5.0.x's: the tvwcs package conflicts with it, so apt removed it; purged, nothing of it stays
         as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs-boot-logo || warn "The TVWCS logo at startup could not be removed."; fi
     if [ -n "$MIGRATE" ]; then loginscreen_root migrate $AUTO || fail "TVWCS's old login screen could not be removed."
-    elif [ -n "$GREETD_NEW" ]; then loginscreen_root greetd $AUTO || fail "greetd could not be set up."
+    elif [ -n "$AUTO" ] && [ -z "$LS" ]; then
+        [ -z "$OLD_CONSOLE" ] || remove_old_console_login
+        if console_profile on && loginscreen_root autologin "$AUTO"; then :; else console_profile off || :; warn "The automatic login could not be set."; fi
     elif [ -n "$AUTO" ]; then loginscreen_root autologin "$AUTO" || warn "The automatic login could not be set."; fi
     if [ -n "$OLD_INCLUDE" ]; then backup "$OLD_INCLUDE"
         sed -i -e 's#^\([[:space:]]*include[[:space:]]\).*\.local/share/tvwcs/tvwcs\.conf.*#\1/usr/share/tvwcs/tvwcs.conf#' "$OLD_INCLUDE"; fi
@@ -343,6 +349,7 @@ install_all() {
     heading "TVWCS $V is installed"
     if [ -n "$FROM_4" ]; then say "TVWCS 4.x still runs until you log out. From the next login (or restart), TVWCS's session runs on sway."
     elif [ -n "${SWAYSOCK:-}" ] && have swaymsg; then swaymsg reload >/dev/null 2>&1 || :; say "sway has reloaded its config."
+    elif [ -z "$LS" ]; then say "Type tvwcs at the text console to start TVWCS$( [ -n "$AUTO" ] && echo ", or restart: it logs in by itself")."
     else say "Choose \"TVWCS\" at the login screen$( [ -n "$AUTO" ] && echo ", or restart: it logs in by itself")."; fi
 }
 
@@ -356,7 +363,8 @@ remove_all() {
         say "greetd starts TVWCS's session: it goes back to its plain text login."
         as_root sh -c 'cp "$1" "$1.tvwcs-backup" && printf "%s\n" "[terminal]" "vt = 7" "" "[default_session]" "command = \"/usr/sbin/agreety --cmd /bin/sh\"" "user = \"_greetd\"" > "$1"' sh "$ETC/greetd/config.toml"
     fi
-    for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
+    for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf" "$ETC/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
+    console_profile off || :
     # shellcheck disable=SC2046
     as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_known tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."
     CFG=$(sway_config)

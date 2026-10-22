@@ -71,6 +71,6 @@ class LockScreenTests(unittest.TestCase):
     def test_the_session_config_runs_it_before_tvwcs(self):
         from pathlib import Path
         conf=(Path(__file__).resolve().parents[2]/"data"/"tvwcs.conf").read_text().splitlines()
-        self.assertLess(conf.index("exec /usr/bin/tvwcs lock-at-start"),conf.index("exec /usr/bin/tvwcs"))
+        self.assertLess(conf.index("exec /usr/bin/tvwcs lock-at-start"),conf.index("exec /usr/bin/tvwcs start"))
 
 if __name__=="__main__": unittest.main()
