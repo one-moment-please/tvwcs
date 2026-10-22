@@ -358,7 +358,9 @@ nmcli device connect "$1" || true
 
 # Run as root. On a failure the old files are put back and applied again, so the computer stays online. systemd-networkd
 # is turned off afterwards when nothing is left for it: otherwise start-up waits up to two minutes for it
-# (systemd-networkd-wait-online).
+# (systemd-networkd-wait-online). It is masked, not only disabled: its other sockets (resolve-hook, varlink) and D-Bus
+# start it again within a second, and it would then take every port with DHCP through the catch-all
+# zzzz-dracut-default.network that dracut leaves in /run, beside NetworkManager.
 NETPLAN_SCRIPT=r'''set -u
 backup=/var/backups/tvwcs-netplan-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$backup" && cp -a /etc/netplan/. "$backup"/ || exit 1
@@ -371,8 +373,10 @@ systemctl enable NetworkManager.service >/dev/null 2>&1 || true
 netplan apply || undo
 for i in 1 2 3 4 5 6 7 8 9 10; do nmcli -t general >/dev/null 2>&1 && break; sleep 1; done
 if ! ls /run/systemd/network/10-netplan-*.network >/dev/null 2>&1; then
-  systemctl disable --now systemd-networkd-wait-online.service >/dev/null 2>&1 || true
-  systemctl disable --now systemd-networkd.service systemd-networkd.socket >/dev/null 2>&1 || true
+  rm -f /run/systemd/network/zzzz-dracut-default.network
+  systemctl disable --now systemd-networkd-wait-online.service systemd-networkd.socket systemd-networkd-resolve-hook.socket \
+    systemd-networkd-varlink.socket >/dev/null 2>&1 || true
+  systemctl mask --now systemd-networkd.service >/dev/null 2>&1 || true
 fi
 echo "NetworkManager manages the network now. The old settings are in $backup."
 '''.replace("@FILE@",NETPLAN_NM_FILE)
