@@ -17,7 +17,7 @@ class FeatureTests(unittest.TestCase):
     def test_package_names_are_checked(self):
         with self.assertRaises(ValueError): F.install_argv(["bluez; rm -rf /"])
         self.assertEqual(F.install_argv(["bluez"])[-1],"bluez")
-        self.assertEqual(F.remove_argv(["tvwcs-boot-logo"])[-3:],["remove","-y","tvwcs-boot-logo"])
-        with self.assertRaises(ValueError): F.remove_argv(["tvwcs-boot-logo; reboot"])
+        self.assertEqual(F.remove_argv(["cloud-init"])[-3:],["remove","-y","cloud-init"])
+        with self.assertRaises(ValueError): F.remove_argv(["cloud-init; reboot"])
 
 if __name__=="__main__": unittest.main()

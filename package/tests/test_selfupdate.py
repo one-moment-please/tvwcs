@@ -20,7 +20,7 @@ class ReleaseTests(unittest.TestCase):
     def test_picks_the_packages(self):
         r=selfupdate.release_from_json(release_json(names=("notes.txt","TVWCS-5.0.0.zip","tvwcs_5.0.0_all.deb","tvwcs-boot-logo_5.0.0_all.deb","other_1_all.deb")))
         self.assertEqual((r.version,r.tag),("5.0.0","v5.0.0"))
-        self.assertEqual(r.debs,{"tvwcs":"https://example/tvwcs_5.0.0_all.deb","tvwcs-boot-logo":"https://example/tvwcs-boot-logo_5.0.0_all.deb"})
+        self.assertEqual(r.debs,{"tvwcs":"https://example/tvwcs_5.0.0_all.deb"})   # 5.0.x's tvwcs-boot-logo is no longer installed
     def test_prereleases_only_when_asked_and_newer(self):
         listing=[dict(release_json("v5.1.0",("tvwcs_5.1.0_all.deb",)),prerelease=True),dict(release_json("v5.2.0"),draft=True),
                  release_json("v5.0.2",("tvwcs_5.0.2_all.deb",)),release_json("v4.9.0",("TVWCS-4.9.0.zip",)),
@@ -44,14 +44,14 @@ class InstallTests(unittest.TestCase):
         class Done: stdout="tvwcs installed\ntvwcs-boot-logo not-installed\n"
         self.assertEqual(selfupdate.installed_packages(lambda *a,**k:Done()),["tvwcs"])
     def test_download_keeps_only_debs_and_apt_can_read_them(self):
-        r=Release("5.0.0","v5.0.0",{"tvwcs":"https://example/a","tvwcs-boot-logo":"https://example/b"},"")
+        r=Release("5.1.0","v5.1.0",{"tvwcs":"https://example/a"},"")
         with patch.object(selfupdate,"_download",lambda _u,t:Path(t).write_bytes(b"!<arch>\nrest")):
-            folder,files=selfupdate.download(r,["tvwcs","tvwcs-boot-logo"])
+            folder,files=selfupdate.download(r,["tvwcs"])
         try:
-            self.assertEqual([f.name for f in files],["tvwcs_5.0.0_all.deb","tvwcs-boot-logo_5.0.0_all.deb"])
+            self.assertEqual([f.name for f in files],["tvwcs_5.1.0_all.deb"])
             self.assertEqual(oct(os.stat(folder).st_mode&0o777),"0o755"); self.assertEqual(oct(os.stat(files[0]).st_mode&0o777),"0o644")
             argv=selfupdate.install_argv(files)
-            self.assertEqual(argv[:6],["env","DEBIAN_FRONTEND=noninteractive","apt-get","install","-y","--allow-downgrades"]); self.assertEqual(argv[-1],str(files[1]))
+            self.assertEqual(argv[:6],["env","DEBIAN_FRONTEND=noninteractive","apt-get","install","-y","--allow-downgrades"]); self.assertEqual(argv[-1],str(files[0]))
         finally: selfupdate.discard(folder)
         self.assertFalse(folder.exists())
     def test_a_bad_download_leaves_nothing_behind(self):
@@ -61,8 +61,5 @@ class InstallTests(unittest.TestCase):
         with patch.object(selfupdate,"_download",lambda _u,t:Path(t).write_bytes(b"<html>")), patch.object(selfupdate.tempfile,"mkdtemp",mkdtemp):
             with self.assertRaises(UpdateError): selfupdate.download(r,["tvwcs"])
         self.assertFalse(Path(made[0]).exists())
-    def test_boot_logo_address(self):
-        self.assertEqual(selfupdate.deb_url("tvwcs-boot-logo","5.0.0"),
-                         "https://github.com/one-moment-please/tvwcs/releases/download/v5.0.0/tvwcs-boot-logo_5.0.0_all.deb")
 
 if __name__=="__main__": unittest.main()

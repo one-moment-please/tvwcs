@@ -1,8 +1,8 @@
-"""Settings > User: the account (name, password), the automatic login, the login screen, the TVWCS logo at startup and
-the application to open at login. The system side is loginscreen.py, bootlogo.py and account.py; the changes that need
-root go through the window's run_as_root."""
+"""Settings > User: the account (name, password), the automatic login, the login screen and the application to open at
+login. The system side is loginscreen.py and account.py; the changes that need root go through the window's
+run_as_root."""
 from __future__ import annotations
-from tvwcs import __version__, account, bootlogo, loginscreen, selfupdate
+from tvwcs import account, loginscreen
 from tvwcs.model import STARTUP_LABELS, STARTUP_MODES, ConfigStore, startup_choices
 from tvwcs.ui_control import in_background
 
@@ -22,10 +22,10 @@ def run_root(page, args, label, done, packages=()):
 def role(a) -> str: return "Administrator" if a.admin else "Standard User"
 
 def read_user():
-    return (account.read(),loginscreen.status(),bootlogo.installed())
+    return (account.read(),loginscreen.status())
 
 def draw_user(page, state):
-    a,st,logo=state; cur=st["current"]; who,_sid=st["autologin"]
+    a,st=state; cur=st["current"]; who,_sid=st["autologin"]
     page.section("ACCOUNT")
     page.row("Name",a.full_name or "Not set",lambda:change_name(page,a),detail="Shown on the login screen",ident="user:name")
     page.row("User name",a.login,None,detail="Used to log in and for the home folder; it cannot be changed here",ident="user:login")
@@ -45,8 +45,6 @@ def draw_user(page, state):
     if st["old_greeter"]:
         page.row("Remove TVWCS's old login screen","",lambda:remove_old_greeter(page),ident="user:old",
                  detail="TVWCS 4's login screen is still set up; TVWCS 5 no longer has one",icon="user-trash-symbolic",fallback="✕")
-    page.row("TVWCS logo at startup","On" if logo else "Off",lambda:toggle_boot_logo(page,logo),ident="user:logo",
-             detail="Shows the TVWCS logo while the computer starts, instead of lines of text",value_css="state-on" if logo else "setting-value")
     draw_startup(page)
 
 def toggle_autologin(page, a, mine):
@@ -72,31 +70,6 @@ def remove_old_greeter(page):
     page.win.confirm("Remove TVWCS's old login screen?","Another login screen installed here takes over from the next start; without one, "
                      "greetd's text login does, and the automatic login is kept. It asks for your password.","Remove",
                      lambda:run_root(page,["migrate"],"Removing the old login screen",done),danger=False)
-
-def toggle_boot_logo(page, on):
-    lines=[]
-    def finished(folder):
-        def done(code, tail):
-            if folder: selfupdate.discard(folder)
-            page.set_status("")
-            if code: page.win.notice("TVWCS logo at startup",("\n".join(lines[-4:]) or tail or "It did not work.").strip())
-            else: page.win.notice("TVWCS logo at startup",("It shows" if not on else "The start-up text shows")+" from the next start.")
-            page.refresh(quiet=True)
-        return done
-    if on:
-        page.win.confirm("Turn off the TVWCS logo?","The computer shows its start-up text again from the next start. It asks for your password.","Turn off",
-                         lambda:(page.set_status("Removing the logo…"),page.win.run_as_root(bootlogo.remove_argv(),"Removing the startup logo",lines.append,finished(None))),
-                         danger=False)
-        return
-    def go():
-        page.set_status("Downloading the logo…")
-        def got(result):
-            folder,files=result; page.set_status("Installing the logo…")
-            page.win.run_as_root(bootlogo.install_argv(files),"Installing the startup logo",lines.append,finished(folder))
-        def failed(exc): page.set_status(""); page.win.notice("TVWCS logo at startup",f"The logo could not be downloaded: {exc}")
-        in_background(lambda:bootlogo.download(__version__),got,failed)
-    page.win.confirm("Show the TVWCS logo at startup?","Installs the tvwcs-boot-logo package (with Plymouth, which draws it) from TVWCS's GitHub release. "
-                     "It asks for your password.","Turn on",go,danger=False)
 
 # ---------------------------------------------------------------------- the application to open at login
 def draw_startup(page):

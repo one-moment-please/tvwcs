@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.1.0 — 2026-10-22
+
+- The TVWCS logo at startup is removed: the tvwcs-boot-logo package, its question in the installer and its switch in Settings › User. Releases now have one package, tvwcs. Updating from 5.0.x removes tvwcs-boot-logo (the tvwcs package conflicts with it), and the computer shows its usual start-up again.
+
 ## 5.0.1 — 2026-10-22
 
 - Settings › Network, handing Ubuntu Server's netplan network to NetworkManager: systemd-networkd no longer starts again a second later and takes the same port with DHCP beside NetworkManager (until the next restart). Its other sockets started it again; it is now masked, and the catch-all network file dracut leaves in /run is removed. Found testing on Ubuntu 26.04.1 LTS.

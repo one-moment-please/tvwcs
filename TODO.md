@@ -6,7 +6,8 @@ version 2.10.4; the last commit with the removed distribution support in it is `
 
 TVWCS 5.0 removed i3 (and X11), TVWCS's own login screen, the screen saver, Settings › Apps (Flatpak), Settings ›
 Terminal, network shares and setting the time by hand. The last commit with all of them is `10cee1d` (4.2.2), for
-bringing any of them back. Notes below that mention i3 date from before then.
+bringing any of them back. Notes below that mention i3 date from before then. 5.1 removed the TVWCS logo at startup
+(the tvwcs-boot-logo package, a Plymouth theme); the last commit with it is `84ecc73` (5.0.1).
 
 ---
 
