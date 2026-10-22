@@ -54,6 +54,8 @@ class IfupdownTests(unittest.TestCase):
         self.assertIn("cp -a /etc/netplan/. \"$backup\"/",script)
         self.assertLess(script.index("netplan generate || undo"),script.index("netplan apply || undo"))
         self.assertNotIn("apt-get",script)
+        self.assertIn("systemctl mask --now systemd-networkd.service",script)   # its other sockets would start it again
+        self.assertLess(script.index("rm -f /run/systemd/network/zzzz-dracut-default.network"),script.index("systemctl mask"))
     def test_network_manager_ignores_ifupdown(self):
         self.assertTrue(net.ifupdown_ignored(NM_CONF))
         self.assertFalse(net.ifupdown_ignored(NM_CONF.replace("managed=false","managed=true")))

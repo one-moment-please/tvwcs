@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.1 — 2026-10-22
+
+- Settings › Network, handing Ubuntu Server's netplan network to NetworkManager: systemd-networkd no longer starts again a second later and takes the same port with DHCP beside NetworkManager (until the next restart). Its other sockets started it again; it is now masked, and the catch-all network file dracut leaves in /run is removed. Found testing on Ubuntu 26.04.1 LTS.
+
 ## 5.0.0 — 2026-10-22
 
 A leaner TVWCS: sway only, installed as Debian packages, with the parts that cost a lot of code for little use on a TV taken out.
