@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.4.0 — 2026-10-22
+
+- **Settings › User › Lock the screen when TVWCS starts:** the TVWCS session can start locked, for computers that log in automatically (greetd's automatic login, or no login screen at all), so the computer is never left open after a restart. The lock screen comes up as sway starts, before the Quick Menu, and your password unlocks it. An application set to open at login still opens, behind the lock. It is off by default, only works in the TVWCS session (desktop mode keeps its login), and can't be turned on for an account with no password or a locked one, which the lock screen could not unlock. `tvwcs lock` and the new `tvwcs lock-at-start` now start the lock screen without loading GTK, so it appears a little sooner.
+
 ## 5.3.0 — 2026-10-22
 
 - **Settings › Appearance › Theme: Modern or Retro.** Retro looks like the menus of an old CRT TV: text in one colour on black, in pixel fonts (a 5 × 7 font for small text, an 8 × 8 font for large text such as the clock and the titles), with pixel icons to match. Buttons have no border until the mouse is over one (a dashed border) or one is selected (a solid one). Applications have no icons in Retro, only their names. Text sizes are rounded to whole multiples of the fonts' pixels, so they stay sharp at every interface size. The Quick Menu, Applications and Settings all use it.

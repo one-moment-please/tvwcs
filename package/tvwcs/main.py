@@ -772,14 +772,14 @@ def main():
     if args in (["--version"],["version"]): from tvwcs import __version__; print(f"TVWCS {__version__}"); return 0
     if args==["stop"]: return send_signal(signal.SIGTERM)
     if args==["reload"]: return send_request("reload")
-    if args in (["lock"],["lock","--nofork"]):   # TVWCS's lock screen: the power menu's Lock and the idle lock (--nofork: before 5.0)
-        from tvwcs.lockscreen import lock
-        return lock(ConfigStore().settings)
+    if args in (["lock"],["lock","--nofork"],["lock-at-start"]):   # TVWCS's lock screen (the launcher starts it without GTK, see lockscreen.main)
+        from tvwcs.lockscreen import main as lockscreen_main
+        return lockscreen_main(args)
     if len(args)==2 and args[0]=="idle" and args[1] in (*power.ACTIONS,"resume"): return idle_action(args[1])
     if len(args)==2 and args[0]=="launch" and args[1] and not any(c.isspace() for c in args[1]): return send_request(f"launch {args[1]}")
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
-    if args: print("Usage: tvwcs [toggle|guide|stop|reload|--version|lock|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    if args: print("Usage: tvwcs [toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
     return TVWCSApp().run([])
 if __name__=="__main__": raise SystemExit(main())
