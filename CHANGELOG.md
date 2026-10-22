@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.5.0 — 2026-10-22
+
+- **The lock screen matches TVWCS's theme and says it is locked.** Each screen shows a padlock, "Locked" and "Type your password, then press Enter". In the Modern theme it uses Modern's dark or light colours with your accent colour. In the Retro theme it's a TV menu box in your Retro colour and pixel fonts, on the Retro background (gray, blue or TV static). swaylock's ring now stays on screen below the text, so it's clear where the password goes, and it is drawn in the theme's colours too. This applies everywhere TVWCS locks: Lock in the power menu, the idle lock, and Lock the screen when TVWCS starts.
+- The tvwcs package now depends on librsvg2-common, which lets swaylock show the lock screen's picture.
+
 ## 5.4.1 — 2026-10-22
 
 - **Retro theme fixes, found on a real TV:** the TV static (and Modern's background colour) no longer disappears a moment after TVWCS first starts. Writing the hotkeys reloads sway, which dropped the background, and it is now set again after that reload. Pixel icons are always placed on whole screen pixels, so the ones in a box an odd number of pixels bigger (the Settings sidebar, and the Quick Menu's status icons at 4K) are no longer blurred by half a pixel. The favourite stars in Applications are now pixel icons too (★ and ☆) instead of the icon theme's small ones.

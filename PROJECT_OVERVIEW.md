@@ -113,7 +113,7 @@ Settings keeps idle times for screen off, lock and sleep, which TVWCS hands to `
 
 The mouse pointer is hidden by sway (`seat * hide_cursor`, `cursor.py`), in TV mode only.
 
-The **lock screen** (`lockscreen.py`), used in TV mode only, is swaylock on a dark background with a ring in the accent colour. The power menu's Lock, the idle lock and `tvwcs lock` use it. With the `lock_at_start` setting (Settings › User), `tvwcs.conf` runs `tvwcs lock-at-start` as sway starts, which locks straight away in a TVWCS session, never for an account `passwd -S` says has no usable password. The launcher runs both without loading GTK. A desktop session's lock screen is never changed.
+The **lock screen** (`lockscreen.py`), used in TV mode only, is swaylock with a picture per screen (an SVG made at lock time from the theme: padlock, "Locked", how to unlock; the Retro fonts reach swaylock through its own fontconfig file) and its ring always visible, in the theme's colours. The power menu's Lock, the idle lock and `tvwcs lock` use it. With the `lock_at_start` setting (Settings › User), `tvwcs.conf` runs `tvwcs lock-at-start` as sway starts, which locks straight away in a TVWCS session, never for an account `passwd -S` says has no usable password. The launcher runs both without loading GTK. A desktop session's lock screen is never changed.
 
 ## Settings app
 
