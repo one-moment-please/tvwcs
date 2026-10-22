@@ -1,8 +1,12 @@
-"""The Metro / Modern UI theme. Flat, square, high-contrast; every corner radius is 0."""
+"""TVWCS's two themes. Modern is the Metro / Modern UI look: flat, square, high-contrast; every corner radius is 0.
+Retro is an old CRT television's menus: green, amber or white pixel text on black, buttons without borders until
+the mouse is over one (dashed) or one is selected (solid), the TVWCS Pixel fonts (5 x 7 for small text, 8 x 8 for
+large) at whole multiples of their pixels, and pixel icons (widgets.glyph)."""
 from __future__ import annotations
 import re
 from tvwcs.widgets import METRO_COLORS
-from tvwcs.model import WALLPAPERS
+from tvwcs.model import RETRO_WALLPAPERS, WALLPAPERS
+from tvwcs.retro import STATIC_PICTURE
 
 CSS="""
 window.tvwcs-window, .tvwcs-root { background: @BG@; color: @FG@; font-family: "Segoe UI", "Selawik", "Open Sans", "Noto Sans", "Cantarell", sans-serif; border-radius: 0; box-shadow: none; }
@@ -109,15 +113,96 @@ PALETTES={
              "ERROR":"#c50f1f","ON":"#107c10","TROUGH":"#c4c4c4"},
 }
 
-def render_css(accent, scale=1.0, extra="", theme="dark"):
+# The Retro theme's phosphors (Settings > Appearance > Colour). Nothing is filled in: buttons, fields and panels are
+# drawn on the black, so the "raised" colours are transparent. GLOW is the soft light around the text.
+_RETRO_BASE={"RAISED":"transparent","HOVER":"transparent","HEADER":"transparent","SCRIM":"rgba(0, 0, 0, 0.86)"}
+RETRO_PALETTES={
+    "green":{**_RETRO_BASE,"BG":"#020a04","FG":"#39ff6a","MUTED":"#1fa845","FAINT":"#137a30","LINE":"#0f5c24","GLOW":"rgba(57, 255, 106, 0.45)"},
+    "amber":{**_RETRO_BASE,"BG":"#0a0600","FG":"#ffb000","MUTED":"#b57a00","FAINT":"#855a00","LINE":"#5c3f00","GLOW":"rgba(255, 176, 0, 0.4)"},
+    "white":{**_RETRO_BASE,"BG":"#05060a","FG":"#e8eef8","MUTED":"#97a0ae","FAINT":"#6b7380","LINE":"#3a404a","GLOW":"rgba(220, 230, 255, 0.35)"},
+}
+for _p in RETRO_PALETTES.values():
+    _p.update(PANE=_p["BG"],CARD=_p["BG"],STATUS=_p["BG"],BORDER=_p["MUTED"],TROUGH=_p["LINE"],ERROR=_p["FG"],ON=_p["FG"])
+
+SMALL_FONT='"TVWCS Pixel 5x7", monospace'
+LARGE_FONT='"TVWCS Pixel 8x8", monospace'
+LARGE_FROM=20   # px at desktop size: text this big or bigger is in the 8 x 8 font
+PIXEL_GRID=8    # both fonts are 8 pixels to the em: their sizes are rounded to a multiple of 8 px
+
+# Drawn after the Modern rules (and the Settings app's), overriding them: no fills, the selection a solid border.
+RETRO_CSS="""
+window.tvwcs-window, .tvwcs-root { font-family: @SMALL@; text-shadow: 0 0 4px @GLOW@; }
+button:focus, button:focus-visible, button:active, .tvwcs-selected,
+button.category-header:focus, button.category-header:focus-visible, button.tab-button:focus, button.tab-button:focus-visible,
+button.clock-button:focus, button.clock-button:focus-visible, button.status-icon:focus, button.status-icon:focus-visible,
+button.danger:focus, button.danger:focus-visible, button.close-button:focus, button.close-button:focus-visible, button.close-button:active
+  { background: transparent; color: @FG@; outline: 3px solid @FG@; outline-offset: -3px; }
+window.pointer button:hover { background: transparent; outline: 2px dashed @MUTED@; outline-offset: -2px; }
+window.pointer button:hover:focus, window.pointer button:hover:focus-visible, window.pointer button.tvwcs-selected:hover { outline: 3px solid @FG@; outline-offset: -3px; }
+window.pointer button.category-header:hover, window.pointer button.clock-button:hover, window.pointer button.status-icon:hover,
+window.pointer button.tab-button:hover, window.pointer button.close-button:hover { background: transparent; }
+button.close-button { background: transparent; color: @FG@; }
+button.tab-button.active { background: transparent; }
+entry, entry.search, entry.password { background: transparent; border-width: 0 0 2px 0; outline: none; }
+entry:focus-within { background: transparent; color: @FG@; border-color: @FG@; }
+entry:focus-within text, entry:focus-within image { color: @FG@; }
+entry.tv-search { border-color: @FAINT@; }
+.digit-box { background: transparent; border-width: 0 0 2px 0; }
+.badge { background: @FG@; color: @BG@; text-shadow: none; }
+.status-panel { border: 2px solid @LINE@; }
+scrollbar slider { background: @FAINT@; }
+scale.muted highlight { background: @FAINT@; }
+checkbutton check { background: transparent; border-color: @MUTED@; }
+checkbutton check:checked { background: transparent; border-color: @FG@; color: @FG@; -gtk-icon-source: -gtk-icontheme("tvwcs-retro-check-symbolic"); }
+.display-box, .display-box.primary { background: transparent; border: 2px solid @MUTED@; }
+.display-box.primary { border-color: @FG@; }
+textview.console, textview.console text { background: @BG@; color: @FG@; font-family: @SMALL@; }
+"""
+
+def _large_fonts(css):
+    """Give every rule with large text (LARGE_FROM px or more) the 8 x 8 font."""
+    def rule(m):
+        size=re.search(r"font-size:\s*(\d+)px",m.group(1))
+        if not size or int(size.group(1))<LARGE_FROM: return m.group(0)
+        return "{"+m.group(1).rstrip().rstrip(";")+f"; font-family: {LARGE_FONT}; }}"
+    return re.sub(r"\{([^{}]*)\}",rule,css)
+
+def retro_css(css):
+    """The Modern rules made Retro, before the palette is filled in: what was white on the selection is the phosphor
+    colour, every weight is regular (a pixel font has one), large text is in the 8 x 8 font, then RETRO_CSS."""
+    css=css.replace("#ffffff","@FG@").replace("#e3eefa","@MUTED@").replace("#000000","@FG@")
+    css=re.sub(r"font-weight:\s*\d+","font-weight: 400",css).replace("text-shadow: none; ","")   # buttons keep the glow
+    return _large_fonts(css)+RETRO_CSS.replace("@SMALL@",SMALL_FONT)
+
+SMALL_BELOW=15  # px at desktop size: notes and details, a step smaller than the text they explain
+
+def snap_font_size(px, scale=1.0):
+    """A pixel font's size in screen px, for `px` at desktop size: the nearest whole multiple of its 8 pixels, or for
+    notes and details the multiple below (but never under 16 px for text that is 12 px or more once scaled), so they
+    stay a step smaller than the labels around them."""
+    scaled=px*scale
+    if px>=SMALL_BELOW: return max(PIXEL_GRID,round(scaled/PIXEL_GRID)*PIXEL_GRID)
+    return max(2*PIXEL_GRID if scaled>=12 else PIXEL_GRID,int(scaled//PIXEL_GRID)*PIXEL_GRID)
+
+def render_css(accent, scale=1.0, extra="", theme="dark", style="modern", phosphor="green"):
     """The theme (plus `extra` rules, such as the Settings app's) with the accent colour and the look's colours filled in
     and every pixel measure multiplied by `scale`. Hover colours apply only while the mouse is in use (the window has
     the "pointer" class, see widgets.PointerWatch): a pointer hidden after a few seconds would otherwise keep marking
-    whatever happens to be under it, next to the remote's real selection."""
-    css=(CSS+extra).replace("@ACCENT@",accent)
-    for key,value in PALETTES.get(theme,PALETTES["dark"]).items(): css=css.replace(f"@{key}@",value)
+    whatever happens to be under it, next to the remote's real selection. The Retro theme's phosphor colour takes the
+    accent's place, and its text sizes are rounded to the pixel fonts' grid after scaling."""
+    retro=style=="retro"
+    palette=RETRO_PALETTES.get(phosphor,RETRO_PALETTES["green"]) if retro else PALETTES.get(theme,PALETTES["dark"])
+    css=retro_css(CSS+extra) if retro else CSS+extra
+    css=css.replace("@ACCENT@",palette["FG"] if retro else accent)
+    for key,value in palette.items(): css=css.replace(f"@{key}@",value)
+    if retro:   # sized here, already scaled: "PX" is passed over by the scaling below
+        css=re.sub(r"font-size:\s*(\d+)px",lambda m:f"font-size: {snap_font_size(int(m.group(1)),scale)}PX",css)
     if scale!=1.0:
         css=re.sub(r"(?<![\w.#-])(\d+)px",lambda m:f"{0 if m.group(1)=='0' else max(1,round(int(m.group(1))*scale))}px",css)
+    css=css.replace("PX;","px;").replace("PX }","px }")
     tiles="\n".join(f".tile-{i} {{ background: {c}; }}" for i,c in enumerate(METRO_COLORS))
     walls="\n".join(f".wall-{i}, button.wall-{i}:focus, button.wall-{i}:hover {{ background: {c}; }}" for i,c in enumerate(WALLPAPERS))
-    return css+"\n"+tiles+"\n"+walls
+    retro_walls="\n".join(f".retro-wall-{k}, button.retro-wall-{k}:focus, button.retro-wall-{k}:hover {{ "
+                          +(f'background: #000000 url("{STATIC_PICTURE.as_uri()}"); background-size: cover; }}' if c=="static" else f"background: {c}; }}")
+                          for k,c in RETRO_WALLPAPERS.items())
+    return css+"\n"+tiles+"\n"+walls+"\n"+retro_walls

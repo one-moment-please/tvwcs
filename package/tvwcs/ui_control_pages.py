@@ -13,7 +13,7 @@ from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, 
 from tvwcs import __version__, features, power, privilege, selfupdate
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (CORNERS, SCALE_LABELS, THEMES, WALLPAPERS, ConfigStore, accent_name, corner_right, is_4k, scale_choices,
+from tvwcs.model import (CORNERS, PHOSPHORS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SCALE_LABELS, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, corner_right, is_4k, scale_choices,
                          scale_key, tv_mode)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for
@@ -227,12 +227,21 @@ class AppearancePage(_ConfigPage):
         label=SCALE_LABELS.get(size) or f"Automatic ({SCALE_LABELS[scale_key(st,tv)]})"
         self.row("Interface size",label,lambda:self.win.choose_option("Interface size",scale_choices(size,has_4k,tv),size,self.pick_scale),ident="opt:scale")
         self.note("Automatic is TV Mode in a TVWCS session and Desktop otherwise"+("; 4K TV Mode suits a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
-        self.row("Theme",THEMES[st["theme"]],self.choose_theme,ident="opt:theme")
-        self.note("Dark or light, for TVWCS and Settings. Applications that follow the desktop's colour scheme (most GTK apps, "
-                  "and browsers through the desktop portal) switch with it.")
-        self.row("Accent colour",accent_name(st["accent"]),self.choose_accent,ident="opt:accent",swatch=st["accent"])
-        self.row("Background colour","",self.choose_wallpaper,ident="opt:wallpaper",swatch=st["wallpaper"])
-        self.note("Shown where no application is open, and behind the Quick Menu.")
+        self.row("Theme",STYLES[st["style"]],self.choose_style,ident="opt:style")
+        if st["style"]=="retro":
+            self.note("Like the menus of an old CRT TV: pixel text in one colour on black, buttons without borders until one is "
+                      "selected, and no application icons. Applications that follow the desktop's colour scheme are dark.")
+            self.row("Colour",PHOSPHORS[st["phosphor"]],self.choose_phosphor,ident="opt:phosphor")
+            self.row("Background",RETRO_WALLPAPER_LABELS[st["retro_wallpaper"]],self.choose_retro_wallpaper,ident="opt:retro_wallpaper",
+                     swatch=st["retro_wallpaper"])
+        else:
+            self.note("TVWCS's flat look, in the accent colour.")
+            self.row("Light or dark",THEMES[st["theme"]],self.choose_theme,ident="opt:theme")
+            self.note("For TVWCS and Settings. Applications that follow the desktop's colour scheme (most GTK apps, "
+                      "and browsers through the desktop portal) switch with it.")
+            self.row("Accent colour",accent_name(st["accent"]),self.choose_accent,ident="opt:accent",swatch=st["accent"])
+            self.row("Background colour","",self.choose_wallpaper,ident="opt:wallpaper",swatch=st["wallpaper"])
+        self.note("The background is shown where no application is open, and behind the Quick Menu.")
 
         self.section("BEHAVIOR")
         self.option("Close TVWCS when it loses focus","close_on_click_outside","Clicking another window, or another window opening, closes the Quick Menu.")
@@ -257,8 +266,16 @@ class AppearancePage(_ConfigPage):
         current=self.state.settings["accent"].lower()
         options=[(c,accent_name(c)) for c in METRO_COLORS]+([] if current in METRO_COLORS else [(current,f"{current} (set in config.json)")])
         self.win.choose_option("Accent colour",options,current,lambda c:self.change(lambda s:s.settings.update(accent=c)),swatches=True)
+    def choose_style(self):
+        self.win.choose_option("Theme",list(STYLES.items()),self.state.settings["style"],lambda t:self.change(lambda s:s.settings.update(style=t)))
+    def choose_phosphor(self):
+        self.win.choose_option("Colour",list(PHOSPHORS.items()),self.state.settings["phosphor"],lambda c:self.change(lambda s:s.settings.update(phosphor=c)))
+    def choose_retro_wallpaper(self):
+        self.win.choose_swatch("Background","Gray, blue, or the static of a TV between channels.",list(RETRO_WALLPAPERS),
+                               self.state.settings["retro_wallpaper"],lambda k:self.change(lambda s:s.settings.update(retro_wallpaper=k)),
+                               names=RETRO_WALLPAPER_LABELS)
     def choose_theme(self):
-        self.win.choose_option("Theme",list(THEMES.items()),self.state.settings["theme"],lambda t:self.change(lambda s:s.settings.update(theme=t)))
+        self.win.choose_option("Light or dark",list(THEMES.items()),self.state.settings["theme"],lambda t:self.change(lambda s:s.settings.update(theme=t)))
     def choose_wallpaper(self):
         self.win.choose_swatch("Background colour","Six greys, six colours and the same colours darker.",WALLPAPERS,self.state.settings["wallpaper"],
                                lambda c:self.change(lambda s:s.settings.update(wallpaper=c)))

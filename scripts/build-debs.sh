@@ -25,6 +25,9 @@ P=$STAGE/tvwcs
 install -d "$P/usr/lib/tvwcs/tvwcs" "$P/usr/bin" "$P/usr/share/tvwcs" "$P/usr/share/wayland-sessions" "$P/usr/share/applications" \
     "$P/usr/share/icons/hicolor/scalable/apps" "$P/usr/share/doc/tvwcs"
 install -m 644 "$ROOT"/package/tvwcs/*.py "$P/usr/lib/tvwcs/tvwcs/"
+install -d "$P/usr/lib/tvwcs/tvwcs/retro/icons/hicolor/scalable/actions"   # the Retro theme's fonts, icons and TV static (scripts/make-retro-assets.py)
+install -m 644 "$ROOT"/package/tvwcs/retro/*.ttf "$ROOT"/package/tvwcs/retro/*.png "$P/usr/lib/tvwcs/tvwcs/retro/"
+install -m 644 "$ROOT"/package/tvwcs/retro/icons/hicolor/scalable/actions/*.svg "$P/usr/lib/tvwcs/tvwcs/retro/icons/hicolor/scalable/actions/"
 install -m 644 "$ROOT/VERSION" "$P/usr/lib/tvwcs/VERSION"
 install -m 755 "$ROOT/package/bin/tvwcs" "$P/usr/bin/tvwcs"
 install -m 755 "$ROOT/data/tvwcs-session" "$P/usr/bin/tvwcs-session"
@@ -34,6 +37,7 @@ install -m 644 "$ROOT/data/com.tvwcs.ControlPanel.desktop" "$P/usr/share/applica
 install -m 644 "$ROOT/data/tvwcs.svg" "$ROOT/data/tvwcs-settings.svg" "$P/usr/share/icons/hicolor/scalable/apps/"
 install -m 644 "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$P/usr/share/doc/tvwcs/"
 install -m 644 "$ROOT/LICENSE" "$P/usr/share/doc/tvwcs/copyright"
+cat "$ROOT/scripts/retro/FONTS.txt" >> "$P/usr/share/doc/tvwcs/copyright"   # the Retro theme's fonts come from these
 control tvwcs "$P"
 install -m 755 "$ROOT/packaging/tvwcs/postinst" "$ROOT/packaging/tvwcs/prerm" "$P/DEBIAN/"
 build "$P"
