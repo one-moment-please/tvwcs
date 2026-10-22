@@ -32,7 +32,8 @@ class IfupdownTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             conf=os.path.join(d,"nm.conf"); open(conf,"w").write(NM_CONF)
             ifaces=os.path.join(d,"interfaces"); open(ifaces,"w").write(INTERFACES); os.chmod(ifaces,0o600)
-            with mock.patch.object(net,"NM_CONF",conf), mock.patch.object(net,"INTERFACES",ifaces), mock.patch.object(net,"have",lambda c:True):
+            with mock.patch.object(net,"NM_CONF",conf), mock.patch.object(net,"INTERFACES",ifaces), mock.patch.object(net,"have",lambda c:True), \
+                 mock.patch.object(net,"NETWORKD_RUN",d):   # not this computer's own (a CI runner's netplan uses systemd-networkd)
                 self.assertEqual(net.unmanaged_reason("wlp2s0"),"ifupdown")
                 open(conf,"w").write("[main]\nplugins=keyfile\n")
                 self.assertEqual(net.unmanaged_reason("wlp2s0"),"config")
