@@ -10,7 +10,8 @@
 #     the latest) or remove TVWCS;
 #   - the TVWCS logo while the computer starts (the tvwcs-boot-logo package), instead of the start-up text;
 #   - logging in automatically into TVWCS's session. Without a login screen, greetd is installed for it;
-#   - adding TVWCS to your usual sway session (one include line in its config), where it runs in desktop mode.
+#   - adding TVWCS to your usual sway session (one include line in its config), where it runs in desktop mode;
+#   - on Ubuntu, removing Snap, cloud-init and the Ubuntu Pro client, each asked.
 # apt installs the packages TVWCS needs with it. Supported: Debian and its family (apt), with systemd.
 #
 # TVWCS 4.x was installed in ~/.local/share/tvwcs, for one user, with its own login screen and i3 or sway. Upgrading
@@ -77,6 +78,10 @@ fail() { warn ""; warn "The installation failed: $*"; exit 1; }
 distro() {   # debian (Debian and its family) or unknown
     ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi
       for D in ${ID:-} ${ID_LIKE:-}; do case "$D" in debian|ubuntu|linuxmint|pop|raspbian) echo debian; exit ;; esac; done; echo unknown )
+}
+os_is() {   # os_is <id>: this system is <id> or built on it (os-release's ID or ID_LIKE)
+    ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi
+      for D in ${ID:-} ${ID_LIKE:-}; do [ "$D" = "$1" ] && exit 0; done; exit 1 )
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 # Run as root, asking for the password on the terminal (sudo reads it from the terminal itself, never from the script's
@@ -242,6 +247,41 @@ ask_questions() {
     fi
 }
 
+# Ubuntu's own extras, offered for removal (purge) one by one: "key|name|packages|what it is". The same lists are in
+# tvwcs/control_ubuntu.py, which removes them (Settings > Software updates offers them too). Nothing is pinned, so a
+# package that needs snapd brings it back.
+UBUNTU_EXTRAS="snap|Snap (snapd)|snapd|Ubuntu's second app store. Every Snap app goes with it.
+cloud-init|cloud-init|cloud-init cloud-init-base cloud-initramfs-copymods cloud-initramfs-dyn-netconf|Sets up cloud servers on their first start; at home it only slows start-up.
+pro|Ubuntu Pro client|ubuntu-pro-client ubuntu-pro-client-l10n ubuntu-advantage-tools ubuntu-pro-auto-attach|Ubuntu Pro's subscription tool and its adverts in apt; security updates keep coming without it. update-notifier-common and update-manager-core go with it (do-release-upgrade stays)."
+snap_apps() { have snap || return 0; snap list 2>/dev/null | awk 'NR > 1 && $NF != "base" && $NF != "snapd" && $1 !~ /^(core[0-9]*|snapd|bare|gnome-|gtk-|mesa-|kf[56]-)/ { printf "%s ", $1 }' | sed 's/ $//'; }
+PURGE=""; PURGE_NAMES=""
+choose_ubuntu_extras() {
+    PURGE=""; PURGE_NAMES=""
+    os_is ubuntu || return 0
+    FOUND=$(printf '%s\n' "$UBUNTU_EXTRAS" | while IFS='|' read -r KEY NAME PKGS WHAT; do
+        for P in $PKGS; do if pkg_installed "$P"; then printf '%s|%s|%s\n' "$KEY" "$NAME" "$WHAT"; break; fi; done; done)
+    [ -n "$FOUND" ] || return 0
+    heading "Ubuntu extras"
+    say "Ubuntu comes with these, which a TV computer does without. Each can be removed now (or later in Settings > Software updates)."
+    OLD_IFS=$IFS; IFS='
+'
+    for LINE in $FOUND; do   # not read from a here-document: the answers come from the terminal
+        IFS=$OLD_IFS; KEY=${LINE%%|*}; NAME=${LINE#*|}; WHAT=${NAME#*|}; NAME=${NAME%%|*}
+        say; say "$NAME: $WHAT"
+        [ "$KEY" != snap ] || { A=$(snap_apps); [ -z "$A" ] || say "Snap apps installed: $A"; }
+        if ask_no "Remove $NAME?"; then PURGE="$PURGE $KEY"; PURGE_NAMES="$PURGE_NAMES, $NAME"; fi
+    done
+    IFS=$OLD_IFS
+    PURGE=${PURGE# }; PURGE_NAMES=${PURGE_NAMES#, }
+}
+purge_ubuntu_extras() {   # after the install: a failure only warns
+    [ -n "$PURGE" ] || return 0
+    say "Removing $PURGE_NAMES..."
+    # shellcheck disable=SC2086
+    as_root env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$LIB" python3 -m tvwcs.control_ubuntu purge $PURGE ||
+        warn "$PURGE_NAMES could not be removed. Settings > Software updates can try again."
+}
+
 summary() {
     heading "TVWCS will now"
     if [ "$WANT" = package ]; then say "  install the TVWCS $PKG_VERSION packages from $PACKAGED"; else say "  download and install TVWCS $WANT"; fi
@@ -254,6 +294,7 @@ summary() {
     [ -z "$FROM_4" ] || say "  remove TVWCS 4.x from $OLD_DEST (your settings in $TVCONF are kept)"
     [ -z "$OLD_INCLUDE" ] || say "  point TVWCS's include line in $OLD_INCLUDE at the package (backup: $OLD_INCLUDE.tvwcs-backup)"
     [ -z "$DESKTOP" ] || say "  add TVWCS to $DESKTOP (backup: $DESKTOP.tvwcs-backup)"
+    [ -z "$PURGE" ] || say "  remove $PURGE_NAMES"
 }
 
 # ====================================================================== doing it
@@ -299,6 +340,7 @@ install_all() {
     if [ -n "$DESKTOP" ]; then backup "$DESKTOP"
         { echo; echo "# TVWCS (desktop mode): its hotkeys, window rules and autostart. Added by TVWCS's install.sh."; echo "$INCLUDE"; } >> "$DESKTOP"; fi
     [ -z "$FROM_4" ] || remove_old_copy
+    purge_ubuntu_extras
     heading "TVWCS $V is installed"
     if [ -n "$FROM_4" ]; then say "TVWCS 4.x still runs until you log out. From the next login (or restart), TVWCS's session runs on sway."
     elif [ -n "${SWAYSOCK:-}" ] && have swaymsg; then swaymsg reload >/dev/null 2>&1 || :; say "sway has reloaded its config."
@@ -350,6 +392,7 @@ main() {
     if [ -n "$CUR" ]; then say "TVWCS $CUR is installed."; else say "This installs TVWCS, a launcher and settings for sway made for a TV and a remote."; fi
     choose_version
     ask_questions
+    choose_ubuntu_extras
     summary
     echo; ask_yes "Go ahead?" || { say "Nothing was changed."; exit 0; }
     install_all

@@ -137,6 +137,16 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.status,0,out)
         self.assertIn("TVWCS 5.1.0, a prerelease",out); self.assertNotIn("4.2.2",out)
         self.assertIn("tvwcs_5.1.0_all.deb",self.apt())
+    def test_on_ubuntu_it_offers_to_remove_its_extras_one_by_one(self):
+        (self.etc/"os-release").write_text("ID=ubuntu\nID_LIKE=debian\n")
+        out=self.converse([],{"Show the TVWCS logo":"n","automatically":"n","Remove Snap":"y","Remove cloud-init":"","Go ahead":"y"},
+                          script=self.pkg/"install.sh",TVWCS_PACKAGES="snapd cloud-init")
+        self.assertEqual(self.status,0,out)
+        self.assertIn("== Ubuntu extras",out); self.assertNotIn("Ubuntu Pro client",out)   # not installed: not offered
+        self.assertIn("  remove Snap (snapd)\n",out); self.assertLess(out.index("Go ahead?"),out.index("Removing Snap (snapd)..."))
+    def test_extras_are_only_offered_on_ubuntu(self):
+        out=self.converse([],{"Show the TVWCS logo":"n","automatically":"n","Go ahead":"y"},script=self.pkg/"install.sh",TVWCS_PACKAGES="snapd cloud-init")
+        self.assertEqual(self.status,0,out); self.assertNotIn("Ubuntu extras",out)
     def test_remove(self):
         self.use("greetd"); (self.etc/"greetd"/"config.toml").write_text('[default_session]\ncommand = "agreety --cmd /usr/bin/tvwcs-session"\nuser = "_greetd"\n')
         cfg=self.home/".config"/"sway"/"config"; cfg.parent.mkdir(parents=True)

@@ -9,7 +9,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango
 
 from tvwcs import control_storage as storage
-from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_updates as updates
+from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_ubuntu as ubuntu, control_updates as updates
 from tvwcs import __version__, features, power, privilege, selfupdate
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
@@ -768,7 +768,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         super().__init__(win); self.running=None; self.log=None; self.fetched=None
         self.finished=None; self.outcome=None   # the run that just ended, until the page is read again; then what came of it
     def read(self):
-        state=updates.read_state(); state.reboot=updates.reboot_needed()
+        state=updates.read_state(); state.reboot=updates.reboot_needed(); state.extras=ubuntu.installed_extras()
         if self.fetched and (state.checked or 0)<self.fetched: state.checked=self.fetched   # unchanged lists keep their old date
         return state
     def summary(self):
@@ -802,6 +802,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         if self.outcome: self.note(self.outcome,"state-on")
         if self.log is not None and self.log.get_buffer().get_char_count():
             self.section("LAST RUN"); self.add(self.console())
+        self.draw_ubuntu_extras(getattr(s,"extras",[]))
         for title,items in ((f"{m.label.upper()} PACKAGES" if m else "PACKAGES",s.updates),):
             if not items: continue
             self.section(f"{title} ({len(items)})")
@@ -848,6 +849,23 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             if root: self.win.run_as_root(argv,label,self._append,done)
             else: StreamedRun(argv,self._append,done)
         next_step(0)
+
+    def draw_ubuntu_extras(self, extras):
+        """Ubuntu's Snap, cloud-init and Ubuntu Pro client, each offered for removal while it is installed (control_ubuntu)."""
+        if not extras: return
+        self.section("UBUNTU EXTRAS")
+        for e,pkgs in extras:
+            self.row(f"Remove {e.name}","",lambda e=e,pkgs=pkgs:self.remove_ubuntu_extra(e,pkgs),icon="user-trash-symbolic",fallback="✕",
+                     ident=f"ubuntu:{e.key}",detail=", ".join(pkgs))
+        self.note("Ubuntu comes with these, and a TV computer does without them. "+" ".join(f"{e.name}: {e.what}" for e,_p in extras)
+                  +" Each is removed with its settings (purged). Nothing stops a package that needs one of them from installing it again.")
+    def remove_ubuntu_extra(self, e, pkgs):
+        also=ubuntu.would_remove(pkgs); apps=ubuntu.snap_apps() if e.key=="snap" else []
+        text=e.what
+        if apps: text+=f"\n\nSnap apps removed with it: {', '.join(apps)}."
+        if also: text+=f"\n\nAlso removed, as they need it: {', '.join(also)}."
+        text+=" It asks for your password."
+        self.win.confirm(f"Remove {e.name}?",text,"Remove",lambda:self.run_steps(f"Removing {e.name}",[(ubuntu.purge_argv([e.key]),True)]))
 
     def confirm_reboot(self):
         command=command_for("reboot")
@@ -944,6 +962,11 @@ class NetworkPage(Page):
         return "NetworkManager" if s.managed else "Shown only (no NetworkManager)"
     def draw(self, s):
         if not s.managed: self.note(s.message)
+        unmanaged=[i for i in s.interfaces if i.state.startswith("unmanaged")]
+        if s.managed and unmanaged and network.unmanaged_reason(unmanaged[0].device)=="netplan":
+            self.row("Let NetworkManager manage the network","",lambda:self.take_over(unmanaged[0]),icon="emblem-system-symbolic",fallback="⚙",ident="netplan",
+                     detail="netplan gives the network to systemd-networkd (as Ubuntu Server does), so it can only be shown here. "
+                            "Saved Wi-Fi networks and addresses set by hand are kept.")
         self.section("ETHERNET")
         wired=s.of_kind("ethernet")
         if not wired: self.note("No Ethernet port was found.")
@@ -999,6 +1022,14 @@ class NetworkPage(Page):
                   "The network drops for a moment. Ethernet connects again by itself, but you have to choose your Wi-Fi network and enter "
                   "its password again here, and any IP address, gateway or DNS servers set by hand have to be set again. It asks for your password.")
             title,ok="Hand the network to NetworkManager?","Hand it over"
+        elif reason=="netplan":
+            text=(f"{i.device} is set up by netplan (/etc/netplan), which gives it to systemd-networkd, as Ubuntu Server does, so "
+                  "NetworkManager (which Settings uses) leaves it alone. Settings can set netplan to use NetworkManager instead: one "
+                  "file is added to /etc/netplan (the others are kept, and backed up in /var/backups) and the settings are applied, "
+                  "so NetworkManager manages every Ethernet port and Wi-Fi adapter from then on.\n\n"
+                  "Your saved Wi-Fi networks and any IP address, gateway or DNS servers set by hand are kept: netplan hands them to "
+                  "NetworkManager. The network drops for a moment while it switches. It asks for your password.")
+            title,ok="Hand the network to NetworkManager?","Hand it over"
         else:
             text=(f"NetworkManager is set to leave {i.device} alone. Settings can ask it to manage it. "
                   "If that does not last after a restart, a file in /etc/NetworkManager/conf.d lists it under unmanaged-devices.")
@@ -1012,7 +1043,7 @@ class NetworkPage(Page):
                                       if any(w.kind=="wifi" for w in self.state.interfaces) and reason=="ifupdown" else ""))
                 self.refresh(quiet=True)
             self.win.run_as_root(network.take_over_argv(i.device,reason),f"Handing {i.device} to NetworkManager",lines.append,done)
-        self.win.confirm(title,text,ok,go,danger=reason=="ifupdown")
+        self.win.confirm(title,text,ok,go,danger=reason in ("ifupdown","netplan"))
 
     def ip_row(self, i):
         """IP address, default gateway and DNS servers of the interface's connection: from DHCP, or set by hand."""

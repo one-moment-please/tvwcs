@@ -12,7 +12,11 @@ window.tvwcs-window, .tvwcs-root { background: @BG@; color: @FG@; font-family: "
 .muted { color: @MUTED@; font-size: 14px; }
 .section-title { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: @ACCENT@; margin-top: 12px; margin-bottom: 2px; }
 .channel-number { font-weight: 700; color: @ACCENT@; }
-.favorite-mark { color: @ACCENT@; }
+.favorite-mark { color: @MUTED@; font-size: 18px; }
+button:focus .favorite-mark { color: #ffffff; }
+/* a Quick Menu row that is open now: a thin band down its left side (white while selected) */
+button.launch-row.open-app { box-shadow: inset 3px 0 @ACCENT@; }
+button.launch-row.open-app:focus, button.launch-row.open-app:focus-visible { box-shadow: inset 6px 0 #ffffff; }
 .child-marker { color: @FAINT@; font-size: 22px; }
 button { min-height: 44px; min-width: 44px; padding: 0 14px; border: none; border-radius: 0; background: @RAISED@; background-image: none; color: @FG@; box-shadow: none; text-shadow: none; font-size: 15px; }
 window.pointer button:hover { background: @HOVER@; }
@@ -66,7 +70,7 @@ button.clock-button { padding: 4px 8px; }
 window.pointer button.clock-button:hover, window.pointer button.status-icon:hover { background: @RAISED@; }
 button.clock-button:focus, button.clock-button:focus-visible, button.status-icon:focus, button.status-icon:focus-visible { background: @ACCENT@; outline: 3px solid #ffffff; outline-offset: -3px; }
 .clock-time { font-size: 22px; font-weight: 300; }
-.clock-date { color: @MUTED@; font-size: 12px; }
+.clock-date { color: @MUTED@; font-size: 15px; }
 button:focus .clock-date { color: #ffffff; }
 button.status-wide { padding: 0 8px; }
 .status-count { font-size: 14px; font-weight: 700; }
