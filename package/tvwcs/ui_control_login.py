@@ -67,7 +67,7 @@ def toggle_lock_at_start(page, on):
         if not lockscreen.can_unlock(account.password_status()):
             page.win.notice("Lock the screen when TVWCS starts","Your account has no password (or a locked one), so the lock screen "
                             f"could not be unlocked. Give it one first: in a terminal, run  sudo passwd {me()}"); return
-    store=ConfigStore(); store.settings["lock_at_start"]=not on; store.save(); page.refresh(quiet=True)
+    store=ConfigStore(); store.settings["lock_at_start"]=not on; store.save(); page.redraw()   # not in read_user()'s state, so a quiet refresh would not redraw
 
 def change_login_screen(page, cur, others):
     def picked(unit):
