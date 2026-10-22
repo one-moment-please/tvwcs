@@ -10,7 +10,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs.applications import ApplicationCatalogue, match_window
 from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_bindings
-from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, default_of, display_name, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, corner_top, is_4k, scale_key, tv_mode as in_tv_mode
+from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, default_of, display_name, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, corner_top, dark_look, wallpaper_of, is_4k, scale_key, tv_mode as in_tv_mode
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import appearance, cursor, power, privilege, quick_status, tv_mode
@@ -697,10 +697,10 @@ class TVWCSApp(Gtk.Application):
     def reload_options(self):
         """The Settings app changed TVWCS's options (the Options page): read them again, and apply the interface size
         and the hotkeys. Profiles are read again too, so nothing TVWCS saves afterwards undoes the change."""
-        old=scale_key(self.store.settings); look=(self.store.settings["theme"],self.store.settings["wallpaper"]); corner=self.store.settings["quick_corner"]
+        old=scale_key(self.store.settings); look=self._look(); corner=self.store.settings["quick_corner"]
         self.store.load(); self.store.ensure_defaults(self.catalogue.applications)
         self.apply_hotkeys(); self.idle.apply(); self.cursor.apply(); self.watch.apply_bar(); self.watch.updates_changed()
-        if (self.store.settings["theme"],self.store.settings["wallpaper"])!=look: self.apply_look()
+        if self._look()!=look: self.apply_look()
         if self.window is None: return
         if scale_key(self.store.settings)!=old: set_scale(self.scale_factor)
         moved=self.store.settings["quick_corner"]!=corner   # placed and laid out again, like a new size
@@ -732,12 +732,14 @@ class TVWCSApp(Gtk.Application):
         if profile: self.launch_profile(profile,bypass_pin=True)   # chosen by the owner in Settings, so no PIN at login
         return GLib.SOURCE_REMOVE
 
+    def _look(self): return (dark_look(self.store.settings),wallpaper_of(self.store.settings))
     def apply_look(self):
-        """Settings > Appearance > Light or dark and Background colour: dark or light for TVWCS's own widgets and for the
-        applications that follow the desktop's colour scheme (appearance.py), and the colour behind everything."""
-        s=self.store.settings; theme,wallpaper=s["theme"],s["wallpaper"]
+        """Settings > Appearance > Theme, Light or dark and Background: dark or light for TVWCS's own widgets and for the
+        applications that follow the desktop's colour scheme (appearance.py; the Retro theme is dark), and the colour
+        (or the TV static) behind everything."""
+        dark,wallpaper=self._look(); theme="dark" if dark else "light"
         gtk_settings=Gtk.Settings.get_default()
-        if gtk_settings is not None: gtk_settings.set_property("gtk-application-prefer-dark-theme",theme!="light")
+        if gtk_settings is not None: gtk_settings.set_property("gtk-application-prefer-dark-theme",dark)
         def work():
             for problem in (appearance.apply_theme(theme),appearance.apply_wallpaper(wallpaper) if self.wm.available else ""):
                 if problem: print(f"TVWCS appearance: {problem}",file=sys.stderr)

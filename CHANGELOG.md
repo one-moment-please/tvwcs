@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.3.0 — 2026-10-22
+
+- **Settings › Appearance › Theme: Modern or Retro.** Retro looks like the menus of an old CRT TV: text in one colour on black, in pixel fonts (a 5 × 7 font for small text, an 8 × 8 font for large text such as the clock and the titles), with pixel icons to match. Buttons have no border until the mouse is over one (a dashed border) or one is selected (a solid one). Applications have no icons in Retro, only their names. Text sizes are rounded to whole multiples of the fonts' pixels, so they stay sharp at every interface size. The Quick Menu, Applications and Settings all use it.
+- Retro has its own **Colour** (green, amber or white) and **Background** (gray, blue or TV static). The TV static is a small picture of grey noise, stretched to fill the screen, so its grains look the same on a 1080p and a 4K TV. Modern keeps its light or dark choice, accent colour and background colour, so switching back brings them back. Applications that follow the desktop's colour scheme are dark in Retro.
+- The fonts are built from public bitmap fonts (Adafruit's 5 × 7 GFX font and Daniel Hepper's 8 × 8 font8x8, after IBM's VGA font) by `scripts/make-retro-assets.py`, which also draws the icons and the static from `scripts/retro/glyphs.txt`.
+
 ## 5.2.2 — 2026-10-22
 
 - Logging into the TVWCS session from LightDM's login screen (as on Linux Mint) no longer sometimes ends back at the login screen after 10 seconds. LightDM switches to the session's console a moment after starting it, and the libseat in Ubuntu 24.04 and Linux Mint 22 (0.8.0) checks only once, when sway starts, so it could miss the switch ("Timeout waiting session to become active"). The session now waits until logind says it is active before starting sway (at most 5 seconds; usually 0.1–0.2 s). The plain "Sway" session isn't TVWCS's and can still hit it there.

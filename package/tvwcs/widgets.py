@@ -7,8 +7,11 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
+from tvwcs import retro
+
 METRO_COLORS=("#0078d7","#e81123","#00b294","#ff8c00","#881798","#107c10","#ea005e","#6b69d6","#00cc6a","#c239b3")
 _scale=[1.0]
+_retro=[False]
 
 _I3_MODS=((Gdk.ModifierType.SUPER_MASK,"Mod4"),(Gdk.ModifierType.ALT_MASK,"Mod1"),(Gdk.ModifierType.CONTROL_MASK,"Control"),(Gdk.ModifierType.SHIFT_MASK,"Shift"))
 
@@ -29,8 +32,31 @@ def has_icon(name):
     theme=_theme()
     return bool(name and theme and theme.has_icon(name))
 
+def is_retro(): return _retro[0]
+_retro_ready=[False]
+def use_retro(on):
+    """Draw in the Retro theme (or not): glyph() then uses the pixel icons, app_icon() shows no application icons, and
+    text is drawn without smoothing, so the pixel fonts stay sharp. The fonts and icons are added once, whichever
+    theme is in use, so switching needs no restart. Call before building widgets; theme.render_css has the rules."""
+    if not _retro_ready[0]:
+        retro.add_fonts(); theme=_theme()
+        if theme is not None and retro.ICON_DIR.is_dir(): theme.add_search_path(str(retro.ICON_DIR)); _retro_ready[0]=True
+    _retro[0]=bool(on)
+    settings=Gtk.Settings.get_default()
+    if settings is None: return
+    if settings.find_property("gtk-font-rendering") is not None:   # GTK 4.16+: the xft settings apply only when manual
+        settings.set_property("gtk-font-rendering",Gtk.FontRendering.MANUAL if on else Gtk.FontRendering.AUTOMATIC)
+    settings.set_property("gtk-xft-antialias",0 if on else -1)
+    settings.set_property("gtk-xft-hinting",0 if on else -1)
+
 def glyph(icon_name, fallback, size=None):
-    """A symbolic icon if the icon theme has it, otherwise a text glyph."""
+    """A symbolic icon if the icon theme has it, otherwise a text glyph. In the Retro theme its pixel icon, if it has
+    one, at a whole multiple of its pixels."""
+    if _retro[0]:
+        pixel=retro.retro_icon_name(icon_name)
+        if has_icon(pixel):
+            img=Gtk.Image.new_from_icon_name(pixel); img.set_pixel_size(retro.icon_pixel_size(S(size or 16)))
+            img.add_css_class("glyph"); return img
     if has_icon(icon_name):
         img=Gtk.Image.new_from_icon_name(icon_name)
         if size: img.set_pixel_size(S(size))
@@ -46,8 +72,15 @@ def letter_tile(label, size):
     tile.add_css_class(f"tile-{sum(ord(c) for c in (label or '?'))%len(METRO_COLORS)}")
     tile.set_halign(Gtk.Align.CENTER); tile.set_valign(Gtk.Align.CENTER); return tile
 
+NO_ICON="no-icon"   # the empty stand-in for an application icon in the Retro theme: it stays hidden
 def app_icon(spec, label, size=32, badge=None):
-    """Application logo (theme icon or file), else a coloured letter tile; optional badge overlay."""
+    """Application logo (theme icon or file), else a coloured letter tile; optional badge overlay. The Retro theme
+    shows no application icons (they would not be drawn in its pixels, and a letter tile repeats the name): only the
+    badge, if there is one, else a hidden empty box."""
+    if _retro[0]:
+        if badge:
+            chip=Gtk.Label(label=badge); chip.add_css_class("badge"); chip.set_valign(Gtk.Align.CENTER); return chip
+        empty=Gtk.Box(); empty.add_css_class(NO_ICON); empty.set_visible(False); return empty
     widget=None
     if spec:
         if os.path.isabs(spec) and os.path.exists(spec):
