@@ -24,6 +24,16 @@ def read(uid=None) -> Account:
     except KeyError: groups=set()
     return Account(e.pw_name,(e.pw_gecos or "").split(",")[0].strip(),e.pw_uid,e.pw_dir,e.pw_shell,bool(groups&set(ADMIN_GROUPS)))
 
+def password_status(run=None) -> str:
+    """`passwd -S`'s verdict on this user's password: "P" (has one), "NP" (none) or "L" (locked, as for an account that
+    only ever logs in automatically); "" when it cannot tell. No root needed for one's own account."""
+    import subprocess
+    try:
+        out=(run or (lambda argv:subprocess.run(argv,capture_output=True,text=True,timeout=5).stdout))(["passwd","-S"])
+    except (OSError,subprocess.SubprocessError): return ""
+    parts=(out or "").split()
+    return parts[1] if len(parts)>1 and parts[1] in ("P","NP","L") else ""
+
 def valid_full_name(name) -> str:
     """"" when chfn would take it as a full name, else why not."""
     if len(name)>80: return "That name is too long."

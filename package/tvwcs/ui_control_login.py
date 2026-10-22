@@ -37,6 +37,10 @@ def draw_user(page, state):
                  detail="Straight into TVWCS, without the login screen",ident="user:auto",value_css="state-on" if mine else "setting-value")
     elif cur:
         page.row("Log in automatically after startup","Not here",None,detail=f"Set it in {loginscreen.name(cur)}'s own settings",ident="user:auto")
+    on=ConfigStore().settings["lock_at_start"]
+    page.row("Lock the screen when TVWCS starts","On" if on else "Off",lambda:toggle_lock_at_start(page,on),
+             detail="Your password unlocks it. For the automatic login, so the computer is never left open",
+             ident="user:lock-start",value_css="state-on" if on else "setting-value")
     others=[u for u in st["installed"] if u!=cur]
     page.row("Login screen",loginscreen.name(cur) if cur else "None",(lambda:change_login_screen(page,cur,others)) if others else None,
              detail="Choose this to switch to another one installed here" if others else "",ident="user:screen")
@@ -53,6 +57,17 @@ def toggle_autologin(page, a, mine):
         if problem: page.win.notice("Log in automatically",problem); return
         page.refresh(quiet=True)
     run_root(page,args,"Turning off the automatic login" if mine else "Turning on the automatic login",done)
+
+def toggle_lock_at_start(page, on):
+    """The "lock_at_start" setting (lockscreen.lock_at_start). Never turned on for an account swaylock could not unlock."""
+    from tvwcs import lockscreen
+    if not on:
+        if not lockscreen.available():
+            page.win.notice("Lock the screen when TVWCS starts","TVWCS's lock screen needs swaylock. Install it first, with your package manager."); return
+        if not lockscreen.can_unlock(account.password_status()):
+            page.win.notice("Lock the screen when TVWCS starts","Your account has no password (or a locked one), so the lock screen "
+                            f"could not be unlocked. Give it one first: in a terminal, run  sudo passwd {me()}"); return
+    store=ConfigStore(); store.settings["lock_at_start"]=not on; store.save(); page.refresh(quiet=True)
 
 def change_login_screen(page, cur, others):
     def picked(unit):

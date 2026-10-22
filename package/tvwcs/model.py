@@ -111,6 +111,7 @@ DEFAULT_SETTINGS={
     "keyboard":"hidden",            # KEYBOARDS: the on-screen keyboard as it was last left (hidden, full or the number pad)
     "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
     "audio_boost":False,            # Settings > Sound: volumes may go over 100% (else they stop there)
+    "lock_at_start":False,          # Settings > User: a TVWCS session starts locked (for the automatic login), see lockscreen.py
     "idle":{"screen_off":0,"lock":0,"sleep":0},   # seconds without input before each (0 never), see power.py
     "idle_battery":{"screen_off":0,"lock":0,"sleep":0},   # the same, while a laptop runs on its battery
     "battery_critical":{"action":"shutdown","percent":5},   # what to do when the battery is nearly empty (power.CRITICAL_ACTIONS)
@@ -160,7 +161,7 @@ def _clean_settings(raw) -> dict:
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
     if raw.get("keyboard") in KEYBOARDS: s["keyboard"]=raw["keyboard"]
     for key in ("close_on_click_outside","hide_options_buttons","update_prereleases","clock_24h","channel_zero_done",
-                "audio_boost"):
+                "audio_boost","lock_at_start"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
     s["hotkeys"]=clean_hotkeys(raw.get("hotkeys"))
     s["idle"]=clean_idle(raw.get("idle")); s["idle_battery"]=clean_idle(raw.get("idle_battery"))

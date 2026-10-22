@@ -141,7 +141,7 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 
 A page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth BlueZ, and so on). When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.
 
-**Locking in TV mode:** the TVWCS session locks with swaylock, on a dark screen with a ring in your accent colour. A desktop session's own lock screen is not changed. `tvwcs lock` locks by hand.
+**Locking in TV mode:** the TVWCS session locks with swaylock, on a dark screen with a ring in your accent colour. A desktop session's own lock screen is not changed. `tvwcs lock` locks by hand. If the computer logs in automatically, **Settings › User › Lock the screen when TVWCS starts** has the session start locked, so your password is still needed after a restart.
 
 ## Update and uninstall
 

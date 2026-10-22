@@ -9,4 +9,6 @@ for CAND in "$DIR/.." "$DIR"; do
 done
 PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONPATH
+# The lock screen without GTK, so a session that starts locked (lockscreen.py) locks as soon as it can
+case "${1:-}" in lock|lock-at-start) exec python3 -m tvwcs.lockscreen "$@" ;; esac
 exec python3 -m tvwcs.main "$@"

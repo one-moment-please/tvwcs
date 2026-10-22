@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.3.0 — 2026-10-22
+
+- **Settings › User › Lock the screen when TVWCS starts:** the TVWCS session can start locked, for computers that log in automatically (greetd's automatic login, or no login screen at all), so the computer is never left open after a restart. The lock screen comes up as sway starts, before the Quick Menu, and your password unlocks it. An application set to open at login still opens, behind the lock. It is off by default, only works in the TVWCS session (desktop mode keeps its login), and can't be turned on for an account with no password or a locked one, which the lock screen could not unlock. `tvwcs lock` and the new `tvwcs lock-at-start` now start the lock screen without loading GTK, so it appears a little sooner.
+
 ## 5.2.2 — 2026-10-22
 
 - Logging into the TVWCS session from LightDM's login screen (as on Linux Mint) no longer sometimes ends back at the login screen after 10 seconds. LightDM switches to the session's console a moment after starting it, and the libseat in Ubuntu 24.04 and Linux Mint 22 (0.8.0) checks only once, when sway starts, so it could miss the switch ("Timeout waiting session to become active"). The session now waits until logind says it is active before starting sway (at most 5 seconds; usually 0.1–0.2 s). The plain "Sway" session isn't TVWCS's and can still hit it there.
