@@ -194,7 +194,7 @@ choose_version() {   # -> WANT (a version, or "package" for the .deb files next 
     set --; DEF=1
     if [ -n "$PACKAGED" ]; then set -- "$@" "TVWCS $PKG_VERSION (the package next to this script)"; fi
     [ -z "$LATEST" ] || set -- "$@" "TVWCS $LATEST, the latest release"
-    OTHERS=$(other_versions)
+    OTHERS=$(other_versions | awk -v p="$PKG_VERSION" '$1 != p')   # not twice: the package here is already offered
     for V in $(echo "$OTHERS" | cut -d' ' -f1); do
         case "$(echo "$OTHERS" | awk -v v="$V" '$1 == v { print $2 }')" in prerelease) set -- "$@" "TVWCS $V, a prerelease (not tested on a TV yet)" ;; *) set -- "$@" "TVWCS $V, an older release" ;; esac
     done
@@ -347,7 +347,7 @@ remove_all() {
     KEEP=1; ask_no "Also delete your TVWCS settings ($TVCONF)?" && KEEP="" || :
     if [ "$(login_screen)" = greetd ] && grep -q tvwcs-session "$ETC/greetd/config.toml" 2>/dev/null; then
         say "greetd starts TVWCS's session: it goes back to its plain text login."
-        as_root sh -c 'cp "$1" "$1.tvwcs-backup" && printf "%s\n" "[terminal]" "vt = 7" "" "[default_session]" "command = \"agreety --cmd /bin/sh\"" "user = \"_greetd\"" > "$1"' sh "$ETC/greetd/config.toml"
+        as_root sh -c 'cp "$1" "$1.tvwcs-backup" && printf "%s\n" "[terminal]" "vt = 7" "" "[default_session]" "command = \"/usr/sbin/agreety --cmd /bin/sh\"" "user = \"_greetd\"" > "$1"' sh "$ETC/greetd/config.toml"
     fi
     for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
     # shellcheck disable=SC2046

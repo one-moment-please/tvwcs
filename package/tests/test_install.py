@@ -99,7 +99,7 @@ class InstallTests(unittest.TestCase):
         self.assertIn("There is no login screen here",out)
         apt=self.apt()
         self.assertIn("tvwcs_5.0.0_all.deb greetd",apt); self.assertNotIn("logo",out.lower())
-        self.assertIn('command = "/usr/bin/tvwcs-session"',self.greetd()); self.assertIn("agreety --cmd /usr/bin/tvwcs-session",self.greetd())
+        self.assertIn('command = "/usr/bin/tvwcs-session"',self.greetd()); self.assertIn("/usr/sbin/agreety --cmd /usr/bin/tvwcs-session",self.greetd())
         self.assertEqual(os.readlink(self.etc/"systemd"/"system"/"display-manager.service"),"/lib/systemd/system/greetd.service")
     def test_declining_at_the_end_changes_nothing(self):
         out=self.converse(["n","n"],script=self.pkg/"install.sh")
@@ -141,6 +141,11 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.status,0,out)
         self.assertIn("TVWCS 5.1.0, a prerelease",out); self.assertNotIn("4.2.2",out)
         self.assertIn("tvwcs_5.1.0_all.deb",self.apt())
+    def test_the_package_here_is_not_offered_twice(self):
+        self.releases("",[("5.0.1",True),("5.0.0",True)])
+        out=self.converse(["1","n","y"],script=self.pkg/"install.sh")   # the package here; no automatic login; go ahead
+        self.assertEqual(self.status,0,out)
+        self.assertIn("TVWCS 5.0.1, a prerelease",out); self.assertNotIn("TVWCS 5.0.0, a prerelease",out)
     def test_on_ubuntu_it_offers_to_remove_its_extras_one_by_one(self):
         (self.etc/"os-release").write_text("ID=ubuntu\nID_LIKE=debian\n")
         out=self.converse([],{"automatically":"n","Remove Snap":"y","Remove cloud-init":"","Go ahead":"y"},
@@ -165,6 +170,6 @@ class InstallTests(unittest.TestCase):
             out+=chunk
         os.waitpid(pid,0)
         self.assertIn("purge -y tvwcs\n",self.apt(),out)
-        self.assertNotIn("tvwcs",cfg.read_text().replace("# mine","")); self.assertIn("agreety --cmd /bin/sh",self.greetd())
+        self.assertNotIn("tvwcs",cfg.read_text().replace("# mine","")); self.assertIn('"/usr/sbin/agreety --cmd /bin/sh"',self.greetd())
 
 if __name__=="__main__": unittest.main()

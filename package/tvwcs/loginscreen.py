@@ -19,6 +19,7 @@ SESSION="tvwcs-sway"                                # TVWCS's session (/usr/shar
 SESSION_COMMAND="/usr/bin/tvwcs-session"           # what that session runs
 GREETD_CONF="/etc/greetd/config.toml"
 GREETD_USER="_greetd"                              # Debian's greetd user
+AGREETY="/usr/sbin/agreety"                        # greetd's text login; on Debian it is not on _greetd's PATH
 GREETD_VT=7                                        # Debian's greetd runs on the seventh console, like other login screens
 LIGHTDM_AUTOLOGIN="/etc/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf"
 SDDM_AUTOLOGIN="/etc/sddm.conf.d/50-tvwcs-autologin.conf"
@@ -198,7 +199,7 @@ def greetd_text(greeter_command, user, autologin_to=None, vt=GREETD_VT) -> str:
 
 def agreety_command() -> str:
     """greetd's text login, which starts TVWCS's session after the password."""
-    return f"agreety --cmd {shlex.quote(shlex.join(session_command()))}"
+    return f"{AGREETY} --cmd {shlex.quote(shlex.join(session_command()))}"
 
 # ---------------------------------------------------------------------- changing the system (as root)
 class Changer:
