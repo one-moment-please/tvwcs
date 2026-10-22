@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.1.1 — 2026-10-22
+
+- greetd's text login now uses its full path, /usr/sbin/agreety. Debian doesn't have it on the login screen's PATH, so after logging out of TVWCS (or after `install.sh --remove`) there was no login at all, only "agreety: not found". Updating fixes a config 5.0 wrote. Found testing in a Debian 13 VM.
+- The installer no longer lists the same version twice when it runs from an unpacked release.
+
 ## 5.1.0 — 2026-10-22
 
 - The TVWCS logo at startup is removed: the tvwcs-boot-logo package, its question in the installer and its switch in Settings › User. Releases now have one package, tvwcs. Updating from 5.0.x removes tvwcs-boot-logo (the tvwcs package conflicts with it), and the computer shows its usual start-up again.
