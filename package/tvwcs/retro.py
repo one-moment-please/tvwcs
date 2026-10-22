@@ -29,6 +29,7 @@ ICONS={
     "audio-headphones":"headphones","phone":"phone","multimedia-player":"music","audio-input-microphone":"microphone",
     "emblem-system":"gear","preferences-desktop-appearance":"appearance","user-trash":"trash","avatar-default":"user",
     "preferences-system-time":"clock","drive-harddisk":"drive","drive-removable-media":"removable",
+    "starred":"star","non-starred":"star-off",
 }
 WIFI_LEVELS=("none","weak","ok","good","excellent")   # 1 to 5 bars lit
 

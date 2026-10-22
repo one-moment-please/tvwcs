@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.4.1 — 2026-10-22
+
+- **Retro theme fixes, found on a real TV:** the TV static (and Modern's background colour) no longer disappears a moment after TVWCS first starts. Writing the hotkeys reloads sway, which dropped the background, and it is now set again after that reload. Pixel icons are always placed on whole screen pixels, so the ones in a box an odd number of pixels bigger (the Settings sidebar, and the Quick Menu's status icons at 4K) are no longer blurred by half a pixel. The favourite stars in Applications are now pixel icons too (★ and ☆) instead of the icon theme's small ones.
+
 ## 5.4.0 — 2026-10-22
 
 - **Settings › User › Lock the screen when TVWCS starts:** the TVWCS session can start locked, for computers that log in automatically (greetd's automatic login, or no login screen at all), so the computer is never left open after a restart. The lock screen comes up as sway starts, before the Quick Menu, and your password unlocks it. An application set to open at login still opens, behind the lock. It is off by default, only works in the TVWCS session (desktop mode keeps its login), and can't be turned on for an account with no password or a locked one, which the lock screen could not unlock. `tvwcs lock` and the new `tvwcs lock-at-start` now start the lock screen without loading GTK, so it appears a little sooner.

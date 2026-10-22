@@ -56,6 +56,7 @@ def glyph(icon_name, fallback, size=None):
         pixel=retro.retro_icon_name(icon_name)
         if has_icon(pixel):
             img=Gtk.Image.new_from_icon_name(pixel); img.set_pixel_size(retro.icon_pixel_size(S(size or 16)))
+            img.set_halign(Gtk.Align.CENTER); img.set_valign(Gtk.Align.CENTER)   # placed on a whole pixel, not centred inside a bigger box
             img.add_css_class("glyph"); return img
     if has_icon(icon_name):
         img=Gtk.Image.new_from_icon_name(icon_name)

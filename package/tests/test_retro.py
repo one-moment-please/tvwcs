@@ -5,6 +5,7 @@ class RetroIconTests(unittest.TestCase):
     def test_icon_names(self):
         self.assertEqual(retro.retro_icon_name("audio-volume-high-symbolic"),"tvwcs-retro-volume-high-symbolic")
         self.assertEqual(retro.retro_icon_name("view-more-symbolic"),"tvwcs-retro-dots-symbolic")
+        self.assertEqual(retro.retro_icon_name("non-starred-symbolic"),"tvwcs-retro-star-off-symbolic")
         self.assertIsNone(retro.retro_icon_name("no-such-icon-symbolic")); self.assertIsNone(retro.retro_icon_name(None))
     def test_wifi_and_battery_levels(self):
         self.assertEqual(retro.retro_icon_name("network-wireless-signal-none-symbolic"),"tvwcs-retro-wifi-1-symbolic")

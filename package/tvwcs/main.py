@@ -671,7 +671,7 @@ class TVWCSApp(Gtk.Application):
         if old!=text:
             try:
                 HOTKEYS_FILE.parent.mkdir(parents=True,exist_ok=True); HOTKEYS_FILE.write_text(text,encoding="utf-8"); self.wm.reload()
-                GLib.timeout_add(800,lambda:(self.watch.apply_bar(),GLib.SOURCE_REMOVE)[1])   # a reload shows the bar again
+                GLib.timeout_add(800,lambda:(self.watch.apply_bar(),self.apply_look(),GLib.SOURCE_REMOVE)[2])   # a reload shows the bar again and drops the background
             except OSError as exc: self.notify_message(f"Could not save the hotkeys: {exc}")
     @staticmethod
     def _modifier_keycodes():
