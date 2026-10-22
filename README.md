@@ -58,7 +58,7 @@ The apps in these videos are mockups made for the demo (a window with a still pi
 
 ## What you need
 
-- **Debian or a Debian-based system** (Ubuntu, Linux Mint, Pop!_OS, Raspberry Pi OS).
+- **Debian, Ubuntu LTS (tested on 26.04), or another Debian-based system** (Linux Mint, Pop!_OS, Raspberry Pi OS). On Ubuntu the installer offers to remove Snap, cloud-init and the Ubuntu Pro client, and Settings > Network can hand Ubuntu Server's network (netplan with systemd-networkd) to NetworkManager.
 - **systemd.**
 - i3 4.20 or newer, or sway. The installer can install i3 for you.
 - Python 3.9 or newer with GTK 4 (PyGObject). The installer lists and installs anything missing.
@@ -151,7 +151,7 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 | **Software updates** (`updates`) | System and Flatpak updates, and TVWCS's own updates (including prereleases and rolling back). |
 | **System information** (`system`) | Hardware and versions. Turns the SSH server on or off and shows how to connect. |
 | **Terminal** (`terminal`) | A terminal, with Tab and Esc buttons for a remote. |
-| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. An Ethernet port the Debian installer set up (shown as "not managed") can be handed to NetworkManager; the old setup is kept as a backup. |
+| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. An Ethernet port the Debian installer set up (shown as "not managed"), or Ubuntu Server's netplan network, can be handed to NetworkManager; the old setup is kept as a backup, and on Ubuntu saved Wi-Fi networks and fixed addresses carry over. |
 | **Storage** (`storage`) | Drives, with their partitions under them: mount and unmount partitions and safely remove drives. Partitions of the running system are marked as part of it. Network shares (Windows/Samba, NFS, SFTP, WebDAV, FTP): add, connect and disconnect. Passwords are not saved. Buttons install and uninstall the network share support (Samba, through gvfs-backends). |
 
 A page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth BlueZ, and so on). When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.

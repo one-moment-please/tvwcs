@@ -32,10 +32,28 @@ class IfupdownTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             conf=os.path.join(d,"nm.conf"); open(conf,"w").write(NM_CONF)
             ifaces=os.path.join(d,"interfaces"); open(ifaces,"w").write(INTERFACES); os.chmod(ifaces,0o600)
-            with mock.patch.object(net,"NM_CONF",conf), mock.patch.object(net,"INTERFACES",ifaces), mock.patch.object(net,"have",lambda c:True):
+            with mock.patch.object(net,"NM_CONF",conf), mock.patch.object(net,"INTERFACES",ifaces), mock.patch.object(net,"have",lambda c:True), \
+                 mock.patch.object(net,"NETWORKD_RUN",d):   # not this computer's own (a CI runner's netplan uses systemd-networkd)
                 self.assertEqual(net.unmanaged_reason("wlp2s0"),"ifupdown")
                 open(conf,"w").write("[main]\nplugins=keyfile\n")
                 self.assertEqual(net.unmanaged_reason("wlp2s0"),"config")
+    def test_reason_is_netplan_where_it_gives_the_ports_to_networkd(self):
+        import os, tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            run=os.path.join(d,"network"); os.mkdir(run)
+            with mock.patch.object(net,"NETWORKD_RUN",run), mock.patch.object(net,"INTERFACES",os.path.join(d,"none")), mock.patch.object(net,"have",lambda c:True):
+                self.assertEqual(net.unmanaged_reason("enp1s0"),"config")
+                open(os.path.join(run,"10-netplan-enp1s0.network"),"w").write("[Match]\nName=enp1s0\n")
+                self.assertEqual(net.unmanaged_reason("enp1s0"),"netplan")
+            with mock.patch.object(net,"NETWORKD_RUN",run), mock.patch.object(net,"INTERFACES",os.path.join(d,"none")), mock.patch.object(net,"have",lambda c:c!="netplan"):
+                self.assertEqual(net.unmanaged_reason("enp1s0"),"config")
+    def test_netplan_hand_over_sets_the_renderer_and_can_go_back(self):
+        script=net.take_over_argv("enp1s0","netplan")[2]
+        self.assertIn("renderer: NetworkManager\\n' > /etc/netplan/90-tvwcs-network-manager.yaml",script)
+        self.assertIn("cp -a /etc/netplan/. \"$backup\"/",script)
+        self.assertLess(script.index("netplan generate || undo"),script.index("netplan apply || undo"))
+        self.assertNotIn("apt-get",script)
     def test_network_manager_ignores_ifupdown(self):
         self.assertTrue(net.ifupdown_ignored(NM_CONF))
         self.assertFalse(net.ifupdown_ignored(NM_CONF.replace("managed=false","managed=true")))

@@ -87,6 +87,10 @@ distro() {   # debian (Debian and its family) or unknown
     ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi
       for D in ${ID:-} ${ID_LIKE:-}; do case "$D" in debian|ubuntu|linuxmint|pop|raspbian) echo debian; exit ;; esac; done; echo unknown )
 }
+os_is() {   # os_is <id>: this system is <id> or built on it (os-release's ID or ID_LIKE)
+    ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi
+      for D in ${ID:-} ${ID_LIKE:-}; do [ "$D" = "$1" ] && exit 0; done; exit 1 )
+}
 init_system() { if [ -d "${TVWCS_RUN:-/run}/systemd/system" ]; then echo systemd; else echo other; fi; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # Run as root, asking for the password on the terminal (sudo reads it from the terminal itself, never from the script's
@@ -516,6 +520,41 @@ choose_extras() {
     fi
 }
 
+# Ubuntu's own extras, offered for removal (purge) one by one: "key|name|packages|what it is". The same lists are in
+# tvwcs/control_ubuntu.py, which removes them (Settings > Apps offers them too). Nothing is pinned, so a package that
+# needs snapd brings it back.
+UBUNTU_EXTRAS="snap|Snap (snapd)|snapd|Ubuntu's second app store. Every Snap app goes with it; Flatpak apps (Settings > Apps) stay.
+cloud-init|cloud-init|cloud-init cloud-init-base cloud-initramfs-copymods cloud-initramfs-dyn-netconf|Sets up cloud servers on their first start; at home it only slows start-up.
+pro|Ubuntu Pro client|ubuntu-pro-client ubuntu-pro-client-l10n ubuntu-advantage-tools ubuntu-pro-auto-attach|Ubuntu Pro's subscription tool and its adverts in apt; security updates keep coming without it. update-notifier-common and update-manager-core go with it (do-release-upgrade stays)."
+snap_apps() { have snap || return 0; snap list 2>/dev/null | awk 'NR > 1 && $NF != "base" && $NF != "snapd" && $1 !~ /^(core[0-9]*|snapd|bare|gnome-|gtk-|mesa-|kf[56]-)/ { printf "%s ", $1 }' | sed 's/ $//'; }
+PURGE=""; PURGE_NAMES=""
+choose_ubuntu_extras() {
+    PURGE=""; PURGE_NAMES=""
+    [ -n "$TTY" ] && os_is ubuntu || return 0
+    FOUND=$(printf '%s\n' "$UBUNTU_EXTRAS" | while IFS='|' read -r KEY NAME PKGS WHAT; do
+        for P in $PKGS; do if pkg_installed "$P"; then printf '%s|%s|%s\n' "$KEY" "$NAME" "$WHAT"; break; fi; done; done)
+    [ -n "$FOUND" ] || return 0
+    heading "Ubuntu extras"
+    say "Ubuntu comes with these, which a TV computer does without. Each can be removed now (or later in Settings > Apps)."
+    OLD_IFS=$IFS; IFS='
+'
+    for LINE in $FOUND; do   # not read from a here-document: the answers may come from standard input
+        IFS=$OLD_IFS; KEY=${LINE%%|*}; NAME=${LINE#*|}; WHAT=${NAME#*|}; NAME=${NAME%%|*}
+        say; say "$NAME: $WHAT"
+        [ "$KEY" != snap ] || { A=$(snap_apps); [ -z "$A" ] || say "Snap apps installed: $A"; }
+        if ask_no "Remove $NAME?"; then PURGE="$PURGE $KEY"; PURGE_NAMES="$PURGE_NAMES, $NAME"; fi
+    done
+    IFS=$OLD_IFS
+    PURGE=${PURGE# }; PURGE_NAMES=${PURGE_NAMES#, }
+}
+purge_ubuntu_extras() {   # after the install, which cannot undo it: a failure only warns
+    [ -n "$PURGE" ] || return 0
+    say "Removing $PURGE_NAMES..."
+    # shellcheck disable=SC2086
+    as_root env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$DEST" python3 -m tvwcs.control_ubuntu purge $PURGE ||
+        warn "$PURGE_NAMES could not be removed. Settings > Apps can try again."
+}
+
 # ====================================================================== installing
 copy_program() {
     OLD=""
@@ -850,6 +889,7 @@ main() {
     choose_usual
     choose_keys
     choose_extras
+    choose_ubuntu_extras
     [ -n "$WMS" ] || say "Neither i3 nor sway is set up; run install.sh in a terminal to choose one."
     work_out_packages
 
@@ -859,6 +899,7 @@ main() {
         for WM in $WMS; do say "  TVWCS ($WM) session at the login screen (TV mode)$( [ -f "$(session_config "$WM")" ] && echo ", already set up")"
             case "$(usual_of "$WM")" in add|create|keep|move) say "  TVWCS in your usual $WM session (desktop mode)" ;; esac; done
         case "$GREETER" in tvwcs) [ "$(login_screen)" = tvwcs ] && say "  TVWCS's login screen, brought up to date" || say "  TVWCS's login screen" ;; sddm) say "  SDDM as the login screen" ;; esac
+        [ -z "$PURGE" ] || say "  Removing: $PURGE_NAMES"
         ask_yes "Go ahead?" || { say "Nothing was changed."; exit 0; }
     else say "Installing TVWCS $TARGET in $DEST. Without a terminal, packages and the login screen are left as they are."; fi
 
@@ -884,6 +925,7 @@ main() {
         [ -z "$UNCLUTTER_OFF" ] || as_root sed -i 's/^[[:space:]]*START_UNCLUTTER=.*/START_UNCLUTTER="false"/' "$ETC/default/unclutter" || true
     fi
     : > "$UNDO"   # done: nothing to undo any more
+    purge_ubuntu_extras
     for WM in $WMS; do case "$(usual_of "$WM")" in add|move|create)
         wm_msg "$WM" -q reload >/dev/null 2>&1 && say "Reloaded $WM." || true ;; esac; done
     restart_tvwcs
