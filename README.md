@@ -23,7 +23,7 @@ TVWCS has two modes:
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications pane open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">In desktop mode, "TVWCS" and ✕ close at the top (TV mode has no header). Below: one list of your favorites, then the other open applications (by workspace; ▴ unfolds the apps that share one, above it), then the search field. At the bottom: the clock, icons for network, volume, Bluetooth and the battery that each unfold a panel, then ⏻ power and, in the bottom-right corner, ⊞, which opens Applications.</td>
+    <td valign="top">In desktop mode, "TVWCS" and ✕ close at the top (TV mode has no header). Below: one list of your favorites, then the other open applications (by workspace; ▴ unfolds the apps that share one, above it), then the search field. Favorites have a grey ★, and open apps a thin band down their left side. At the bottom, two rows: icons for network, volume, Bluetooth and the battery that each unfold a panel, with ⏻ power at the right; below them the clock and, in the bottom-right corner, ⊞, which opens Applications.</td>
     <td valign="top"><b>Channels</b> lists apps you gave a number. <b>All applications</b> lists every app by category; OK/Enter folds a category. ☆ makes an app a favorite, ✎ edits it.</td>
   </tr>
   <tr>
@@ -51,7 +51,7 @@ The apps in these videos are mockups made for the demo (a window with a still pi
     <td valign="top"><a href="assets/demo-desktop-mode.mp4"><img src="assets/demo-desktop-mode.jpg" alt="Play the desktop mode demo video" width="100%"></a></td>
   </tr>
   <tr>
-    <td valign="top">With the remote: open an app by its channel number, open a second one by channel, go back to the first from <b>Open applications</b>, and open a third by searching its name. Each app gets a workspace of its own.</td>
+    <td valign="top">With the remote: open an app by its channel number, open a second one by channel, go back to the first from the Quick Menu's list, and open a third by searching its name. Each app gets a workspace of its own.</td>
     <td valign="top">With the keyboard and mouse, in the light theme: open apps by name so they tile side by side, fill a second workspace, switch between workspaces from the Quick Menu, then close one app and a whole workspace, unfold the power options above ⏻, and open Applications from ⊞ in the corner.</td>
   </tr>
 </table>
@@ -118,7 +118,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 | Any letter or digit | Search. A channel number (000 to 999) then OK opens that channel. On a TV the search field starts three digits wide; typing a letter or a fourth digit widens it |
 | **←** on a Quick Menu row (or right-click) | Open that row's menu |
 
-- **Quick Menu layout:** it sits in the bottom-left corner, only as tall as what it shows. Your favorites and open apps (one list, favorites first), search and the status row are at the bottom, with search results appearing above the search field. A favorite that is open shows once, in its place, as an open app with ★. A name too long to fit scrolls by after it has been selected for 3 seconds. In TV mode the search field is three characters wide and shows **___** for a channel number. The date is short, such as "Sat, Oct 17".
+- **Quick Menu layout:** it sits in the bottom-left corner, only as tall as what it shows. Your favorites and open apps (one list, favorites first), search and the status row are at the bottom, with search results appearing above the search field. Favorites have a grey ★ and open apps a thin band down their left side, so a favorite that is open (shown once, in its place) has both. A name too long to fit scrolls by after it has been selected for 3 seconds. In TV mode the search field is three characters wide and shows **___** for a channel number. The date is short, such as "Sat, Oct 17".
 - **Row options (⋯):** they unfold upwards, just above their row and indented a little. From the top: the app's own shortcuts (such as Settings' pages), open it this once the other way (**Open in new workspace** in desktop mode, **Open alongside …** the apps on screen in TV mode), and **Close this application** at the bottom, nearest the row. A workspace's can move it to another monitor. Back folds them away.
 - **Workspaces with several apps:** the square ▴ button between ⋯ and the workspace's name unfolds its individual apps above it, to open just one; ▾ folds them again. On the name, ← moves onto it; ← again opens the row's menu.
 - **Channels:** 000 to 999. Channel 000 opens Settings unless you give it to another app. Setting a channel shows three digit boxes; typing replaces the number.

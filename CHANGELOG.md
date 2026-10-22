@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.3.0 — 2026-10-22
+
+**Quick Menu**
+- The status icons (updates, network, volume, Bluetooth, battery, ⏻) have a row of their own, and the clock and date a row below them with ⊞ Applications at its right. An update count no longer pushes the buttons past the edge of the menu.
+- Favorites have a grey ★, and open apps (and workspaces) a thin band down their left side, so a favorite that is open has both.
+- The menu grows to fit the on-screen keyboard while it is open, and goes back to its size after.
+- New README screenshots and demo videos.
+
 ## 4.2.2 — 2026-10-22
 
 - The screen saver on sway failed to start on Debian: its gtk4-layer-shell package (gir1.2-gtk4layershell-1.0) does not bring the library itself. Settings > Power and sleep now installs libgtk4-layer-shell0 with it, and checks for both before offering the screen saver.
