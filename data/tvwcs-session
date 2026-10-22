@@ -2,15 +2,30 @@
 # TVWCS's own session: sway with TVWCS's session config (~/.config/tvwcs/sway-session.conf), in which TVWCS runs in
 # TV mode. Part of the tvwcs package. Started by the login screen's "TVWCS" entry or its automatic login, or from a
 # text console. The first time, the session config is made from sway's standard config (/etc/sway/config); edit it
-# as you like.
+# as you like. The session has no sway bar: the Quick Menu shows the time and status.
 CONF=${XDG_CONFIG_HOME:-$HOME/.config}/tvwcs
 CFG=$CONF/sway-session.conf
 HK=$CONF/hotkeys.conf
+STD=${TVWCS_SWAY_STANDARD_CONFIG:-/etc/sway/config}
+NO_BAR="# TVWCS: this session has no sway bar (the Quick Menu shows the time and status), so its bar blocks are commented out."
+# Comment out a config's bar blocks, so sway never starts swaybar here (TV mode used to hide it a moment later, after
+# it had flashed on screen). Only the session config: the usual sway session keeps its bar.
+no_bar() {
+    awk '!inbar && /^[[:space:]]*bar([[:space:]]+[^{[:space:]]+)?[[:space:]]*\{/ { inbar=1; depth=0 }
+         inbar { line=$0; depth+=gsub(/\{/,"",line)-gsub(/\}/,"",line); print "#" $0; if (depth<=0) inbar=0; next }
+         { print }' "$1"
+}
 mkdir -p "$CONF"
 if [ ! -f "$CFG" ]; then
     { echo "# TVWCS's own sway session (\"TVWCS\" at the login screen): TVWCS runs here in TV mode. Made by tvwcs-session"
       echo "# from sway's standard config; edit it as you like. Your usual sway config is not used in this session."
-      cat /etc/sway/config; echo; echo "# TVWCS: its hotkeys, window rules and autostart."; echo "include /usr/share/tvwcs/tvwcs.conf"; } > "$CFG"
+      echo "$NO_BAR"; no_bar "$STD"; echo; echo "# TVWCS: its hotkeys, window rules and autostart."; echo "include /usr/share/tvwcs/tvwcs.conf"; } > "$CFG"
+# A config made before 5.2.1 still has sway's standard bar: comment it out once (a bar added afterwards is kept, and
+# TV mode hides it)
+elif ! grep -qF "$NO_BAR" "$CFG" && { echo "$NO_BAR"; no_bar "$CFG"; } > "$CFG.tmp"; then
+    mv -f "$CFG.tmp" "$CFG"
+else
+    rm -f "$CFG.tmp"
 fi
 # TVWCS 4.x lived in ~/.local/share/tvwcs: its include line and hotkeys point at the package now
 if grep -q '\.local/share/tvwcs/' "$CFG" "$HK" 2>/dev/null; then

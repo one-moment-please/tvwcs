@@ -131,7 +131,7 @@ Debian and its family (apt), with systemd. Support for Arch, Fedora, Void, Alpin
 
 One repository and one Debian package, built by `scripts/build-debs.sh` with plain `dpkg-deb` (no compiling) and attached to each GitHub release:
 
-**tvwcs**: the Python package in `/usr/lib/tvwcs`, `/usr/bin/tvwcs`, `/usr/bin/tvwcs-session` (TVWCS's sway session: it makes `~/.config/tvwcs/sway-session.conf` from `/etc/sway/config` the first time, writes default hotkeys, exports `TVWCS_SESSION` and runs sway), the session entry `tvwcs-sway.desktop`, `/usr/share/tvwcs/tvwcs.conf` and the Settings launcher. Its dependencies are what apt installs with it. It conflicts with 5.0.x's tvwcs-boot-logo, so apt removes that.
+**tvwcs**: the Python package in `/usr/lib/tvwcs`, `/usr/bin/tvwcs`, `/usr/bin/tvwcs-session` (TVWCS's sway session: it makes `~/.config/tvwcs/sway-session.conf` from `/etc/sway/config` the first time, with its bar commented out so swaybar never starts, writes default hotkeys, exports `TVWCS_SESSION` and runs sway), the session entry `tvwcs-sway.desktop`, `/usr/share/tvwcs/tvwcs.conf` and the Settings launcher. Its dependencies are what apt installs with it. It conflicts with 5.0.x's tvwcs-boot-logo, so apt removes that.
 
 There is no login screen of TVWCS's own (from 5.0). `loginscreen.py` sets the automatic login where the login screen in use keeps it: greetd's initial session, LightDM's or SDDM's settings. Without a login screen, the installer sets up greetd with its text login (agreety). `loginscreen.py migrate` removes 4.x's greeter: another graphical login screen takes over, else greetd's text login, keeping the automatic login.
 
