@@ -1,5 +1,12 @@
 #!/bin/sh
 # The bytecode postinst compiled is not in the package's file list: remove it with the package.
+# Settings > User's automatic login on the first text console (without a login screen) goes too: without TVWCS's
+# session to start, it would leave that console logged in at a shell.
 set -e
 rm -rf /usr/lib/tvwcs/tvwcs/__pycache__
+if [ "$1" = remove ] && [ -f /etc/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf ]; then
+    rm -f /etc/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf
+    rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+    if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
+fi
 exit 0

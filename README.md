@@ -75,19 +75,27 @@ The installer picks the release, asks a few questions and installs the package w
 wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
 ```
 
-With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the package next to it, or to download another release. Or install the .deb yourself: `sudo apt install ./tvwcs_5.1.0_all.deb`.
+With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the package next to it, or to download another release. Or install the .deb yourself: `sudo apt install ./tvwcs_5.6.0_all.deb`.
+
+### Starting TVWCS with the `tvwcs` command
+
+Installing the package only adds the **TVWCS** session to the login screen. It changes no settings: no automatic login, and nothing in your sway config. Then `tvwcs` does what fits where you type it:
+
+- **At a text console** (no graphical session, as on a computer with no login screen): it starts the TVWCS session, in TV mode. To have it start by itself, turn on **Settings › User › Log in automatically after startup**.
+- **In your usual sway session:** it opens Settings and offers to add TVWCS to that session (one `include /usr/share/tvwcs/tvwcs.conf` line in your sway config), then asks for the key that opens the Quick Menu. Once TVWCS is part of the session, `tvwcs` shows the Quick Menu.
+- **In another desktop** (GNOME, KDE, an X11 session): it opens Settings. The pages that only work in sway (Appearance, Remote and hotkeys, Displays, Power and sleep, and logging in) are shown turned off.
 
 ### What the installer asks
 
 1. **Which version:** the latest release, the prerelease when there is one, or one of the two releases before the latest.
-2. **Logging in automatically into TVWCS.** With no login screen, it installs greetd (a small login screen with a text login) and offers to log you straight into TVWCS. With greetd, LightDM or SDDM, it offers the automatic login. With another login screen, choose **TVWCS** there.
+2. **Logging in automatically into TVWCS.** With no login screen, it offers to log you in on the first text console at startup, straight into TVWCS (logging out starts TVWCS again). With greetd, LightDM or SDDM, it offers the automatic login. With another login screen, choose **TVWCS** there.
 3. **Your usual sway session.** TVWCS always has its own **TVWCS** session at the login screen, in TV mode. It asks whether to also add TVWCS to your usual sway session, in desktop mode (one `include /usr/share/tvwcs/tvwcs.conf` line in its config).
 
 It asks all its questions first and changes nothing until you agree to the list of what it will do. Every file of yours it changes is backed up first as `<file>.tvwcs-backup`. Your own data (channels, favorites, settings, hotkeys) is kept in `~/.config/tvwcs/`.
 
 **Upgrading from 4.x:** run the installer in a terminal once (4.x's updater can't install packages, and says so). It removes the old copy in `~/.local/share/tvwcs` and TVWCS's old login screen: another login screen installed on the computer takes over, or else greetd's text login, and the automatic login is kept. TV mode now runs on sway: the first TVWCS session makes its sway config from sway's standard one, without its bar (`~/.config/tvwcs/sway-session.conf`). TVWCS is taken out of an i3 config.
 
-**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs`). It also takes TVWCS out of your usual sway config, and puts greetd back to its plain text login when it was starting TVWCS.
+**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs`). It also takes TVWCS out of your usual sway config, ends the automatic login on the text console, and puts greetd back to its plain text login when it was starting TVWCS.
 
 **For scripted installs:** `TVWCS_VERSION=latest` (or `package`, or a version such as `5.0.0`) answers which version.
 
@@ -118,7 +126,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 - **On-screen keyboard:** wherever text is typed, the on-screen keyboard can be hidden (it starts that way), full, or a number pad; buttons on it switch, and it opens next time as you left it.
 - **Other keys:** set the Quick Menu key for a keyboard, a remote or a gamepad in **Settings › Remote and hotkeys**, where the apps with hotkeys of their own are listed too. A gamepad needs a key mapper such as AntiMicroX.
 
-From a terminal, `tvwcs` takes `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
+From a terminal, `tvwcs` on its own does what fits where it runs (see [Starting TVWCS](#starting-tvwcs-with-the-tvwcs-command)); it also takes `start` (the launcher itself), `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
 
 ## Settings
 
@@ -127,8 +135,8 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
 | **Appearance** (`appearance`) | Interface size (Automatic is TV size in TV mode and desktop size otherwise), the theme: Modern (dark or light, passed on to apps that follow the system's choice, with an accent colour and a background colour) or Retro (an old CRT TV's menus in pixel fonts, green, amber or white, on a gray, blue or TV static background), closing TVWCS when it loses focus (on by default), and the screen edge margin for TVs that cut off the edges (overscan), set on a full-screen preview with a slider. |
-| **User** (`user`) | Your name and password, with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM). The login screen in use, and switching to another one installed. The application to open at login (none, the last one used, or one you choose). |
-| **Remote and hotkeys** (`hotkeys`) | The Quick Menu key for the keyboard, remote and gamepad (clearing one asks first), and the apps that have a hotkey of their own (give one with ✎ on the app). **Reset all hotkeys** puts back the defaults and removes the app hotkeys. |
+| **User** (`user`) | Your name and password, with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM; without a login screen, on the first text console). The login screen in use, and switching to another one installed. The application to open at login (none, the last one used, or one you choose). |
+| **Remote and hotkeys** (`hotkeys`) | In a sway session TVWCS isn't part of yet, **Add TVWCS to sway**. The Quick Menu key for the keyboard, remote and gamepad (clearing one asks first), and the apps that have a hotkey of their own (give one with ✎ on the app). **Reset all hotkeys** puts back the defaults and removes the app hotkeys. |
 | **Sound** (`sound`) | Volume and mute for the output and the input in use. The others are folded under "2 inactive outputs" or "1 inactive input", which open and close. **Allow over-amplification** lets volumes go up to 150 % (off by default: volumes stop at 100 %). |
 | **Displays** (`displays`) | Resolution, refresh rate, arrangement and scale for each display: a row of buttons from 75 % to 200 %. A change goes back after 15 seconds unless you keep it. |
 | **Power and sleep** (`power`) | When the screen turns off, the computer locks and it sleeps (sway's swayidle times them; sound playing and apps that ask keep it awake). A laptop has these times twice, plugged in and on battery, and a choice of what to do when the battery is nearly empty. |

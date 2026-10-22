@@ -10,7 +10,7 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_ubuntu as ubuntu, control_updates as updates
-from tvwcs import __version__, features, power, privilege, selfupdate
+from tvwcs import __version__, features, power, privilege, selfupdate, sway_include
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (CORNERS, PHOSPHORS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SCALE_LABELS, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, corner_right, is_4k, scale_choices,
@@ -24,6 +24,7 @@ class Page:
     key=""; title=""; icon=""; fallback=""
     poll=0              # seconds between quiet re-reads while the page is on screen (0: only when asked)
     refreshable=True    # a ⟳ button at the top right re-reads the page
+    sway_only=False     # it changes what TVWCS or sway do: shown turned off outside sway (sway_include.in_sway)
 
     def __init__(self, win):
         self.win=win; self.state=None; self.busy=False; self.status=""; self._loaded=False; self._poll=0
@@ -106,6 +107,7 @@ class Page:
         scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
         clear_box(self.body); self.groups=[]; self._ids={}
         if self.feature_off(): self.draw_feature_off()
+        elif self.sway_only and not sway_include.in_sway(): self.draw_off(lambda:self.draw(self.state))
         else: self.draw(self.state)
         if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
             GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
@@ -128,6 +130,17 @@ class Page:
         self.note(f"{f.what} It needs software that is not installed yet.")
         self.row(f"Install {f.label}","",lambda:install_feature(self,f),icon="list-add-symbolic",fallback="+",ident="feature:on",
                  detail=f"Installs {', '.join(f.packages)}. It asks for your password.")
+
+    def draw_off(self, draw, note=None):
+        """The rows draw() adds, shown turned off under a note: outside sway they would change nothing (a GNOME or KDE
+        session, say). They cannot be selected."""
+        self.note(note or SWAY_ONLY,"error")
+        mark=self.body.get_last_child(); groups=len(self.groups); ids=set(self._ids)
+        draw()
+        w=mark.get_next_sibling()
+        while w is not None: w.set_sensitive(False); w=w.get_next_sibling()
+        del self.groups[groups:]
+        for i in set(self._ids)-ids: del self._ids[i]
 
     def add(self, widget): self.body.append(widget); return widget
     def section(self, text): return self.add(section_title(text))
@@ -174,6 +187,9 @@ class Page:
         if danger: b.add_css_class("close-button")
         return b
 
+SWAY_ONLY=("These settings work in sway only: in TVWCS's own session (choose \"TVWCS\" at the login screen, or type tvwcs at a "
+           "text console) or in a sway session TVWCS is added to.")
+
 def _on_off(flag): return "On" if flag else "Off"
 def _outcome(result, otherwise):
     """A control_cmd.Result as act() wants it: "" when it worked, else why not."""
@@ -218,7 +234,7 @@ class AppearancePage(_ConfigPage):
     pointer hides after 3 seconds, the bar is off and the Quick Menu stays open; in desktop mode none of that changes
     the desktop. Hotkeys have their own page, the application to open at login is on User, and TVWCS's own updates are
     on Software updates."""
-    key="appearance"; title="Appearance"; icon="preferences-desktop-appearance-symbolic"; fallback="◐"
+    key="appearance"; title="Appearance"; icon="preferences-desktop-appearance-symbolic"; fallback="◐"; sway_only=True
 
     def draw(self, store):
         st=store.settings
@@ -294,11 +310,19 @@ class AppearancePage(_ConfigPage):
 class HotkeysPage(_ConfigPage):
     """The keys that open the Quick Menu and Applications from a keyboard, a remote or a gamepad (TVWCS writes
     hotkeys.conf when it reads them again), and the apps that have a hotkey of their own."""
-    key="hotkeys"; title="Remote and hotkeys"; icon="input-keyboard-symbolic"; fallback="⌨"
+    key="hotkeys"; title="Remote and hotkeys"; icon="input-keyboard-symbolic"; fallback="⌨"; sway_only=True
+    not_added=False     # this is a sway session without TVWCS's include line: the page offers to add it
     def summary(self): return ""
+    def read(self):
+        self.not_added=sway_include.where()=="sway" and not sway_include.active()
+        return ConfigStore()
 
     def draw(self, store):
         st=store.settings
+        if self.not_added:
+            self.section("THIS SWAY SESSION")
+            self.row("Add TVWCS to sway","",self.add_to_sway,icon="list-add-symbolic",fallback="+",ident="key:add-sway",
+                     detail="TVWCS is not part of this session yet, so these hotkeys do nothing here")
         self.section("QUICK MENU HOTKEYS")
         for device in DEVICES:
             for name in DEVICE_ACTIONS[device]:
@@ -327,6 +351,20 @@ class HotkeysPage(_ConfigPage):
                                "No other Quick Menu hotkey is set, so only the command tvwcs toggle would open it."),
                              "Remove",lambda:self.change(lambda s:s.set_slot_hotkey(device,name,"")))
         self.win.assign_hotkey(store,("slot",device,name),label,chosen)
+    def add_to_sway(self):
+        """Add the include line to the user's sway config, reload sway, start TVWCS, then ask for the Quick Menu's key."""
+        cfg=sway_include.user_config()
+        def go():
+            try: sway_include.add()
+            except OSError as exc: self.win.notice("Add TVWCS to sway",f"Could not change {cfg}: {exc}"); return
+            self.not_added=False; self.redraw()
+            sway_include.reload(); started=sway_include.start_launcher()
+            self.win.notice("TVWCS is part of sway now",f"TVWCS starts with sway from now on{'' if started else ' (start it now with: tvwcs start)'}. "
+                            "Next, choose the keyboard key that opens the Quick Menu.",lambda:self.change_hotkey(ConfigStore(),"keyboard","menu"))
+        self.win.confirm("Add TVWCS to sway?",f"TVWCS adds one line to {cfg}:\n\n    {sway_include.INCLUDE}\n\nWith it, TVWCS starts with sway in "
+                         "desktop mode, and its hotkeys and window rules work. A copy of the file from before is kept as "
+                         f"{cfg.name}.tvwcs-backup. To undo it, delete the line.","Add",go,danger=False)
+
     def change_app_hotkey(self, store, pid, name):
         self.win.assign_hotkey(store,("profile",pid),name,lambda spec:self.change(lambda s:s.set_profile_hotkey(pid,spec)))
     def reset_hotkeys(self):
@@ -407,7 +445,7 @@ class _SelfUpdate:
 class PowerPage(Page):
     """After how long without input the screen turns off, the computer locks and it sleeps (swayidle, see power.py),
     and what the system does by itself: logind's idle action and the lid."""
-    key="power"; title="Power and sleep"; icon="system-shutdown-symbolic"; fallback="⏻"
+    key="power"; title="Power and sleep"; icon="system-shutdown-symbolic"; fallback="⏻"; sway_only=True
     def read(self):
         store=ConfigStore(); st=store.settings
         return power.read_state(st,command_for("lock",st) is not None,command_for("sleep",st) is not None)
@@ -598,7 +636,7 @@ class SoundPage(Page):
 class DisplaysPage(Page):
     """Resolution, refresh rate and scale of each display; with several, which are on and where each one is. A change
     that can leave a screen blank or unreadable goes back by itself unless it is kept."""
-    key="displays"; title="Displays"; icon="video-display-symbolic"; fallback="🖵"; poll=5
+    key="displays"; title="Displays"; icon="video-display-symbolic"; fallback="🖵"; poll=5; sway_only=True
     KEEP_SECONDS=15
     def read(self):
         s=display.read_state()

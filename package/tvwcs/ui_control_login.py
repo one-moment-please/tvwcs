@@ -2,7 +2,7 @@
 login. The system side is loginscreen.py and account.py; the changes that need root go through the window's
 run_as_root."""
 from __future__ import annotations
-from tvwcs import account, loginscreen
+from tvwcs import account, loginscreen, sway_include
 from tvwcs.model import STARTUP_LABELS, STARTUP_MODES, ConfigStore, startup_choices
 from tvwcs.ui_control import in_background
 
@@ -22,19 +22,26 @@ def run_root(page, args, label, done, packages=()):
 def role(a) -> str: return "Administrator" if a.admin else "Standard User"
 
 def read_user():
-    return (account.read(),loginscreen.status())
+    return (account.read(),loginscreen.status(),loginscreen.profile_starts())
 
 def draw_user(page, state):
-    a,st=state; cur=st["current"]; who,_sid=st["autologin"]
+    a,st,_profile=state
     page.section("ACCOUNT")
     page.row("Name",a.full_name or "Not set",lambda:change_name(page,a),detail="Shown on the login screen",ident="user:name")
     page.row("User name",a.login,None,detail="Used to log in and for the home folder; it cannot be changed here",ident="user:login")
     page.row("Password","Change",lambda:change_password(page),detail="Asks for the current one first",ident="user:password")
     page.section("LOGGING IN")
+    if sway_include.in_sway(): draw_logging_in(page,state)
+    else: page.draw_off(lambda:draw_logging_in(page,state))   # GNOME, KDE...: what starts TVWCS's session is changed from it
+
+def draw_logging_in(page, state):
+    a,st,profile=state; cur=st["current"]; who,_sid=st["autologin"]
     if loginscreen.autologin_supported(cur):
-        mine=who==a.login
-        page.row("Log in automatically after startup","On" if mine else f"On for {who}" if who else "Off",lambda:toggle_autologin(page,a,mine),
-                 detail="Straight into TVWCS, without the login screen",ident="user:auto",value_css="state-on" if mine else "setting-value")
+        console=cur==""   # no login screen: the first text console logs in, and the shell profile starts TVWCS's session
+        mine=who==a.login and (profile or not console)
+        page.row("Log in automatically after startup","On" if mine else f"On for {who}" if who else "Off",lambda:toggle_autologin(page,a,mine,console),
+                 detail="On the first text console, straight into TVWCS" if console else "Straight into TVWCS, without the login screen",
+                 ident="user:auto",value_css="state-on" if mine else "setting-value")
     elif cur:
         page.row("Log in automatically after startup","Not here",None,detail=f"Set it in {loginscreen.name(cur)}'s own settings",ident="user:auto")
     on=ConfigStore().settings["lock_at_start"]
@@ -42,7 +49,7 @@ def draw_user(page, state):
              detail="Your password unlocks it. For the automatic login, so the computer is never left open",
              ident="user:lock-start",value_css="state-on" if on else "setting-value")
     others=[u for u in st["installed"] if u!=cur]
-    page.row("Login screen",loginscreen.name(cur) if cur else "None",(lambda:change_login_screen(page,cur,others)) if others else None,
+    page.row("Login screen",loginscreen.name(cur) if cur else "None (text console)",(lambda:change_login_screen(page,cur,others)) if others else None,
              detail="Choose this to switch to another one installed here" if others else "",ident="user:screen")
     if cur and not loginscreen.wayland_ok(cur):
         page.note(f"{loginscreen.name(cur)} cannot start sway reliably. greetd or SDDM can.","error")
@@ -51,9 +58,15 @@ def draw_user(page, state):
                  detail="TVWCS 4's login screen is still set up; TVWCS 5 no longer has one",icon="user-trash-symbolic",fallback="✕")
     draw_startup(page)
 
-def toggle_autologin(page, a, mine):
+def toggle_autologin(page, a, mine, console=False):
+    """Turn the automatic login into TVWCS's session on or off. Without a login screen (console) the user's shell
+    profile starts the session too: added first, and taken out again if the automatic login could not be set."""
     args=["autologin",a.login,loginscreen.SESSION] if not mine else ["autologin","--off"]
+    if console and not mine:
+        problem=loginscreen.set_profile(True)
+        if problem: page.win.notice("Log in automatically",problem); return
     def done(problem):
+        if console and (bool(problem)!=mine): loginscreen.set_profile(False)   # on failed, or off worked
         if problem: page.win.notice("Log in automatically",problem); return
         page.refresh(quiet=True)
     run_root(page,args,"Turning off the automatic login" if mine else "Turning on the automatic login",done)

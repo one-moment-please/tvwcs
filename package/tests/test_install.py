@@ -2,8 +2,10 @@
 sudo, apt-get and wget. Covers the questions it asks first, what it then installs, the versions it offers, upgrading
 from 4.x (its own login screen and its copy in ~/.local/share/tvwcs) and removing TVWCS. Skipped outside the
 repository."""
-import json, os, pty, select, shutil, subprocess, tempfile, time, unittest
+import json, os, pty, pwd, select, shutil, subprocess, tempfile, time, unittest
 from pathlib import Path
+from unittest import mock
+from tvwcs import loginscreen
 
 ROOT=Path(__file__).resolve().parents[2]
 SCRIPT=ROOT/"install.sh"
@@ -93,14 +95,16 @@ class InstallTests(unittest.TestCase):
         p=self.run_install("--missing"); self.assertEqual((p.returncode,p.stdout),(0,""))   # what 4.x's updater asks first
     def test_without_a_terminal_it_says_to_run_it_in_one(self):
         p=self.run_install(); self.assertEqual(p.returncode,1); self.assertIn("in a terminal",self.out); self.assertEqual(self.apt(),"")
-    def test_a_new_install_without_a_login_screen_sets_up_greetd(self):
+    def test_a_new_install_without_a_login_screen_logs_in_on_the_console(self):
         out=self.converse(["y","y"],script=self.pkg/"install.sh")   # (the package here, the only choice) log in automatically; go ahead
         self.assertEqual(self.status,0,out)
-        self.assertIn("There is no login screen here",out)
+        self.assertIn("There is no login screen here",out); self.assertIn("Type tvwcs at the text console",out)
         apt=self.apt()
-        self.assertIn("tvwcs_5.0.0_all.deb greetd",apt); self.assertNotIn("logo",out.lower())
-        self.assertIn('command = "/usr/bin/tvwcs-session"',self.greetd()); self.assertIn("/usr/sbin/agreety --cmd /usr/bin/tvwcs-session",self.greetd())
-        self.assertEqual(os.readlink(self.etc/"systemd"/"system"/"display-manager.service"),"/lib/systemd/system/greetd.service")
+        self.assertIn("tvwcs_5.0.0_all.deb\n",apt); self.assertNotIn("greetd",apt); self.assertNotIn("logo",out.lower())
+        self.assertFalse((self.etc/"greetd"/"config.toml").exists()); self.assertFalse((self.etc/"systemd"/"system"/"display-manager.service").is_symlink())
+        dropin=(self.root/"etc"/"systemd"/"system"/"getty@tty1.service.d"/"tvwcs-autologin.conf").read_text()
+        self.assertIn(f"--autologin {pwd.getpwuid(os.getuid()).pw_name} ",dropin)
+        self.assertTrue(any("/usr/bin/tvwcs-session" in f.read_text() for f in self.home.glob(".*profile")),out)
     def test_declining_at_the_end_changes_nothing(self):
         out=self.converse(["n","n"],script=self.pkg/"install.sh")
         self.assertIn("Nothing was changed",out); self.assertEqual(self.apt(),""); self.assertFalse((self.etc/"greetd"/"config.toml").exists())
@@ -168,6 +172,9 @@ class InstallTests(unittest.TestCase):
         self.use("greetd"); (self.etc/"greetd"/"config.toml").write_text('[default_session]\ncommand = "agreety --cmd /usr/bin/tvwcs-session"\nuser = "_greetd"\n')
         cfg=self.home/".config"/"sway"/"config"; cfg.parent.mkdir(parents=True)
         cfg.write_text("# mine\n\n# TVWCS (desktop mode): its hotkeys, window rules and autostart. Added by TVWCS's install.sh.\ninclude /usr/share/tvwcs/tvwcs.conf\n")
+        dropin=self.etc/"systemd"/"system"/"getty@tty1.service.d"/"tvwcs-autologin.conf"; dropin.parent.mkdir(parents=True); dropin.write_text("[Service]\n")
+        profile=self.home/".profile"; profile.write_text("# mine\n")
+        with mock.patch.dict(os.environ,{"HOME":str(self.home),"ZDOTDIR":""}): loginscreen.set_profile(True,home=self.home,shell="/bin/sh")
         pid,fd=pty.fork()
         if pid==0: os.execvpe("sh",["sh",str(SCRIPT),"--remove"],self.env)
         os.write(fd,b"y\nn\n"); out=b""
@@ -179,5 +186,6 @@ class InstallTests(unittest.TestCase):
         os.waitpid(pid,0)
         self.assertIn("purge -y tvwcs\n",self.apt(),out)
         self.assertNotIn("tvwcs",cfg.read_text().replace("# mine","")); self.assertIn('"/usr/sbin/agreety --cmd /bin/sh"',self.greetd())
+        self.assertFalse(dropin.exists()); self.assertEqual(profile.read_text(),"# mine\n")
 
 if __name__=="__main__": unittest.main()

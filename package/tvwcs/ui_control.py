@@ -25,7 +25,8 @@ from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, gl
 APP_ID="com.tvwcs.ControlPanel"
 TITLE="Settings"
 PASSWORD_TRIES=3
-PAGE_FADE_MS=150   # pages cross-fade, so it is clear what changed
+PAGE_FADE_MS=150
+ADD_TO_SWAY="add-to-sway"   # the argument plain `tvwcs` passes in a sway session TVWCS is not part of (main.start_here)   # pages cross-fade, so it is clear what changed
 
 CONTROL_CSS="""
 button.big-button { min-height: 64px; font-size: 22px; }
@@ -45,6 +46,8 @@ button.info-row:focus .setting-value { color: #ffffff; }
 /* secondary text: the theme’s #8a8a8a at 12px is about 4:1 on a #2d2d2d row, too faint from a sofa */
 .row-detail, .description { color: @MUTED@; font-size: 13px; }
 .muted { color: @MUTED@; font-size: 14px; }
+.muted.error { color: @ERROR@; }   /* a warning note: .muted comes after the theme's .error and would win */
+button.launch-row:disabled { opacity: 0.45; }   /* rows turned off outside sway (Page.draw_off): the theme's colours would hide GTK's own dimming */
 .accent-swatch { min-width: 26px; min-height: 26px; border: 2px solid alpha(@FG@, 0.7); }
 .accent-current { background: @ACCENT@; }
 button:focus .row-detail { color: #e3eefa; }
@@ -650,6 +653,9 @@ class ControlPanelApp(Gtk.Application):
         args=command_line.get_arguments()[1:]
         if self.window is None: self.window=ControlWindow(self)
         self.window.present()
+        if args[:1]==[ADD_TO_SWAY]:   # plain `tvwcs` in a sway session without TVWCS (main.start_here): offer to add it
+            self.window.select_tab("hotkeys"); page=self.window.page_by_key("hotkeys")
+            GLib.idle_add(lambda:(page.add_to_sway(),GLib.SOURCE_REMOVE)[1]); return 0
         self.window.select_tab(args[0] if args else (self.window.page.key if self.window.page else self.window.pages[0].key))
         return 0
 

@@ -1,5 +1,5 @@
 import unittest
-from tvwcs.system_actions import SYSTEM_ACTIONS, command_for, lock_command, login_manager_installed, logout_command, power_menu, unavailable_message
+from tvwcs.system_actions import SYSTEM_ACTIONS, command_for, lock_command, login_manager_installed, logout_command, can_log_out, power_menu, unavailable_message
 
 class SystemActionTests(unittest.TestCase):
     def test_dialog_contents(self):
@@ -35,5 +35,14 @@ class SystemActionTests(unittest.TestCase):
         self.assertEqual(ids({"quick_lock_button":False},True),["lock","sleep","reboot","shutdown","logout"])
     def test_finds_a_login_screen(self):
         self.assertTrue(login_manager_installed(lambda p:p=="/etc/systemd/system/display-manager.service",lambda n:None))
-        self.assertTrue(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))
+        self.assertFalse(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))   # installed, not started
+    def test_log_out_follows_how_this_login_started(self):
+        class Out:
+            def __init__(self, text, code=0): self.stdout=text; self.returncode=code
+        dm=lambda p:p=="/etc/systemd/system/display-manager.service"
+        env={"XDG_SESSION_ID":"3"}
+        self.assertFalse(can_log_out(env,lambda *a,**k:Out("login\n"),dm))   # a text console, though a login screen is set up
+        self.assertTrue(can_log_out(env,lambda *a,**k:Out("greetd\n"),lambda p:False))
+        self.assertTrue(can_log_out(env,lambda *a,**k:Out("",1),dm))       # logind cannot say: the login screen decides
+        self.assertFalse(can_log_out({},lambda *a,**k:Out("greetd"),lambda p:False))
 if __name__=="__main__": unittest.main()

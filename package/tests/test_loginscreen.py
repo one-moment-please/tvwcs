@@ -54,6 +54,46 @@ class RootTests(unittest.TestCase):
         self.assertIn(["systemctl","set-default","graphical.target"],self.c.calls)
         self.assertEqual(loginscreen.name("greetd"),"greetd (text login)")
 
+    def test_without_a_login_screen_the_console_logs_in(self):
+        self.assertTrue(loginscreen.autologin_supported(""))
+        self.c.set_autologin("tv",unit="")
+        dropin=self.etc/"systemd"/"system"/"getty@tty1.service.d"/"tvwcs-autologin.conf"
+        self.assertIn("ExecStart=\nExecStart=-/sbin/agetty -o '-p -f -- \\\\u' --noclear --autologin tv %I $TERM",dropin.read_text())
+        self.assertEqual(loginscreen.autologin(""),("tv","tvwcs-sway")); self.assertIn(["systemctl","daemon-reload"],self.c.calls)
+        self.c.set_autologin("",unit="")
+        self.assertFalse(dropin.parent.exists()); self.assertEqual(loginscreen.autologin(""),("",""))
+        with self.assertRaises(SystemExit): self.c.set_autologin("tv; rm -rf /",unit="")
+    def test_the_consoles_own_automatic_login_is_read_and_kept(self):
+        d=self.etc/"systemd"/"system"/"getty@tty1.service.d"; d.mkdir(parents=True)
+        (d/"autologin.conf").write_text("[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin=sam --noclear %I $TERM\n")
+        self.assertEqual(loginscreen.console_autologin(),"sam")
+        with self.assertRaises(SystemExit): self.c.set_autologin("",unit="")   # not TVWCS's file: it says where to change it
+        (d/"zz.conf").write_text("[Service]\nExecStart=\nExecStart=-/sbin/agetty --noclear %I $TERM\n")   # a later drop-in wins
+        self.assertEqual(loginscreen.console_autologin(),"")
+    def test_switching_to_a_login_screen_ends_the_consoles_automatic_login(self):
+        self.c.set_autologin("tv",unit=""); self.c.switch_to("greetd")
+        self.assertFalse((self.etc/"systemd"/"system"/"getty@tty1.service.d"/"tvwcs-autologin.conf").exists())
+
+    def test_the_shell_profile_starts_the_session_once(self):
+        home=self.root/"home"; home.mkdir(); (home/".profile").write_text("# mine\nPATH=$HOME/bin:$PATH")
+        with mock.patch.dict(os.environ,{"ZDOTDIR":""}):
+            self.assertFalse(loginscreen.profile_starts(home))
+            self.assertEqual(loginscreen.set_profile(True,home,"/bin/bash"),""); self.assertEqual(loginscreen.set_profile(True,home,"/bin/bash"),"")
+            text=(home/".profile").read_text()
+            self.assertTrue(text.startswith("# mine\nPATH=$HOME/bin:$PATH\n\n")); self.assertEqual(text.count(loginscreen.PROFILE_BEGIN),1)
+            self.assertIn("/dev/tty1",text); self.assertTrue(loginscreen.profile_starts(home))
+            self.assertEqual(loginscreen.set_profile(False,home,"/bin/bash"),"")
+            self.assertEqual((home/".profile").read_text(),"# mine\nPATH=$HOME/bin:$PATH\n"); self.assertFalse(loginscreen.profile_starts(home))
+            (home/".bash_profile").write_text("")   # bash reads it in place of .profile
+            self.assertEqual(loginscreen.profile_file(home,"/bin/bash"),home/".bash_profile")
+            self.assertEqual(loginscreen.profile_file(home,"/usr/bin/zsh"),home/".zprofile")
+            self.assertIsNone(loginscreen.profile_file(home,"/usr/bin/fish")); self.assertNotEqual(loginscreen.set_profile(True,home,"/usr/bin/fish"),"")
+    def test_the_profiles_lines_run_in_sh(self):
+        import subprocess
+        body=loginscreen.PROFILE_BODY.replace("/dev/tty1","/dev/not-a-tty")   # not the first console: nothing starts
+        self.assertEqual(subprocess.run(["sh","-n","-c",loginscreen.PROFILE_BODY]).returncode,0)
+        self.assertEqual(subprocess.run(["sh","-c",body+"\necho done"],capture_output=True,text=True,stdin=subprocess.DEVNULL).stdout,"done\n")
+
     def test_another_greetd_greeter_is_kept(self):
         (self.etc/"greetd"/"config.toml").write_text('[terminal]\nvt = 1\n\n[default_session]\ncommand = "tuigreet --cmd sway"\nuser = "greeter"\n')
         self.use("greetd"); self.c.set_autologin("tv")

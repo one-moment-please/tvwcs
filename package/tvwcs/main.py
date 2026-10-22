@@ -13,7 +13,7 @@ from tvwcs.hotkeys import MODIFIER_KEYSYMS, render_bindings
 from tvwcs.model import CONFIG_HOME, SETTINGS_DESKTOP_ID, default_of, display_name, effective_scale, LAUNCH_NEW_WORKSPACE, LAUNCH_PLAIN, PIN_LAUNCH_AND_SHOW, ConfigStore, compute_layout, corner_top, dark_look, wallpaper_of, is_4k, scale_key, tv_mode as in_tv_mode
 from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
-from tvwcs import appearance, cursor, power, privilege, quick_status, tv_mode
+from tvwcs import appearance, cursor, power, privilege, quick_status, sway_include, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
 from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
 from tvwcs.ui_editors import ProfileEditor
@@ -30,16 +30,7 @@ PASSWORD_TRIES=3                                  # wrong administrator password
 REQUESTS_FILE=RUNTIME/"tvwcs-requests"          # `tvwcs launch <id>` appends a line here, then signals the running TVWCS
 HOTKEYS_FILE=CONFIG_HOME/"tvwcs"/"hotkeys.conf"  # generated from Settings; included by tvwcs.conf
 BAR_MODES_FILE=RUNTIME/"tvwcs-bar-modes.json"    # the modes the bars had before TV mode hid them (see tv_mode.py)
-def _find_launcher():
-    """Locate the tvwcs launcher: /usr/bin/tvwcs for the package in /usr/lib/tvwcs, else the script next to the package
-    (the repository layout)."""
-    here=Path(__file__).resolve().parent          # .../tvwcs (the package)
-    if here.parent==Path("/usr/lib/tvwcs"): return Path("/usr/bin/tvwcs")
-    for cand in (here.parent/"bin"/"tvwcs", here/"tvwcs", here.parent.parent/"bin"/"tvwcs"):
-        if cand.exists(): return cand
-    return here.parent/"bin"/"tvwcs"              # sensible default even if missing
-
-LAUNCHER=_find_launcher()
+LAUNCHER=sway_include.launcher()
 
 class IdleWatcher:
     """The Power and sleep times (Settings > Power and sleep): after so long without input, turn the screen off, lock,
@@ -582,7 +573,7 @@ class TVWCSApp(Gtk.Application):
     def restart(self,launcher=None):
         """Start a fresh TVWCS once this process has exited (after an update replaced the program files), then quit.
         `launcher`: the new install's launcher, when the update moved TVWCS to another folder."""
-        wait='while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2"'
+        wait='while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2" start'
         try: subprocess.Popen(["sh","-c",wait,"sh",str(os.getpid()),str(launcher or LAUNCHER)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or sway) to use the new version."); return
         self.hide_window(); self.quit()
@@ -780,6 +771,26 @@ def main():
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
-    if args: print("Usage: tvwcs [toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
-    return TVWCSApp().run([])
+    if args==["start"]: return TVWCSApp().run([])   # the launcher itself, whatever the session (tvwcs.conf starts it so)
+    if args: print("Usage: tvwcs [start|toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    return start_here()
+
+def start_here():
+    """Plain `tvwcs`: what fits where it runs (sway_include.where). In TVWCS's session, or a sway session that includes
+    tvwcs.conf, the launcher (or its Quick Menu, when it runs already); in another sway session, Settings, which offers
+    to add TVWCS to it; in any other graphical session, Settings with its sway pages turned off. At a text console the
+    launcher script starts TVWCS's session before Python is reached."""
+    place=sway_include.where()
+    if place=="console":
+        print("There is no graphical session here. Run tvwcs at the computer's own text console to start TVWCS's session.",file=sys.stderr); return 1
+    if place=="other":
+        from tvwcs.ui_control import main as settings_app
+        return settings_app([])
+    try: running=is_tvwcs_process(int(PID_FILE.read_text(encoding="ascii").strip()))
+    except (OSError,ValueError): running=False
+    if running: return send_signal(signal.SIGUSR1)
+    if sway_include.active(): return TVWCSApp().run([])
+    from tvwcs.ui_control import ADD_TO_SWAY, main as settings_app
+    return settings_app([ADD_TO_SWAY])
+
 if __name__=="__main__": raise SystemExit(main())
