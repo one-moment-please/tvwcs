@@ -30,7 +30,7 @@ FEATURES=(
     Feature("apps","Apps from Flathub","Finding, installing and removing apps from Flathub.",("flatpak",),(("cmd","flatpak"),),("apps",)),
     Feature("screensaver","Screen saver","The bouncing logo after a time without input.",("python3-gi-cairo",),(("cairo",),)),
     Feature("sway_saver","Screen saver on sway","The screen saver drawn over every window on sway (gtk4-layer-shell).",
-            ("gir1.2-gtk4layershell-1.0",),(("typelib","Gtk4LayerShell-1.0"),),sway_only=True),
+            ("gir1.2-gtk4layershell-1.0","libgtk4-layer-shell0"),(("typelib","Gtk4LayerShell-1.0"),("lib","libgtk4-layer-shell.so.0")),sway_only=True),
     Feature("lock_saver","Screen saver when locked","The screen saver while the computer is locked (xsecurelock; X11 only).",
             ("xsecurelock",),(("cmd","xsecurelock"),),x11_only=True),
     Feature("cursor","Hiding the mouse pointer","Hides the pointer after a few seconds without moving (unclutter; sway does it itself).",
@@ -60,6 +60,9 @@ def _probe(p, which=shutil.which):
     kind=p[0]
     if kind=="cmd": return bool(which(p[1]))
     if kind=="libexec": return any(os.path.exists(os.path.join(d,p[1])) for d in LIBEXEC)
+    if kind=="lib":   # Debian's gir1.2-gtk4layershell-1.0 does not depend on the library it describes
+        import glob
+        return bool(glob.glob(f"/usr/lib/*/{p[1]}")+glob.glob(f"/usr/lib*/{p[1]}"))
     if kind=="typelib":   # found without loading it (gtk4-layer-shell must not be loaded after GTK)
         import glob
         return bool(glob.glob(f"/usr/lib/*/girepository-1.0/{p[1]}.typelib")+glob.glob(f"/usr/lib*/girepository-1.0/{p[1]}.typelib"))

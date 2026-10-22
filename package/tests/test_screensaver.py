@@ -57,7 +57,11 @@ class ScreensaverTests(unittest.TestCase):
         self.assertFalse(S.layer_shell_missing({"DISPLAY":":0"},dirs=(d,)))            # i3: a fullscreen window
         if not __import__("glob").glob(f"/usr/lib/*/girepository-1.0/{S.LAYER_SHELL_TYPELIB}"):
             self.assertTrue(S.layer_shell_missing({"SWAYSOCK":"/run/sway"},dirs=(d,)))
+        d=os.path.join(tempfile.mkdtemp(),"girepository-1.0"); os.makedirs(d)
         open(os.path.join(d,S.LAYER_SHELL_TYPELIB),"w").close()
+        if not __import__("glob").glob(f"/usr/lib/*/{S.LAYER_SHELL_LIB}"):   # the typelib alone is not enough
+            self.assertTrue(S.layer_shell_missing({"SWAYSOCK":"/run/sway"},dirs=(d,)))
+        open(os.path.join(os.path.dirname(d),S.LAYER_SHELL_LIB),"w").close()
         self.assertFalse(S.layer_shell_missing({"SWAYSOCK":"/run/sway"},dirs=(d,)))
         self.assertEqual(S.launch_env({"SWAYSOCK":"s","LD_PRELOAD":"libx.so"})["LD_PRELOAD"],"libgtk4-layer-shell.so.0 libx.so")
         self.assertEqual(S.launch_env({"SWAYSOCK":"s","LD_PRELOAD":"libgtk4-layer-shell.so.0"})["LD_PRELOAD"],"libgtk4-layer-shell.so.0")
