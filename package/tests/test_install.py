@@ -141,6 +141,14 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.status,0,out)
         self.assertIn("TVWCS 5.1.0, a prerelease",out); self.assertNotIn("4.2.2",out)
         self.assertIn("tvwcs_5.1.0_all.deb",self.apt())
+    def test_an_upgrade_keeps_the_automatic_login_without_asking(self):
+        self.use("greetd")
+        (self.etc/"greetd"/"config.toml").write_text('[default_session]\ncommand = "/usr/sbin/agreety --cmd /usr/bin/tvwcs-session"\nuser = "_greetd"\n\n'
+                                                     '[initial_session]\ncommand = "/usr/bin/tvwcs-session"\nuser = "tv"\n')
+        out=self.converse(["y"],script=self.pkg/"install.sh")   # go ahead: no question about logging in
+        self.assertEqual(self.status,0,out)
+        self.assertIn("tv is still logged in automatically into TVWCS",out); self.assertNotIn("skipping the login screen",out)
+        self.assertIn("it logs in by itself",out); self.assertIn('user = "tv"',self.greetd())
     def test_the_package_here_is_not_offered_twice(self):
         self.releases("",[("5.0.1",True),("5.0.0",True)])
         out=self.converse(["1","n","y"],script=self.pkg/"install.sh")   # the package here; no automatic login; go ahead
