@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.2.0 — 2026-10-22
+
+- **Settings › Appearance › Quick Menu corner:** the Quick Menu can sit in any corner of the screen, not only the bottom left. Its layout mirrors to match. In a right-hand corner its rows, status icons and clock run right to left, ← and → swap (→ on a row opens its options), and Applications opens to its left. In a top corner the clock and status icons are at the top, then the search field; the favorites and open apps, the search results, a row's options and the status panels all open downwards, and ↑ and ↓ swap to match. The Screen edge margin preview shows the chosen corner. Dialogs and the on-screen keyboard keep their usual layout.
+- **Settings › Appearance › Options buttons (⋯) on Quick Menu rows** is back: turn it off to hide the ⋯ buttons. ← on a row (→ in a right-hand corner), or a right-click, still opens the row's options.
+
 ## 5.1.2 — 2026-10-22
 
 - Installer, upgrading with greetd already logging you into TVWCS: it says the automatic login is kept, instead of asking again (the question read as if greetd would be removed), and its last line says a restart logs in by itself.

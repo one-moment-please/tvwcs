@@ -10,12 +10,12 @@ from gi.repository import Gdk, GLib, Gtk
 from tvwcs import control_bluetooth, control_network, control_sound, power, quick_status
 from tvwcs.control_datetime import clock_text, short_date_text
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
-from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, extract_badge, profile_detail, row_description, search_items, startup_choices
+from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, corner_right, corner_top, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
 from tvwcs import cursor
 from tvwcs.workspaces import quick_list
-from tvwcs.widgets import (NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, glyph, held_modifiers, icon_button, Marquee, muted_label, scroll_to_show, section_title, usable)
+from tvwcs.widgets import (KEEP_LTR, NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, flip_children, glyph, held_modifiers, icon_button, Marquee, mirror, muted_label, scroll_to_show, section_title, usable)
 
 NAME_SCROLL_DELAY=3000                   # ms a selected Quick Menu row waits before a name too long to fit scrolls by
 CHANNEL_DIGITS=3                         # typing this many digits of a channel number ...
@@ -31,7 +31,9 @@ _TYPING_BLOCKED=Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.ALT_MASK|Gdk.Modi
 
 class TVWCSWindow(Gtk.ApplicationWindow):
     """One borderless window holding two panels side by side. The Quick Menu is always there; the
-    Applications pane opens to its right."""
+    Applications pane opens beside it, to its right (to its left with the Quick Menu in a right-hand corner).
+    The Quick Menu is built for the bottom-left corner. In a right-hand corner GTK lays it out right to left (mirror);
+    in a top corner its stacks are put the other way up (flip_children) and ↑/↓ work the other way round."""
     def __init__(self, app):
         super().__init__(application=app,title=MAIN_TITLE)
         self.app=app; self.guide_open=False; self.options_open=False
@@ -49,6 +51,22 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         key.connect("key-pressed",self._key_pressed); key.connect("key-released",self._key_released); self.add_controller(key)
         self.connect("notify::focus-widget",self._focus_changed); self.connect("notify::is-active",self._active_changed)
         self._build()
+
+    @property
+    def right(self): return corner_right(self.app.store.settings.get("quick_corner"))   # the Quick Menu is mirrored
+    @property
+    def top(self): return corner_top(self.app.store.settings.get("quick_corner"))      # ... and stacked the other way up
+    def _mirror(self,widget):
+        if widget is not None and self.right: mirror(widget)
+    def _flip(self,box):
+        if self.top: flip_children(box)
+    def _flip_margins(self,widget):
+        if self.top:
+            t,b=widget.get_margin_top(),widget.get_margin_bottom(); widget.set_margin_top(b); widget.set_margin_bottom(t)
+    def guide_hint(self):
+        """Where Applications is, for the notes that point to it: ⊞ is in the clock's row, at the far side from the corner."""
+        side=("top" if self.top else "bottom")+"-"+("left" if self.right else "right")
+        return f"Press {'←' if self.right else '→'} (or ⊞ in the {side} corner of this menu)"
 
     def _reset_nav(self):
         self._groups={"quick":[],"guide":[],"options":[]}; self._header_group=[]
@@ -77,6 +95,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._card_width=min(S(440),max(S(280),layout.quick_width-S(40))); self.modal_card.set_size_request(self._card_width,-1)
         self.modal_layer.append(self.modal_card); overlay.add_overlay(self.modal_reveal)
         self.set_child(overlay)
+        self._mirror(self.panes)   # not the dialogs drawn over them: a keyboard or number pad keeps its order
         self.set_panels(self.guide_open,self.options_open); self._refresh_search_results()
 
     def _install_css(self):
@@ -92,13 +111,13 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         scroll positions, open categories or focus. `options` is accepted for older callers but opens nothing."""
         guide=bool(guide)
         self.guide_open=guide; self.options_open=False
-        if guide and self.guide_pane is None: self.guide_pane=self._build_guide_pane(); self.panes.append(self.guide_pane)
+        if guide and self.guide_pane is None: self.guide_pane=self._build_guide_pane(); self.panes.append(self.guide_pane); self._mirror(self.guide_pane)
         layout=self.app.layout
         self.quick_pane.set_size_request(layout.quick_width,-1)
         if self.guide_pane is not None: self.guide_pane.set_visible(guide)
         if self.guide_button is not None:
             (self.guide_button.add_css_class if guide else self.guide_button.remove_css_class)("active")
-            self.guide_button.set_tooltip_text("Close Applications" if guide else "Open Applications (→)")
+            self.guide_button.set_tooltip_text("Close Applications" if guide else f"Open Applications ({'←' if self.right else '→'})")
 
     def _build_quick_pane(self,width):
         pane=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0); pane.add_css_class("pane"); pane.set_size_request(width,-1); pane.set_hexpand(False)
@@ -111,7 +130,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             close_btn=icon_button("window-close-symbolic","✕","Close"); close_btn.add_css_class("close-button"); close_btn.add_css_class("square"); close_btn.connect("clicked",lambda *_:self.app.hide_window()); buttons.append(close_btn)
             controls=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); controls.add_css_class("window-controls")
             for b in buttons: controls.append(b)
-            header.append(controls); pane.append(header)
+            header.append(controls); pane.append(header); self._flip_margins(header)
         else:   # space inside the pane, not a margin outside it, which would show the window's black background above it
             top=Gtk.Box(); top.set_size_request(-1,S(14)); pane.append(top)
         self._header_group=buttons
@@ -120,11 +139,12 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         # open) is above them. At a desk the window is only as tall as all this (main.fit_quick_menu).
         body=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); body.set_margin_start(S(20)); body.set_margin_end(S(20)); body.set_margin_top(S(4)); body.set_margin_bottom(S(10)); body.set_vexpand(True); pane.append(body)
         scroll=Gtk.ScrolledWindow(); scroll.set_vexpand(True); scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); scroll.set_propagate_natural_height(True); body.append(scroll)
-        content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); content.set_valign(Gtk.Align.END); scroll.set_child(content); self.quick_content=content; self.quick_scroll=scroll
+        self._flip_margins(body); toward=Gtk.Align.START if self.top else Gtk.Align.END   # toward the search field
+        content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); content.set_valign(toward); scroll.set_child(content); self.quick_content=content; self.quick_scroll=scroll
         scroll.get_vadjustment().connect("changed",self._keep_at_bottom)   # what overflows is above: start at the bottom
         self._build_quick_content(content)
         self.results_scroll=Gtk.ScrolledWindow(); self.results_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); self.results_scroll.set_max_content_height(S(280)); self.results_scroll.set_propagate_natural_height(True); self.results_scroll.set_visible(False)
-        self.results_box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); self.results_box.set_valign(Gtk.Align.END); self.results_scroll.set_child(self.results_box); body.append(self.results_scroll)
+        self.results_box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); self.results_box.set_valign(toward); self.results_scroll.set_child(self.results_box); body.append(self.results_scroll)
         self.results_scroll.get_vadjustment().connect("changed",self._keep_at_bottom)
         self.search_entry=Gtk.SearchEntry(); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search)
         self.search_entry.connect("changed",self._search_typed)
@@ -137,7 +157,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         # what a status icon (or ⏻) unfolds: above the status row, a little indented, like a row's options
         self.status_panel=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(4)); self.status_panel.add_css_class("status-panel"); self.status_panel.set_visible(False)
         self.status_panel.set_margin_start(S(34)); self.status_panel.set_margin_end(S(34)); self.status_panel.set_margin_bottom(S(4)); pane.append(self.status_panel)
+        self._flip_margins(self.status_panel)
         pane.append(self._build_status_bar())
+        self._flip(body); self._flip(pane)   # in a top corner: the status rows at the top, then the search field, then the lists
         return pane
 
     def quick_height(self,width):
@@ -199,6 +221,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._status_group=NavGroup(list(self._status_buttons.values())); self._clock_group=NavGroup([clock,guide])
         pointer_only(*self._status_group,*self._clock_group)
         self._status_shown=None; self.tick_clock(); self.show_status(self.app.status)
+        self._flip(bar)   # the clock's row is nearest the corner
         return bar
     def tick_clock(self):
         if getattr(self,"clock_time",None) is None: return
@@ -224,7 +247,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                 b.add_css_class("status-wide")
             else: child=glyph(icon,fallback,22)
             if key=="bluetooth": (b.add_css_class if status.bluetooth=="off" else b.remove_css_class)("status-off")
-            b.set_child(child); b.set_tooltip_text(tip); b.set_visible(shown[key])
+            b.set_child(child); b.set_tooltip_text(tip); b.set_visible(shown[key]); self._mirror(child)
             if not shown[key] and self._panel_key==key: self._close_open()
 
     # ---------------------------------------------------------- status panels: what a status icon (or ⏻) unfolds
@@ -256,6 +279,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self._keep_panel=True
         try:
             clear_box(self.status_panel); self._panel_groups=[]; self._panel_prefer=None; build()
+            self._flip(self.status_panel); self._mirror(self.status_panel)   # its first line nearest its icon, as below it
         finally: self._keep_panel=False
         groups=self._panel_groups; target=None
         if at is not None:
@@ -453,7 +477,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         less=Gtk.Button(label="−"); less.add_css_class("square"); less.set_tooltip_text(f"{kind} volume down")
         more=Gtk.Button(label="+"); more.add_css_class("square"); more.set_tooltip_text(f"{kind} volume up")
         boost=bool(self.app.store.settings.get("audio_boost"))
-        slider=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,control_sound.top(boost),1); slider.set_draw_value(False); slider.set_hexpand(True); slider.set_focusable(False)
+        slider=Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,0,control_sound.top(boost),1); slider.set_draw_value(False); slider.set_hexpand(True); slider.set_focusable(False); slider.add_css_class(KEEP_LTR)
         percent=Gtk.Label(); percent.set_width_chars(5); percent.set_xalign(1); percent.add_css_class("status-count")
         def show(value):
             percent.set_text(f"{value}%"); slider.set_value(min(control_sound.top(boost),value))
@@ -497,13 +521,15 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             else: content.append(self._window_row(item.windows[0]) if len(item.windows)==1 else self._workspace_row(item,outputs))
         if not self.app.wm.available: content.append(muted_label("TVWCS can't see open apps here: it needs the sway window manager."))
         if not rows:
-            content.append(muted_label("Nothing is open and there are no favorites yet. Press → (or ⊞ in the bottom-right corner) to see your installed applications."))
+            content.append(muted_label(f"Nothing is open and there are no favorites yet. {self.guide_hint()} to see your installed applications."))
+        self._flip(content); self._mirror(content)   # the open applications stay nearest the search field
     def _keep_at_bottom(self,adj):
-        """The Quick Menu's lists grow upwards from the search field: when they overflow, show their bottom. "changed"
+        """The Quick Menu's lists grow upwards from the search field: when they overflow, show their bottom (in a top
+        corner they grow downwards, and show their top). "changed"
         comes while GTK is sizing the list, when a new value would not move it yet, so it is set just after. Not while
         a row's options are open: they unfold upwards, and the list scrolls to show them instead."""
         if self._open_row is not None and getattr(self._open_row,"opener",None) is None: return
-        GLib.idle_add(lambda:(adj.set_value(adj.get_upper()-adj.get_page_size()),GLib.SOURCE_REMOVE)[1])
+        GLib.idle_add(lambda:(adj.set_value(adj.get_lower() if self.top else adj.get_upper()-adj.get_page_size()),GLib.SOURCE_REMOVE)[1])
 
     # ---------------------------------------------------------- Quick Menu rows
     # Each row is the application (or workspace) with one ⋯ button before it. ⋯, ← on the row or a right-click unfolds
@@ -563,15 +589,16 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         expander=Gtk.Button(); expander.add_css_class("square")
         def show_expander():
             shown=children.get_visible()
-            expander.set_child(glyph("pan-down-symbolic" if shown else "pan-up-symbolic","▾" if shown else "▴"))
+            unfold=not shown if self.top else shown   # the arrow points the way its apps fold: away from the row, or back to it
+            expander.set_child(glyph("pan-down-symbolic" if unfold else "pan-up-symbolic","▾" if unfold else "▴"))
             expander.set_tooltip_text("Hide the individual apps" if shown else "Show the individual apps, to open just one")
         def flip(*_):
-            self._close_open(); children.set_visible(not children.get_visible()); show_expander(); self.app.fit_quick_menu()
+            self._close_open(); children.set_visible(not children.get_visible()); show_expander(); self._mirror(expander); self.app.fit_quick_menu()
         expander.connect("clicked",flip); pointer_only(expander)
         show_expander(); group.line.insert_child_after(expander,group[0]); group.insert(1,expander)   # group[0] is ⋯, even when hidden
         group.lead=expander   # ← on the name moves onto it; ← on it opens the row's menu
         self._groups["quick"].append(group)
-        box.append(children); box.append(row); return box
+        box.append(children); box.append(row); self._flip(box); self._flip(children); return box
 
     def _options_row(self,main,items):
         """A row: ⋯ then the application, with its options folded away above it. ⋯, ← on the application or a
@@ -581,9 +608,9 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         -> (the options and the row, the row's NavGroup); the NavGroup's `line` is the row itself."""
         box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0)
         panel=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); panel.add_css_class("row-options"); panel.set_visible(False)
-        panel.set_margin_start(S(16)); panel.set_margin_end(S(16)); panel.set_margin_top(S(6)); panel.set_margin_bottom(S(2))
+        panel.set_margin_start(S(16)); panel.set_margin_end(S(16)); panel.set_margin_top(S(6)); panel.set_margin_bottom(S(2)); self._flip_margins(panel)
         row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4))
-        hide=False
+        hide=bool(self.app.store.settings.get("hide_options_buttons",False))
         toggle=Gtk.Button(); toggle.add_css_class("options-toggle"); toggle.add_css_class("square"); toggle.set_visible(not hide)
         toggle.set_child(glyph("view-more-symbolic","⋯")); toggle.set_tooltip_text("Options")
         group=NavGroup([toggle,main],entry=main); group.toggle=toggle if not hide else None; group.line=row; pointer_only(toggle,main)
@@ -601,6 +628,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                 b=self.dialog_button(icon,fallback,label); b.add_css_class("menu-item")
                 if danger: b.add_css_class("danger")
                 b.connect("clicked",lambda _b,a=action:run(a)); panel.append(b); buttons.append(b); pointer_only(b)
+            self._flip(panel); self._mirror(panel)   # in a top corner they unfold downwards, Close still nearest the row
             options=[]
             for b in buttons:
                 g=NavGroup([b]); g.option_item=True; options.append(g)
@@ -614,7 +642,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             return True
         toggle.connect("clicked",open_options)
         click=Gtk.GestureClick(); click.set_button(3); click.connect("pressed",lambda *_a:open_options()); main.add_controller(click)
-        row.append(toggle); row.append(main); box.append(panel); box.append(row)
+        row.append(toggle); row.append(main); box.append(panel); box.append(row); self._flip(box)
         group.expanded=panel.get_visible; group.expand=open_options; group.collapse=collapse
         group.open_options=open_options; group.menu=[toggle]
         group.owns=lambda w:any(w is x for x in group) or self._contains(panel,w)
@@ -731,7 +759,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         label=Gtk.Label(label=f"{category}  ({len(apps)})"); label.set_xalign(0); label.set_hexpand(True); line.append(arrow); line.append(label); head.set_child(line)
         inner=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); inner.set_margin_top(S(2)); inner.set_margin_bottom(S(8))
         def apply():
-            opened=category in self._expanded; inner.set_visible(opened); arrow.set_text("▾" if opened else "▸")
+            opened=category in self._expanded; inner.set_visible(opened); arrow.set_text("▾" if opened else "◂" if self.right else "▸")
         def flip(*_):
             self._expanded.symmetric_difference_update({category}); apply()
         head.connect("clicked",flip); apply(); self._register("guide",head)
@@ -798,7 +826,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         """At a desk the Applications pane is only as wide as its rows need: the widest row without its description,
         plus room for most descriptions (four in five) in full. The rest are cut with … (see Marquee)."""
         if self.guide_pane is None:
-            self.guide_pane=self._build_guide_pane(); self.panes.append(self.guide_pane); self.guide_pane.set_visible(self.guide_open)
+            self.guide_pane=self._build_guide_pane(); self.panes.append(self.guide_pane); self.guide_pane.set_visible(self.guide_open); self._mirror(self.guide_pane)
         rows=[]; texts=[]
         for main,d in self._descriptions:
             row=main.get_parent()
@@ -836,7 +864,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if not q.strip(): self._search_results=[]; self.app.fit_quick_menu(); return
         self._search_results=search_items(q,self.app.store.profiles,self.app.catalogue.by_id(),self.app.wm.windows())[:12]
         if not self._search_results:
-            self.results_box.append(muted_label("No matches. Try an app name, profile name, channel number, or window title.")); self.app.fit_quick_menu(); return
+            self.results_box.append(muted_label("No matches. Try an app name, profile name, channel number, or window title.")); self._mirror(self.results_box); self.app.fit_quick_menu(); return
         for i,result in enumerate(self._search_results):
             main=Gtk.Button(); main.add_css_class("launch-row"); main.set_hexpand(True)
             row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10))
@@ -851,8 +879,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             if i==self._selected_result: main.add_css_class("tvwcs-selected")
             main.connect("clicked",lambda _b,r=result:self.app.activate_result(r))
             # the best match is nearest the search field, at the bottom; ↑ goes on to the next one
-            line,group=self._options_row(main,items); self._result_groups.append(group); self._result_mains.append(main); self.results_box.prepend(line)
-        self.app.fit_quick_menu()
+            # (below it in a top corner; ↓ goes on)
+            line,group=self._options_row(main,items); self._result_groups.append(group); self._result_mains.append(main)
+            (self.results_box.append if self.top else self.results_box.prepend)(line)
+        self._mirror(self.results_box); self.app.fit_quick_menu()
     def _activate_search(self,*_):
         if self._channel_source: GLib.source_remove(self._channel_source); self._channel_source=0   # Enter launches it now
         # typed and OK'd at once: list the results first (GTK waits a moment), so the launch spinner has its button
@@ -913,13 +943,15 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if self._modal_groups: return self._modal_groups
         if pane!="quick": return list(self._groups[pane])
         # top to bottom as on screen: the results are listed upwards from the search field, a row's open options are
-        # just above it, and an open status panel is between the search field and the status row
+        # just above it, and an open status panel is between the search field and the status row. In a top corner all of
+        # it is the other way up, so the order is too.
         def unfolded(groups):
             out=[]
             for g in groups: out+=getattr(g,"options",None) or []; out.append(g)
             return out
-        return ([self._header_group]+unfolded(self._groups["quick"])+unfolded(reversed(self._result_groups))
-                +[[self.search_entry]]+list(getattr(self,"_panel_groups",[]))+[getattr(self,"_status_group",[]),getattr(self,"_clock_group",[])])
+        order=([self._header_group]+unfolded(self._groups["quick"])+unfolded(reversed(self._result_groups))
+               +[[self.search_entry]]+list(getattr(self,"_panel_groups",[]))+[getattr(self,"_status_group",[]),getattr(self,"_clock_group",[])])
+        return order[::-1] if self.top else order
     @staticmethod
     def _contains(widget,focused): return focused is not None and (focused is widget or focused.is_ancestor(widget))
     def _in_search(self,focused): return self._contains(self.search_entry,focused)   # focus sits on the entry's inner text widget
@@ -1034,15 +1066,17 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if keyval in (Gdk.KEY_Down,Gdk.KEY_Up):
             step=1 if keyval==Gdk.KEY_Down else -1
             if not self._modal_groups:
-                # The results are above the search field, the best one nearest it: ↑ goes on to the next result.
-                # Keep focus in the search field while arrows change the highlighted result so typing can continue.
+                # The results are above the search field, the best one nearest it: ↑ goes on to the next result (below
+                # it in a top corner: ↓ does). Keep focus in the search field while arrows change the highlighted result
+                # so typing can continue. `away` is +1 for the key that leads away from the search field.
+                away=step if self.top else -step
                 if typing and self.search_entry.get_text().strip() and self._search_results:
-                    nxt=self._selected_result-step
+                    nxt=self._selected_result+away
                     if 0<=nxt<len(self._search_results): self._select_result(nxt); return True
-                    if step<0: self._focus_above_results(); return True   # ↓ from the best match: on to the status row
+                    if away>0: self._focus_above_results(); return True   # past the last result: on to the lists
                 ri=self._result_index(focused)
-                if ri>=0 and not (step<0 and self._result_groups[ri].expanded()):   # ↑ into its own open options instead
-                    nxt=ri-step
+                if ri>=0 and not (away>0 and self._result_groups[ri].expanded()):   # on into its own open options instead
+                    nxt=ri+away
                     if 0<=nxt<len(self._result_groups): self._select_result(nxt); self._landing(self._result_groups[nxt]).grab_focus(); return True
                     if nxt<0: self.search_entry.grab_focus(); return True
                     self._focus_above_results(); return True
@@ -1052,13 +1086,16 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             g=self._result_groups[self._selected_result]   # at the end of the text, Right opens the highlighted result's menu
             if g.open_options is not None: g.open_options(); return True
         if keyval in (Gdk.KEY_Left,Gdk.KEY_Right) and not editable:
-            if self._move_within_group(1 if keyval==Gdk.KEY_Right else -1): return True
+            step=1 if keyval==Gdk.KEY_Right else -1
+            if self.right and not self._modal_groups: step=-step   # mirrored: rows run right to left (dialogs do not)
+            if self._move_within_group(step): return True
         if keyval in (Gdk.KEY_Return,Gdk.KEY_KP_Enter) and typing:
             if not self.search_entry.get_text().strip(): self.ask_search(); return True   # Enter on an empty search: the on-screen keyboard
             self._activate_search(); return True
         return False
     def _focus_above_results(self):
-        """↑ past the last search result: the lowest row of the lists above it, else the header."""
+        """↑ past the last search result: the lowest row of the lists above it, else the header (↓ and the highest row of
+        the lists below it, in a top corner)."""
         for g in reversed(self._groups["quick"]):
             w=self._landing(g)
             if w is not None and w.grab_focus(): return
@@ -1140,7 +1177,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         """The first time TVWCS opens: where it is used (TV or desk), then how to add favorites."""
         def picked(use):
             self.app.set_use(use)
-            self.show_message("Press → (or ⊞ in the bottom-right corner of this menu) to see every application. Press ☆ beside the ones "
+            self.show_message(f"{self.guide_hint()} to see every application. Press ☆ beside the ones "
                               "you use most to add them to this menu, and ✎ to give one a channel number or a hotkey. Everything else is in "
                               "Settings, channel 000.",
                               "Welcome to TVWCS",done)

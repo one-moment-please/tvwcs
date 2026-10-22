@@ -7,26 +7,27 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gtk
 
-from tvwcs.model import MARGIN_RANGE, compute_layout
+from tvwcs.model import DEFAULT_CORNER, MARGIN_RANGE, compute_layout, corner_right
 from tvwcs.widgets import S
 
 STEP=2   # px a press of ← or → moves the margin
 
-def preview_rects(width, height, margin, quick_width, scale=1.0):
-    """The Quick Menu (its usual height, in the bottom-left corner) and the Applications pane beside it (the full
-    height), as (x, y, w, h) on a screen of width × height; margin and quick_width are at desktop scale."""
+def preview_rects(width, height, margin, quick_width, scale=1.0, corner=DEFAULT_CORNER):
+    """The Quick Menu (its usual height, in its corner) and the Applications pane beside it (the full height), as
+    (x, y, w, h) on a screen of width × height; margin and quick_width are at desktop scale."""
     m=int(round(margin*scale)); area={"x":0,"y":0,"width":width,"height":height}
-    full=compute_layout(area,m,int(quick_width*scale),True)
-    quick=compute_layout(area,m,int(quick_width*scale),False,quick_height=int(height*0.55))
-    guide=(full.x+full.quick_width+full.margin,full.y,max(1,full.width-full.quick_width-full.margin),full.height)
+    full=compute_layout(area,m,int(quick_width*scale),True,corner=corner)
+    quick=compute_layout(area,m,int(quick_width*scale),False,quick_height=int(height*0.55),corner=corner)
+    rest=max(1,full.width-full.quick_width-full.margin)
+    guide=(full.x if corner_right(corner) else full.x+full.quick_width+full.margin,full.y,rest,full.height)
     return (quick.x,quick.y,quick.width,quick.height),guide
 
 class MarginPreview(Gtk.Window):
     """Full screen. on_done(margin) runs with the chosen margin on Accept, or with None on Cancel (or Esc / Back)."""
-    def __init__(self, parent, margin, quick_width, scale, accent, on_done):
+    def __init__(self, parent, margin, quick_width, scale, accent, on_done, corner=DEFAULT_CORNER):
         super().__init__(title="TVWCS · Screen edge margin"); self.set_decorated(False)
         if parent is not None: self.set_transient_for(parent); self.set_modal(True)
-        self.margin=int(margin); self.quick_width=quick_width; self.scale=scale; self.accent=accent; self.on_done=on_done; self._done=False
+        self.margin=int(margin); self.quick_width=quick_width; self.scale=scale; self.accent=accent; self.on_done=on_done; self.corner=corner; self._done=False
         overlay=Gtk.Overlay(); self.area=Gtk.DrawingArea(); self.area.set_hexpand(True); self.area.set_vexpand(True)
         self.area.set_draw_func(self._draw); overlay.set_child(self.area)
         card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(10)); card.add_css_class("modal-card")
@@ -61,7 +62,7 @@ class MarginPreview(Gtk.Window):
     def _draw(self, _area, cr, width, height):
         cr.set_source_rgb(0.05,0.05,0.05); cr.paint()
         rgba=Gdk.RGBA(); rgba.parse(self.accent)
-        quick,guide=preview_rects(width,height,self.margin,self.quick_width,self.scale)
+        quick,guide=preview_rects(width,height,self.margin,self.quick_width,self.scale,self.corner)
         for (x,y,w,h),label,alpha in ((guide,"Applications",0.25),(quick,"Quick Menu",0.45)):
             cr.set_source_rgba(rgba.red,rgba.green,rgba.blue,alpha); cr.rectangle(x,y,w,h); cr.fill()
             cr.set_source_rgb(1,1,1); cr.set_line_width(4); cr.rectangle(x+2,y+2,w-4,h-4); cr.stroke()
