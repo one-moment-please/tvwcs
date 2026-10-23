@@ -77,7 +77,7 @@ class WindowManagerTests(unittest.TestCase):
         self.assertIn("[con_id=18] move container to workspace number 2",wm.sent)
     def test_place_tvwcs_command(self):
         wm=FakeWM(); wm.place_tvwcs(20,50,460,1010)
-        self.assertEqual(wm.sent[-1],'[title="^TVWCS$"] floating enable, border pixel 0, resize set 460 1010, move absolute position 20 50')
+        self.assertEqual(wm.sent[-1],'[title="^TVWCS$"] floating enable, border pixel 0, resize set 460 1010, move absolute position 20 50, opacity 1')
     def test_focus_workspace_brings_it_to_pointer_output(self):
         wm=FakeWM(workspaces=[{"name":"3","output":"HDMI-2","num":3},{"name":"1","output":"HDMI-1","num":1,"focused":True}],outputs=[{"name":"HDMI-1"},{"name":"HDMI-2"}])
         wm.focus_output_under_mouse=lambda: "HDMI-1"

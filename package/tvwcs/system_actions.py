@@ -4,7 +4,7 @@ Power actions use systemd's systemctl (TVWCS supports systemd systems only; TODO
 from __future__ import annotations
 import os, shlex, shutil, subprocess
 from dataclasses import dataclass
-from tvwcs import lockscreen
+from tvwcs import lockscreen, servermode
 
 @dataclass(frozen=True)
 class SystemAction:
@@ -24,13 +24,16 @@ SYSTEM_ACTIONS=(
 )
 
 POWER_MENU=("lock","sleep","reboot","shutdown","logout")   # the power menu's order; logout only with a login screen
+SERVER_KEEPS=("lock","logout")   # in server mode (servermode.py) the TV never sleeps, restarts or shuts the server down
 
 def login_manager_installed(exists=os.path.exists, which=shutil.which):
     """True when a login screen (display manager) runs at start-up. Without one, logging out of sway only leaves a
     text console, or with Settings' automatic login on the console starts TVWCS again, so the power menu offers Log
-    out only with one. One installed but not set up to start (greetd is only suggested by the package) does not count.
+    out only with one. One installed but not set up to start does not count.
     `which` is accepted for older callers."""
     if exists("/etc/systemd/system/display-manager.service"): return True
+    # under systemd the link is the whole answer (disabling a login screen leaves default-display-manager behind)
+    if exists("/run/systemd/system") or not exists("/etc/X11/default-display-manager"): return False
     try:
         with open("/etc/X11/default-display-manager",encoding="utf-8") as f:
             return bool(f.read().strip())
@@ -55,11 +58,17 @@ def can_log_out(env=None, run=subprocess.run, exists=os.path.exists) -> bool:
     if service: return service!="login"
     return login_manager_installed(exists)
 
-def power_menu(settings=None, display_manager=None):
+def power_menu(settings=None, display_manager=None, server=None):
     """The actions the Quick Menu's power menu offers, in order. `settings` is accepted for older callers."""
     dm=can_log_out() if display_manager is None else display_manager
+    server=servermode.active() if server is None else server
     by_id={a.id:a for a in SYSTEM_ACTIONS}
-    return [by_id[i] for i in POWER_MENU if i!="logout" or dm]
+    return [by_id[i] for i in POWER_MENU if (i!="logout" or dm) and (not server or i in SERVER_KEEPS)]
+
+def allowed(action_id, server=None) -> bool:
+    """Server mode refuses Sleep, Restart and Shut down, however they are asked for (a hotkey, the idle timer)."""
+    server=servermode.active() if server is None else server
+    return not server or action_id not in POWER_VERBS or action_id in SERVER_KEEPS
 
 def logout_command(env=None, which=shutil.which):
     return ["swaymsg","exit"] if which("swaymsg") else None

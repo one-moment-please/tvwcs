@@ -108,6 +108,8 @@ DISPLAY_MANAGERS="gdm3 gdm sddm lightdm lxdm xdm slim ly greetd emptty nodm entr
 login_screen() {   # the login screen that runs at start-up (lightdm, gdm3, greetd...), or "" for none
     N=""
     if [ -L "$ETC/systemd/system/display-manager.service" ]; then N=$(readlink "$ETC/systemd/system/display-manager.service"); N=${N##*/}; N=${N%.service}
+    # under systemd the link is the whole answer: disabling a login screen leaves default-display-manager behind
+    elif [ "$ETC" = /etc ] && [ -d /run/systemd/system ]; then :
     elif [ -s "$ETC/X11/default-display-manager" ]; then N=$(sed -n 1p "$ETC/X11/default-display-manager"); N=${N##*/}; fi
     echo "$N"
 }
@@ -363,7 +365,7 @@ remove_all() {
         say "greetd starts TVWCS's session: it goes back to its plain text login."
         as_root sh -c 'cp "$1" "$1.tvwcs-backup" && printf "%s\n" "[terminal]" "vt = 7" "" "[default_session]" "command = \"/usr/sbin/agreety --cmd /bin/sh\"" "user = \"_greetd\"" > "$1"' sh "$ETC/greetd/config.toml"
     fi
-    for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf" "$ETC/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
+    for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf" "$ETC/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf" "$ETC/tvwcs/server-mode" "$ETC/polkit-1/rules.d/50-tvwcs-server-mode.rules"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
     console_profile off || :
     # shellcheck disable=SC2046
     as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_known tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."

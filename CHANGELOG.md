@@ -1,5 +1,19 @@
 # Changelog
 
+## 5.7.0 — 2026-10-23
+
+- **Server mode,** for a computer that is a server first: one account uses the TV and logs in automatically into TVWCS, and nothing in TVWCS can put the computer to sleep, restart or shut it down, update it, change its network or unmount its drives. The power menu keeps only Lock (and Log out with a login screen); the idle timer never sleeps and a nearly empty battery does nothing. Settings turns off Power and sleep, Software updates and Network, and hides every other setting that needs an administrator (SSH, the time zone and network time, the automatic login and login screen, your full name, installing a page's software). A polkit rule backs it up for the TV's account: logind, UDisks and NetworkManager refuse those actions whatever asks. It is a root-owned file, `/etc/tvwcs/server-mode`.
+- Turn it on in **Settings › User › Server mode** (an administrator, choosing which account uses the TV) or with `tvwcs -s --user=NAME`; off there with an administrator's password (a standard account names the administrator), or with `tvwcs --no-server-mode`.
+- **`tvwcs` over SSH** offers to start TVWCS on the computer's own screen, or to turn server mode on or off. `tvwcs --start --user=NAME` starts TVWCS for NAME on the first free text console, once.
+- greetd is no longer suggested by the package either.
+- Removing the package or `install.sh --remove` also turns server mode off.
+- **Removing the package** also undoes a login screen's automatic login into TVWCS: greetd goes back to its plain text login (the old config is kept as `config.toml.tvwcs-backup`), and LightDM's and SDDM's TVWCS automatic-login files are deleted, as `install.sh --remove` already did.
+- **TVWCS has its own badge on Linux Mint's login screen** (slick-greeter): the logo's TV, in place of a blank white disc.
+- A login screen that was disabled (say `systemctl disable greetd`) no longer counts as the one in use: its old `/etc/X11/default-display-manager` file stays behind, and Settings' automatic login and the installer used to set up that login screen instead of the console's automatic login.
+- The Quick Menu's network panel has no Network settings button in server mode. `tvwcs --help` lists the server mode options.
+- **The Quick Menu no longer flashes in the middle of the screen** before it moves to its corner. sway shows a new floating window centred first and TVWCS's placement came a moment later; the window now starts out invisible until it is in place.
+- The demo videos in the README now play there, as animated previews; click one for the full video.
+
 ## 5.6.0 — 2026-10-22
 
 - **`tvwcs` on its own does what fits where you type it.** At a text console with no graphical session it starts the TVWCS session (in TV mode). In a sway session TVWCS isn't part of, it opens Settings and offers to add TVWCS to it: one `include /usr/share/tvwcs/tvwcs.conf` line in your sway config (backed up first as `config.tvwcs-backup`), then sway reloads, TVWCS starts in desktop mode and Settings asks for the key that opens the Quick Menu. Where TVWCS already runs, it shows the Quick Menu. In GNOME, KDE or an X11 session it opens Settings. `tvwcs start` starts the launcher itself, as sway's config now does.

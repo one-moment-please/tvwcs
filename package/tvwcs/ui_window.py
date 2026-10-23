@@ -7,7 +7,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk
 
-from tvwcs import control_bluetooth, control_network, control_sound, power, quick_status
+from tvwcs import control_bluetooth, control_network, control_sound, power, quick_status, servermode
 from tvwcs.control_datetime import clock_text, short_date_text
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, corner_right, corner_top, extract_badge, profile_detail, row_description, search_items, startup_choices
@@ -304,6 +304,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if danger: b.add_css_class("danger")
         b.connect("clicked",lambda *_:action()); self._panel_line(b,ident,b); return b
     def _panel_settings(self,page,label):
+        if page=="network" and servermode.active(): return   # turned off in server mode
         self._panel_button("settings","emblem-system-symbolic","⚙",label,lambda:self.app.open_settings(page))
     def _panel_read(self,read,build):
         """Read in the background, then draw build(result) if the same panel is still open (result is None when the read failed)."""

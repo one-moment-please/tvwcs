@@ -101,6 +101,19 @@ def change_password(current, new, argv=("passwd",), run=converse) -> str:
     if code==-3: return "passwd did not finish."
     return _why(out,"The password could not be changed.")
 
+def run_as_admin(admin, password, argv, run=converse):
+    """Run argv as root for a standard account, which sudo would refuse: as the administrator `admin`, through su and
+    then sudo, both given their password. Returns (exit code, why it failed or "")."""
+    import shlex
+    if not re.fullmatch(r"[a-z_][a-z0-9_.-]*\$?",admin or ""): return 1,"Unexpected user name."
+    inner=shlex.join(["sudo","-S","-k","-p","Password:","--",*argv])
+    code,out,_asked=run(["su",admin,"-c",inner],[password,password],timeout=120)
+    if code==0: return 0,""
+    low=out.casefold()
+    if code==-2 or "authentication failure" in low or "incorrect password" in low: return 1,f"That is not {admin}'s password."
+    if "not in the sudoers" in low or "not allowed" in low: return 1,f"{admin} is not allowed to use sudo."
+    return code or 1,_why(out,"It did not work.")
+
 def full_name_argv(login, full_name) -> list:
     """The full name is changed as root (Debian lets users change only their phone numbers and room with chfn)."""
     return ["chfn","-f",full_name,login]

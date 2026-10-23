@@ -11,6 +11,7 @@ import os, shutil, subprocess
 from dataclasses import dataclass, field
 
 from tvwcs.control_cmd import have, run
+from tvwcs import servermode
 
 ACTIONS=("screen_off","lock","sleep")
 LABELS={"screen_off":"Turn off the screen after","lock":"Lock after","sleep":"Sleep after"}
@@ -127,13 +128,17 @@ def time_text(seconds):
     minutes=max(1,round(seconds/60)); h,m=divmod(minutes,60)
     return f"{h} h {m} min" if h and m else f"{h} h" if h else f"{m} min"
 
-def active_idle(settings, battery):
-    """The times in use now: the battery's while the computer runs on it, else the plugged-in ones."""
-    return settings["idle_battery"] if battery.present and battery.on_battery else settings["idle"]
+def active_idle(settings, battery, server=None):
+    """The times in use now: the battery's while the computer runs on it, else the plugged-in ones. In server mode
+    (servermode.py) the computer never sleeps from here."""
+    times=settings["idle_battery"] if battery.present and battery.on_battery else settings["idle"]
+    if servermode.active() if server is None else server: times={**times,"sleep":0}
+    return times
 
-def critical(settings, battery):
-    """The action to take now because the battery is nearly empty ("" for none)."""
+def critical(settings, battery, server=None):
+    """The action to take now because the battery is nearly empty ("" for none; always none in server mode)."""
     c=settings["battery_critical"]
+    if servermode.active() if server is None else server: return ""
     if not (battery.present and battery.on_battery) or c["action"]=="nothing": return ""
     return c["action"] if battery.percent<=c["percent"] else ""
 

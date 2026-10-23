@@ -86,6 +86,9 @@ def active_unit() -> str:
     if link.is_symlink():
         unit=os.path.basename(os.readlink(link))
         return unit[:-len(".service")] if unit.endswith(".service") else unit
+    # Under systemd that link is the whole answer: disabling a login screen removes it but leaves the old
+    # default-display-manager file behind, naming one that no longer starts.
+    if path("/run/systemd/system").is_dir(): return ""
     first=_read("/etc/X11/default-display-manager").strip()
     return os.path.basename(first) if first else ""
 current=active_unit
@@ -410,10 +413,10 @@ while [ "$n" -gt 0 ]; do packages="$packages $1"; shift; n=$((n-1)); done
 if [ -n "$packages" ]; then apt-get update -q; DEBIAN_FRONTEND=noninteractive apt-get install -y $packages; fi
 exec "$@"
 """
-def root_command(args, packages=()) -> list:
-    """The command (for sudo) that installs `packages` with apt, then runs `python3 -m tvwcs.loginscreen args` from this
-    copy of TVWCS."""
-    run=["env","PYTHONDONTWRITEBYTECODE=1",f"PYTHONPATH={Path(__file__).resolve().parent.parent}","python3","-m","tvwcs.loginscreen",*args]
+def root_command(args, packages=(), module="tvwcs.loginscreen") -> list:
+    """The command (for sudo) that installs `packages` with apt, then runs `python3 -m <module> args` (this module, or
+    tvwcs.servermode) from this copy of TVWCS."""
+    run=["env","PYTHONDONTWRITEBYTECODE=1",f"PYTHONPATH={Path(__file__).resolve().parent.parent}","python3","-m",module,*args]
     if not packages: return run
     if not all(re.fullmatch(r"[a-z0-9][a-z0-9+.-]*",p) for p in packages): raise ValueError("Unexpected package name.")
     return ["sh","-c",INSTALL_THEN,"sh",str(len(packages)),*packages,*run]

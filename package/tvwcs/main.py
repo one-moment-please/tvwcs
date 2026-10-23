@@ -15,7 +15,7 @@ from tvwcs.ownership import WindowOwners
 from tvwcs.pinlock import PinGate
 from tvwcs import appearance, cursor, power, privilege, quick_status, sway_include, tv_mode
 from tvwcs.session import first_time_this_login, is_tvwcs_process, runtime_dir
-from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, command_for, unavailable_message
+from tvwcs.system_actions import POWER_VERBS, SYSTEM_ACTIONS, allowed, command_for, unavailable_message
 from tvwcs.ui_editors import ProfileEditor
 from tvwcs.ui_window import TVWCSWindow
 from tvwcs.widgets import app_icon, has_icon, screen_height, set_scale
@@ -152,6 +152,7 @@ def idle_action(action):
     if action=="resume": power.screen_on(); return 0
     if power.keep_awake(): return 0
     if action=="screen_off": return 0 if power.screen_off().ok else 1
+    if not allowed(action): return 0   # server mode: an idle sleep set before it was turned on
     command=command_for(action,ConfigStore().settings)
     if not command: print(unavailable_message(action),file=sys.stderr); return 1
     return subprocess.call(command,env=privilege.c_locale_env())
@@ -578,6 +579,8 @@ class TVWCSApp(Gtk.Application):
         except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or sway) to use the new version."); return
         self.hide_window(); self.quit()
     def run_system_action(self,action_id):
+        if not allowed(action_id):
+            self.notify_message("This computer is in server mode: it is not put to sleep, restarted or shut down from TVWCS."); return
         command=command_for(action_id,self.store.settings)
         if not command:
             self.notify_message(unavailable_message(action_id)); return
@@ -772,7 +775,7 @@ def main():
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
     if args==["start"]: return TVWCSApp().run([])   # the launcher itself, whatever the session (tvwcs.conf starts it so)
-    if args: print("Usage: tvwcs [start|toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    if args: print("Usage: tvwcs [start|toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]|-s [--user=NAME]|--no-server-mode|--start [--user=NAME]]",file=sys.stderr); return 2
     return start_here()
 
 def start_here():

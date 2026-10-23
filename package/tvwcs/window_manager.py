@@ -121,9 +121,10 @@ class WindowManager:
             self._call(TVWCS_CRITERIA,"move","container","to","workspace","current")
 
     def place_tvwcs(self,x,y,width,height):
-        """Float the TVWCS window with no border at an exact rectangle."""
+        """Float the TVWCS window with no border at an exact rectangle, and show it: tvwcs.conf maps it invisible, so it
+        does not first flash in the middle of the screen."""
         if not self.binary: return False
-        return bool(self._call(f"{TVWCS_CRITERIA} floating enable, border pixel 0, resize set {int(width)} {int(height)}, move absolute position {int(x)} {int(y)}"))
+        return bool(self._call(f"{TVWCS_CRITERIA} floating enable, border pixel 0, resize set {int(width)} {int(height)}, move absolute position {int(x)} {int(y)}, opacity 1"))
 
     # ------------------------------------------------------------ launching and focusing
     def new_workspace_number(self):

@@ -4,6 +4,14 @@ import os, tempfile, unittest
 
 from tvwcs import power
 
+from unittest import mock as _mock
+from tvwcs import servermode as _servermode
+
+# These tests are about a computer without server mode, whatever the one running them has in /etc/tvwcs/server-mode.
+_not_server=_mock.patch.object(_servermode,"server_user",lambda:"")
+def setUpModule(): _not_server.start()
+def tearDownModule(): _not_server.stop()
+
 class PowerTests(unittest.TestCase):
     def test_idle_option_is_cleaned(self):
         self.assertEqual(power.clean_idle(None),{"screen_off":0,"lock":0,"sleep":0})

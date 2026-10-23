@@ -11,10 +11,11 @@ PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONPATH
 # Plain `tvwcs` at a text console (no graphical session): TVWCS's own sway session, in TV mode. Elsewhere tvwcs.main
 # decides (sway_include.where).
+# Server mode's options, and plain `tvwcs` over SSH (a menu: start TVWCS on the computer's screen, server mode), need
+# no GTK (servermode.py).
+case "${1:-}" in -s|--server-mode|--no-server-mode|--start|--user=*) exec python3 -m tvwcs.servermode cli "$@" ;; esac
 if [ $# -eq 0 ] && [ -z "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
-    if [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]; then
-        echo "tvwcs starts TVWCS's session on the computer's own screen: run it at its text console, not over SSH." >&2; exit 1
-    fi
+    if [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]; then exec python3 -m tvwcs.servermode cli; fi
     if command -v pgrep >/dev/null 2>&1 && pgrep -u "$(id -u)" -x sway >/dev/null 2>&1; then
         echo "A sway session of yours is already running (on another console). TVWCS runs once per user: use that one." >&2; exit 1
     fi

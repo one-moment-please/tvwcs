@@ -1,6 +1,14 @@
 import unittest
 from tvwcs.system_actions import SYSTEM_ACTIONS, command_for, lock_command, login_manager_installed, logout_command, can_log_out, power_menu, unavailable_message
 
+from unittest import mock as _mock
+from tvwcs import servermode as _servermode
+
+# These tests are about a computer without server mode, whatever the one running them has in /etc/tvwcs/server-mode.
+_not_server=_mock.patch.object(_servermode,"server_user",lambda:"")
+def setUpModule(): _not_server.start()
+def tearDownModule(): _not_server.stop()
+
 class SystemActionTests(unittest.TestCase):
     def test_dialog_contents(self):
         ids=[a.id for a in SYSTEM_ACTIONS]
@@ -36,6 +44,8 @@ class SystemActionTests(unittest.TestCase):
     def test_finds_a_login_screen(self):
         self.assertTrue(login_manager_installed(lambda p:p=="/etc/systemd/system/display-manager.service",lambda n:None))
         self.assertFalse(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))   # installed, not started
+        stale=lambda p:p in ("/run/systemd/system","/etc/X11/default-display-manager")
+        self.assertFalse(login_manager_installed(stale))   # disabled under systemd: its default-display-manager stays behind
     def test_log_out_follows_how_this_login_started(self):
         class Out:
             def __init__(self, text, code=0): self.stdout=text; self.returncode=code
