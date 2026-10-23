@@ -86,6 +86,9 @@ def active_unit() -> str:
     if link.is_symlink():
         unit=os.path.basename(os.readlink(link))
         return unit[:-len(".service")] if unit.endswith(".service") else unit
+    # Under systemd that link is the whole answer: disabling a login screen removes it but leaves the old
+    # default-display-manager file behind, naming one that no longer starts.
+    if path("/run/systemd/system").is_dir(): return ""
     first=_read("/etc/X11/default-display-manager").strip()
     return os.path.basename(first) if first else ""
 current=active_unit

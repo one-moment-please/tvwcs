@@ -36,6 +36,8 @@ class SystemActionTests(unittest.TestCase):
     def test_finds_a_login_screen(self):
         self.assertTrue(login_manager_installed(lambda p:p=="/etc/systemd/system/display-manager.service",lambda n:None))
         self.assertFalse(login_manager_installed(lambda p:False,lambda n:"/usr/sbin/lightdm" if n=="lightdm" else None))   # installed, not started
+        stale=lambda p:p in ("/run/systemd/system","/etc/X11/default-display-manager")
+        self.assertFalse(login_manager_installed(stale))   # disabled under systemd: its default-display-manager stays behind
     def test_log_out_follows_how_this_login_started(self):
         class Out:
             def __init__(self, text, code=0): self.stdout=text; self.returncode=code

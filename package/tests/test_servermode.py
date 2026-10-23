@@ -53,9 +53,14 @@ class ServerModeTests(unittest.TestCase):
         argv=self.c.calls[-1]
         self.assertEqual(argv[0],"systemd-run"); self.assertIn("PAMName=login",argv); self.assertIn("TTYPath=/dev/tty1",argv)
         self.assertIn("User=bob",argv); self.assertEqual(argv[-1],"/usr/bin/tvwcs-session")
+        self.assertIn("ExecStopPost=+/bin/systemctl --no-block start getty@tty1.service",argv)   # as root: bob may not start a getty
         sessions["3"]="1 tty1"
         self.assertEqual(servermode.free_console(run),2)
         with self.assertRaises(SystemExit): self.c.start("bob",run=lambda argv,**k:Done(0))   # bob's sway runs already
+
+    def test_switching_console_without_one_is_not_an_error(self):
+        def opener(*a): raise PermissionError("no /dev/tty0")
+        self.assertFalse(servermode.switch_console(1,opener))
 
     def test_command_line(self):
         self.assertEqual(servermode.parse(["-s"]),("on",""))

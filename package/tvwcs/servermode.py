@@ -17,7 +17,7 @@ As root: python3 -m tvwcs.servermode on USER | off | start USER | status. As any
 -s / --server-mode [--user=NAME], --no-server-mode and --start [--user=NAME] here (cli), which ask sudo for the rest;
 over SSH plain `tvwcs` offers the same as a short menu."""
 from __future__ import annotations
-import json, os, pwd, re, shlex, shutil, subprocess, sys, time
+import fcntl, json, os, pwd, re, shlex, shutil, subprocess, sys, time
 from pathlib import Path
 from tvwcs import loginscreen
 from tvwcs.loginscreen import path
@@ -127,15 +127,24 @@ class Changer(loginscreen.Changer):
               "-p","StandardInput=tty-fail","-p","StandardOutput=journal","-p","StandardError=journal",
               "-p",f"UtmpIdentifier=tty{vt}","-p","UtmpMode=user",
               "-p",f"Conflicts=getty@tty{vt}.service","-p",f"After=getty@tty{vt}.service",
-              "-p",f"ExecStopPost=/bin/systemctl --no-block start getty@tty{vt}.service",
+              "-p",f"ExecStopPost=+/bin/systemctl --no-block start getty@tty{vt}.service",   # + : as root (the user may not start a getty)
               "-E","XDG_SESSION_TYPE=wayland","-E","XDG_SESSION_CLASS=user",
               loginscreen.SESSION_COMMAND]
         self.calls.append(argv)
         if self._run is not None:
             r=run(argv,capture_output=True,text=True)
             if r.returncode: raise SystemExit((r.stderr or r.stdout).strip() or "systemd-run could not start TVWCS's session.")
-            run(["chvt",str(vt)],capture_output=True)
+            switch_console(vt)
         self.out(f"TVWCS is starting for {user} on the computer's screen (console {vt}).")
+
+def switch_console(vt, opener=os.open) -> bool:
+    """Show console `vt` on the screen, as chvt does (that comes with kbd, which is not always installed)."""
+    try:
+        fd=opener("/dev/tty0",os.O_RDWR|os.O_NOCTTY)
+        try: fcntl.ioctl(fd,0x5606,vt)   # VT_ACTIVATE
+        finally: os.close(fd)
+        return True
+    except OSError: return False
 
 def free_console(run=subprocess.run) -> int:
     """The first of consoles 1-6 that no login session (a console login, a login screen or its session) is on, or 0."""

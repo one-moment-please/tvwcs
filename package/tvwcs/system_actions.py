@@ -32,6 +32,8 @@ def login_manager_installed(exists=os.path.exists, which=shutil.which):
     out only with one. One installed but not set up to start does not count.
     `which` is accepted for older callers."""
     if exists("/etc/systemd/system/display-manager.service"): return True
+    # under systemd the link is the whole answer (disabling a login screen leaves default-display-manager behind)
+    if exists("/run/systemd/system") or not exists("/etc/X11/default-display-manager"): return False
     try:
         with open("/etc/X11/default-display-manager",encoding="utf-8") as f:
             return bool(f.read().strip())

@@ -7,6 +7,11 @@
 - **`tvwcs` over SSH** offers to start TVWCS on the computer's own screen, or to turn server mode on or off. `tvwcs --start --user=NAME` starts TVWCS for NAME on the first free text console, once.
 - greetd is no longer suggested by the package either.
 - Removing the package or `install.sh --remove` also turns server mode off.
+- **Removing the package** also undoes a login screen's automatic login into TVWCS: greetd goes back to its plain text login (the old config is kept as `config.toml.tvwcs-backup`), and LightDM's and SDDM's TVWCS automatic-login files are deleted, as `install.sh --remove` already did.
+- **TVWCS has its own badge on Linux Mint's login screen** (slick-greeter): the logo's TV, in place of a blank white disc.
+- A login screen that was disabled (say `systemctl disable greetd`) no longer counts as the one in use: its old `/etc/X11/default-display-manager` file stays behind, and Settings' automatic login and the installer used to set up that login screen instead of the console's automatic login.
+- The Quick Menu's network panel has no Network settings button in server mode. `tvwcs --help` lists the server mode options.
+- The demo videos in the README now play there, as animated previews; click one for the full video.
 
 ## 5.6.0 — 2026-10-22
 

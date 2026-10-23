@@ -775,7 +775,7 @@ def main():
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
     if args==["start"]: return TVWCSApp().run([])   # the launcher itself, whatever the session (tvwcs.conf starts it so)
-    if args: print("Usage: tvwcs [start|toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]]",file=sys.stderr); return 2
+    if args: print("Usage: tvwcs [start|toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]|-s [--user=NAME]|--no-server-mode|--start [--user=NAME]]",file=sys.stderr); return 2
     return start_here()
 
 def start_here():

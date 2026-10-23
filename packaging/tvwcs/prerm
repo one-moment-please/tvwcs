@@ -9,6 +9,16 @@ if [ "$1" = remove ] && [ -f /etc/systemd/system/getty@tty1.service.d/tvwcs-auto
     rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
     if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
 fi
+# A login screen's automatic login into TVWCS's session would fail without it: greetd goes back to its plain text
+# login (as install.sh --remove does; the old config is kept as config.toml.tvwcs-backup), LightDM and SDDM lose
+# TVWCS's automatic-login file.
+if [ "$1" = remove ]; then
+    if grep -q tvwcs-session /etc/greetd/config.toml 2>/dev/null; then
+        cp /etc/greetd/config.toml /etc/greetd/config.toml.tvwcs-backup
+        printf '%s\n' "[terminal]" "vt = 7" "" "[default_session]" 'command = "/usr/sbin/agreety --cmd /bin/sh"' 'user = "_greetd"' > /etc/greetd/config.toml
+    fi
+    rm -f /etc/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf /etc/sddm.conf.d/50-tvwcs-autologin.conf
+fi
 # Server mode's switch and polkit rule: without TVWCS there is no TV to keep away from the server's settings.
 if [ "$1" = remove ]; then
     rm -f /etc/tvwcs/server-mode /etc/polkit-1/rules.d/50-tvwcs-server-mode.rules

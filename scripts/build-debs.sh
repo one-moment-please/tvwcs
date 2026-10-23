@@ -23,7 +23,7 @@ build() {   # build <staged tree>: owned by root, standard permissions
 # ---------------------------------------------------------------------- tvwcs
 P=$STAGE/tvwcs
 install -d "$P/usr/lib/tvwcs/tvwcs" "$P/usr/bin" "$P/usr/share/tvwcs" "$P/usr/share/wayland-sessions" "$P/usr/share/applications" \
-    "$P/usr/share/icons/hicolor/scalable/apps" "$P/usr/share/doc/tvwcs"
+    "$P/usr/share/icons/hicolor/scalable/apps" "$P/usr/share/doc/tvwcs" "$P/usr/share/slick-greeter/badges"
 install -m 644 "$ROOT"/package/tvwcs/*.py "$P/usr/lib/tvwcs/tvwcs/"
 install -d "$P/usr/lib/tvwcs/tvwcs/retro/icons/hicolor/scalable/actions"   # the Retro theme's fonts, icons and TV static (scripts/make-retro-assets.py)
 install -m 644 "$ROOT"/package/tvwcs/retro/*.ttf "$ROOT"/package/tvwcs/retro/*.png "$P/usr/lib/tvwcs/tvwcs/retro/"
@@ -33,6 +33,8 @@ install -m 755 "$ROOT/package/bin/tvwcs" "$P/usr/bin/tvwcs"
 install -m 755 "$ROOT/data/tvwcs-session" "$P/usr/bin/tvwcs-session"
 install -m 644 "$ROOT/data/tvwcs.conf" "$P/usr/share/tvwcs/tvwcs.conf"
 install -m 644 "$ROOT/data/tvwcs-sway.desktop" "$P/usr/share/wayland-sessions/tvwcs-sway.desktop"
+# slick-greeter (Linux Mint's login screen) shows badges/<session file name>.svg next to a session, else a blank disc
+install -m 644 "$ROOT/data/tvwcs-sway-badge.svg" "$P/usr/share/slick-greeter/badges/tvwcs-sway.svg"
 install -m 644 "$ROOT/data/com.tvwcs.ControlPanel.desktop" "$P/usr/share/applications/"
 install -m 644 "$ROOT/data/tvwcs.svg" "$ROOT/data/tvwcs-settings.svg" "$P/usr/share/icons/hicolor/scalable/apps/"
 install -m 644 "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$P/usr/share/doc/tvwcs/"

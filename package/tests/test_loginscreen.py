@@ -38,6 +38,13 @@ class RootTests(unittest.TestCase):
         lib=self.root/"usr"/"local"/"lib"/"tvwcs-greeter"; lib.mkdir(parents=True); (lib/"greeter").write_text("")
         (self.etc/"tvwcs").mkdir(); (self.etc/"tvwcs"/"login-screen.json").write_text("{}")
 
+    def test_a_disabled_login_screen_does_not_count(self):
+        (self.etc/"X11").mkdir(); (self.etc/"X11"/"default-display-manager").write_text("/usr/sbin/greetd\n")
+        self.assertEqual(loginscreen.active_unit(),"greetd")   # no systemd: the file decides
+        (self.root/"run"/"systemd"/"system").mkdir(parents=True)
+        self.assertEqual(loginscreen.active_unit(),"")         # systemd: only display-manager.service does
+        self.use("lightdm"); self.assertEqual(loginscreen.active_unit(),"lightdm")
+
     def test_greeter_names(self):
         self.assertEqual(loginscreen.current_greeter({"default_session":{"command":"agreety --cmd /bin/sh"}}),"agreety")
         self.assertEqual(loginscreen.current_greeter({"default_session":{"command":"cage -s -d -- /usr/local/lib/tvwcs-greeter/greeter"}}),"tvwcs")

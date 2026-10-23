@@ -108,6 +108,8 @@ DISPLAY_MANAGERS="gdm3 gdm sddm lightdm lxdm xdm slim ly greetd emptty nodm entr
 login_screen() {   # the login screen that runs at start-up (lightdm, gdm3, greetd...), or "" for none
     N=""
     if [ -L "$ETC/systemd/system/display-manager.service" ]; then N=$(readlink "$ETC/systemd/system/display-manager.service"); N=${N##*/}; N=${N%.service}
+    # under systemd the link is the whole answer: disabling a login screen leaves default-display-manager behind
+    elif [ "$ETC" = /etc ] && [ -d /run/systemd/system ]; then :
     elif [ -s "$ETC/X11/default-display-manager" ]; then N=$(sed -n 1p "$ETC/X11/default-display-manager"); N=${N##*/}; fi
     echo "$N"
 }
