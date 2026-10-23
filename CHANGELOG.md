@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.9.2 — 2026-10-23
+
+- README, server mode: how to set up a separate standard account for the TV, and why a numeric password of 4 to 6 digits is enough for it when it cannot sign in over SSH with a password (never for an administrator account).
+
 ## 5.9.1 — 2026-10-23
 
 - Retro theme, VT323 font: ligatures are off, so "fi" and "ff" are two letters again ("Jellyfin" read as "Jellyfn" and "Off" had a joined ff).
