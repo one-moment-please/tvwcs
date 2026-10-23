@@ -11,6 +11,7 @@
 - **TVWCS has its own badge on Linux Mint's login screen** (slick-greeter): the logo's TV, in place of a blank white disc.
 - A login screen that was disabled (say `systemctl disable greetd`) no longer counts as the one in use: its old `/etc/X11/default-display-manager` file stays behind, and Settings' automatic login and the installer used to set up that login screen instead of the console's automatic login.
 - The Quick Menu's network panel has no Network settings button in server mode. `tvwcs --help` lists the server mode options.
+- **The Quick Menu no longer flashes in the middle of the screen** before it moves to its corner. sway shows a new floating window centred first and TVWCS's placement came a moment later; the window now starts out invisible until it is in place.
 - The demo videos in the README now play there, as animated previews; click one for the full video.
 
 ## 5.6.0 — 2026-10-22
