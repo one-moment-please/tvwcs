@@ -111,26 +111,28 @@ def draw_server_mode(page, a, server):
     page.row("Server mode",f"On for {server}" if server else "Off",lambda:(turn_server_off if server else turn_server_on)(page,a),
              detail="No power, update, network or other administrator settings on the TV" if not server else "Turning it off needs an administrator",
              ident="user:server",value_css="state-on" if server else "setting-value")
-    if server and sway_include.in_sway(): draw_lock_after(page)
+    if server and sway_include.in_sway(): draw_idle_times(page)
     page.note("For a computer that is a server first: the account that uses the TV logs in automatically into TVWCS, "
               "and nobody can put the computer to sleep, restart or shut it down, update it, change its network or unmount "
               "its drives from TVWCS. Also from a terminal or over SSH: tvwcs -s --user=NAME.")
 
-def draw_lock_after(page):
-    """Power and sleep is turned off in server mode, so its one setting that keeps the server safe, locking the TV
-    when nobody uses it, is here instead. It sets both of Power's times (plugged in and on battery)."""
-    lock=ConfigStore().settings["idle"]["lock"]
-    page.row(power.LABELS["lock"],power.duration_text(lock),lambda:choose_lock_after(page,lock),
-             detail="When nothing is touched, in place of Power and sleep's time",ident="user:lock")
+def draw_idle_times(page):
+    """Power and sleep is turned off in server mode, so the times there that keep the server safe and do not need an
+    administrator, turning off the screen and locking the TV when nobody uses it, are here instead. Each sets both of
+    Power's times (plugged in and on battery)."""
+    idle=ConfigStore().settings["idle"]
+    for action in ("screen_off","lock"):
+        page.row(power.LABELS[action],power.duration_text(idle[action]),lambda a=action:choose_idle_time(page,a,idle[a]),
+                 detail="When nothing is touched, in place of Power and sleep's time",ident=f"user:{action}")
 
-def choose_lock_after(page, current):
+def choose_idle_time(page, action, current):
     def picked(key):
         store=ConfigStore()
-        for option in ("idle","idle_battery"): store.settings[option]["lock"]=int(key)
+        for option in ("idle","idle_battery"): store.settings[option][action]=int(key)
         store.save()
         from tvwcs.ui_control_pages import tell_tvwcs
         tell_tvwcs("reload"); page.refresh(quiet=True)
-    page.win.choose_option(power.LABELS["lock"],[(str(v),power.duration_text(v)) for v in power.CHOICES],str(current),picked)
+    page.win.choose_option(power.LABELS[action],[(str(v),power.duration_text(v)) for v in power.CHOICES],str(current),picked)
 
 def turn_server_on(page, a):
     if not a.admin:
