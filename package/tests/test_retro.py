@@ -74,6 +74,7 @@ class RetroThemeTests(unittest.TestCase):
         self.assertIn('"Inter"',inter); self.assertNotIn("TVWCS Pixel",inter); self.assertIn("font-weight: 200",inter)   # Modern's weights
         self.assertIn("font-size: 24px",next(l for l in inter.splitlines() if l.startswith("button { ")))   # scaled, not snapped
         self.assertIn("tvwcs-vt-check-symbolic",vt)
+        self.assertIn('"liga" 0',vt); self.assertNotIn('"liga" 0',inter)   # VT323 would draw "fi" as one cell
         self.assertEqual(retro.retro_icon_name("view-more-symbolic","tvwcs-vt"),"tvwcs-vt-dots-symbolic")
         self.assertIn("TVWCS Pixel",theme.render_css("#0078d7",style="retro",retro_font="nonsense"))
     def test_phosphor_replaces_the_accent(self):

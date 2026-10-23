@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.9.1 — 2026-10-23
+
+- Retro theme, VT323 font: ligatures are off, so "fi" and "ff" are two letters again ("Jellyfin" read as "Jellyfn" and "Off" had a joined ff).
+
 ## 5.9.0 — 2026-10-23
 
 - **Settings › Appearance › Font (Retro theme):** Pixel (TVWCS's own pixel fonts, as before), **VT323** (after a 1970s DEC terminal's font; bundled, SIL Open Font License) or **Inter** (a smooth font made to be easy to read; from the fonts-inter package, now recommended, else Open Sans). Each has icons to match: Pixel keeps the square pixel icons, VT323 has the same drawings in its rounded dots, and Inter uses the icon theme's standard symbolic icons. VT323 and Inter are drawn smoothed and sized like Modern's text (VT323 40 % larger, as its letters are small for their size); Inter keeps Modern's bold and light weights.

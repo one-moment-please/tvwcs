@@ -174,6 +174,9 @@ def _large_fonts(css):
 # Settings > Appearance > Font (model.RETRO_FONTS): the pixel fonts above, VT323, or Inter. VT323 is drawn 40 %
 # larger, its letters being small for their size; it and Inter are smoothed and sized freely (render_css).
 RETRO_FAMILIES={"vt323":'"VT323", monospace',"readable":'"Inter", "Open Sans", sans-serif'}
+NO_LIGATURES="""
+window.tvwcs-window, .tvwcs-root, textview.console text { font-feature-settings: "liga" 0, "clig" 0; }
+"""   # VT323 joins "fi" and "ff" into one cell, so "Jellyfin" read as "Jellyfn"
 FONT_GROWTH={"vt323":1.4}
 
 def retro_css(css, font="pixel"):
@@ -183,7 +186,7 @@ def retro_css(css, font="pixel"):
     css=css.replace("#ffffff","@FG@").replace("#e3eefa","@MUTED@").replace("#000000","@FG@").replace("text-shadow: none; ","")   # buttons keep the glow
     if font!="readable": css=re.sub(r"font-weight:\s*\d+","font-weight: 400",css)
     rules=RETRO_CSS.replace("@CHECK@",{"vt323":"tvwcs-vt-check-symbolic","readable":"object-select-symbolic"}.get(font,"tvwcs-retro-check-symbolic"))
-    if font in RETRO_FAMILIES: return css+rules.replace("@SMALL@",RETRO_FAMILIES[font])
+    if font in RETRO_FAMILIES: return css+rules.replace("@SMALL@",RETRO_FAMILIES[font])+(NO_LIGATURES if font=="vt323" else "")
     return _large_fonts(css)+rules.replace("@SMALL@",SMALL_FONT)
 
 SMALL_BELOW=15  # px at desktop size: notes and details, a step smaller than the text they explain
