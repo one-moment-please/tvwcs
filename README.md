@@ -93,6 +93,8 @@ For a computer that is a server first and an HTPC second. One account uses the T
 - **Turn it on:** Settings › User › Server mode (an administrator, who chooses the account), or `tvwcs -s --user=NAME` in a terminal or over SSH (`NAME` is you by default; sudo asks for your password).
 - **Turn it off:** Settings › User › Server mode asks for an administrator's password (and which administrator, from a standard account), or `tvwcs --no-server-mode`. The automatic login stays.
 - **Start TVWCS on the screen now,** for example over SSH: `tvwcs --start --user=NAME`. It starts on the first free text console and logs NAME in there once.
+- **A separate account for the TV** keeps the TV away from your own files. Create it yourself as a standard account (not an administrator), for example `sudo adduser tv`, then turn server mode on for it: `tvwcs -s --user=tv`.
+- **Its password:** for a standard account that cannot sign in over SSH with a password, a numeric password of 6 digits (4 at the least) is enough for everyday use, and it is quick to type on a remote's number keys. Stop password sign-ins over SSH with Settings › System information › Sign in with › Keys only (for every account), or for this account alone with a `DenyUsers tv` line in a file in `/etc/ssh/sshd_config.d/`. Never give an administrator account a short numeric password: anyone at the TV could use it with sudo.
 
 ### What the installer asks
 
