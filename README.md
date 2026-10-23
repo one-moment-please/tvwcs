@@ -86,14 +86,16 @@ Installing the package only adds the **TVWCS** session to the login screen. It c
 - **In another desktop** (GNOME, KDE, an X11 session): it opens Settings. The pages that only work in sway (Appearance, Remote and hotkeys, Displays, Power and sleep, and logging in) are shown turned off.
 - **Over SSH:** it offers to start TVWCS on the computer's own screen, or to turn server mode on or off.
 
+Each of these also has its own command, for scripts or when you want one in particular: `tvwcs session` (TVWCS's session, at a text console), `tvwcs settings [page]`, `tvwcs server-mode on|off|status` and `tvwcs start-session`. `tvwcs help` lists them all.
+
 ### Server mode
 
 For a computer that is a server first and an HTPC second. One account uses the TV: it logs in automatically into TVWCS, and from TVWCS nobody can put the computer to sleep, restart it or shut it down, update it, change its network, or unmount its drives. The Quick Menu's power menu keeps only Lock (and Log out with a login screen). In Settings, Power and sleep, Software updates and Network are turned off, and every other setting that needs an administrator is hidden. A polkit rule backs this up for that account, whatever program asks.
 
-- **Turn it on:** Settings › User › Server mode (an administrator, who chooses the account), or `tvwcs -s --user=NAME` in a terminal or over SSH (`NAME` is you by default; sudo asks for your password).
-- **Turn it off:** Settings › User › Server mode asks for an administrator's password (and which administrator, from a standard account), or `tvwcs --no-server-mode`. The automatic login stays.
-- **Start TVWCS on the screen now,** for example over SSH: `tvwcs --start --user=NAME`. It starts on the first free text console and logs NAME in there once.
-- **A separate account for the TV** keeps the TV away from your own files. Create it yourself as a standard account (not an administrator), for example `sudo adduser tv`, then turn server mode on for it: `tvwcs -s --user=tv`.
+- **Turn it on:** Settings › User › Server mode (an administrator, who chooses the account), or `tvwcs server-mode on --user=NAME` in a terminal or over SSH (`NAME` is you by default; sudo asks for your password).
+- **Turn it off:** Settings › User › Server mode asks for an administrator's password (and which administrator, from a standard account), or `tvwcs server-mode off`. The automatic login stays. `tvwcs server-mode status` says whether it is on, and for whom.
+- **Start TVWCS on the screen now,** for example over SSH: `tvwcs start-session --user=NAME`. It starts on the first free text console and logs NAME in there once.
+- **A separate account for the TV** keeps the TV away from your own files. Create it yourself as a standard account (not an administrator), for example `sudo adduser tv`, then turn server mode on for it: `tvwcs server-mode on --user=tv`.
 - **Its password:** for a standard account that cannot sign in over SSH with a password, a numeric password of 6 digits (4 at the least) is enough for everyday use, and it is quick to type on a remote's number keys. Stop password sign-ins over SSH with Settings › System information › Sign in with › Keys only (for every account), or for this account alone with a `DenyUsers tv` line in a file in `/etc/ssh/sshd_config.d/`. Never give an administrator account a short numeric password: anyone at the TV could use it with sudo.
 
 ### What the installer asks

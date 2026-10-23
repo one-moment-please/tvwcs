@@ -69,6 +69,17 @@ class ServerModeTests(unittest.TestCase):
         self.assertEqual(servermode.parse(["--no-server-mode"]),("off",""))
         self.assertEqual(servermode.parse(["--no-server-mode","--user=bob"]),("",""))
         self.assertEqual(servermode.parse(["-s","--bogus"]),("",""))
+        self.assertEqual(servermode.parse(["server-mode","on"]),("on",""))
+        self.assertEqual(servermode.parse(["server-mode","on","--user=bob"]),("on","bob"))
+        self.assertEqual(servermode.parse(["server-mode","off"]),("off",""))
+        self.assertEqual(servermode.parse(["server-mode","status"]),("status",""))
+        self.assertEqual(servermode.parse(["start-session","--user=bob"]),("start","bob"))
+        self.assertEqual(servermode.parse(["start-session"]),("start",""))
+        for wrong in (["server-mode"],["server-mode","maybe"],["server-mode","off","--user=bob"],["server-mode","on","-s"],
+                      ["start-session","bob"],["-s","--no-server-mode"]):
+            self.assertEqual(servermode.parse(wrong),("",""),wrong)
+        with mock.patch.object(servermode,"server_user",lambda:"bob"): self.assertEqual(servermode.status_text(),"Server mode is on for bob.")
+        with mock.patch.object(servermode,"server_user",lambda:""): self.assertEqual(servermode.status_text(),"Server mode is off.")
         answers=iter(["2","bob"]); ran=[]
         with mock.patch.object(servermode,"as_root",lambda args:ran.append(args) or 0):
             self.assertEqual(servermode.menu(ask=lambda _p:next(answers),out=lambda *_a:None),0)

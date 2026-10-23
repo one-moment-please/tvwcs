@@ -14,7 +14,7 @@ Turning it on also logs the server user in automatically into TVWCS at start-up 
 automatic login, or the first text console's without one). Turning it off leaves the automatic login as it is.
 
 As root: python3 -m tvwcs.servermode on USER | off | start USER | status. As anyone, the `tvwcs` launcher passes
--s / --server-mode [--user=NAME], --no-server-mode and --start [--user=NAME] here (cli), which ask sudo for the rest;
+`server-mode on [--user=NAME] | off | status` and `start-session [--user=NAME]` here (cli; also the older -s, --no-server-mode and --start), which ask sudo for the rest;
 over SSH plain `tvwcs` offers the same as a short menu."""
 from __future__ import annotations
 import fcntl, json, os, pwd, re, shlex, shutil, subprocess, sys, time
@@ -29,7 +29,7 @@ _USER=re.compile(r"[a-z_][a-z0-9_.-]*\$?")
 # The polkit actions the server user is refused. logind's carry suffixes (-multiple-sessions, -ignore-inhibit).
 POLKIT_TEXT="""// Written by TVWCS (server mode). {user} uses the TV: they cannot put this computer to sleep, restart it or shut
 // it down, unmount drives they did not mount or switch drives off, or change the system's network connections.
-// Removed when server mode is turned off (TVWCS Settings > User, or: tvwcs --no-server-mode).
+// Removed when server mode is turned off (TVWCS Settings > User, or: tvwcs server-mode off).
 polkit.addRule(function(action, subject) {{
     if (subject.user != "{user}") return polkit.Result.NOT_HANDLED;
     var id = action.id;
@@ -94,7 +94,7 @@ class Changer(loginscreen.Changer):
     def turn_on(self, user, autologin=True):
         entry=self.check_user(user)
         self.write(CONF,f"# Written by TVWCS: server mode is on, and {user} uses the TV. Turn it off in TVWCS Settings > User, or\n"
-                        f"# with: tvwcs --no-server-mode\nuser={user}\n")
+                        f"# with: tvwcs server-mode off\nuser={user}\n")
         self.write(POLKIT_RULE,POLKIT_TEXT.format(user=user))
         said=f"Server mode is on: {user} uses the TV, without power, update, network or other administrator settings."
         if autologin:
@@ -163,11 +163,13 @@ def free_console(run=subprocess.run) -> int:
     return next((n for n in range(1,7) if n not in used),0)
 
 # ---------------------------------------------------------------------- the command line
-USAGE="""Usage: tvwcs -s | --server-mode [--user=NAME]   turn on server mode, NAME (you, by default) using the TV and
-                                               logged in automatically into TVWCS
-       tvwcs --no-server-mode                  turn server mode off (the automatic login stays)
-       tvwcs --start [--user=NAME]             start TVWCS for NAME on this computer's screen now (for example over SSH)
-They ask for an administrator's password (sudo). Over SSH, plain tvwcs offers them as a menu."""
+USAGE="""Usage: tvwcs server-mode on [--user=NAME]   turn on server mode, NAME (you, by default) using the TV and
+                                           logged in automatically into TVWCS
+       tvwcs server-mode off                 turn server mode off (the automatic login stays)
+       tvwcs server-mode status              say whether server mode is on, and for whom
+       tvwcs start-session [--user=NAME]     start TVWCS for NAME on this computer's screen now (for example over SSH)
+They ask for an administrator's password (sudo). Over SSH, plain tvwcs offers them as a menu. (The older spellings
+-s / --server-mode, --no-server-mode and --start still work.)"""
 
 def me() -> str:
     try: return pwd.getpwuid(os.getuid()).pw_name
@@ -182,16 +184,27 @@ def as_root(args, run=subprocess.run) -> int:
     return run(argv).returncode
 
 def parse(args):
-    """-> (what, user): what is "on", "off", "start" or "" (not ours / wrong); user "" for the default."""
-    what=""; user=""
-    for a in args:
-        if a in ("-s","--server-mode"): what=what or "on"
-        elif a=="--no-server-mode": what=what or "off"
-        elif a=="--start": what=what or "start"
-        elif a.startswith("--user=") and a[7:]: user=a[7:]
+    """-> (what, user): what is "on", "off", "status", "start" or "" (not ours / wrong); user "" for the default.
+    `server-mode on|off|status` and `start-session`, or the older -s / --server-mode, --no-server-mode and --start."""
+    words={("server-mode","on"):"on",("server-mode","off"):"off",("server-mode","status"):"status",("start-session",):"start"}
+    what=""; rest=list(args)
+    for key,name in words.items():
+        if tuple(args[:len(key)])==key: what=name; rest=list(args[len(key):]); break
+    user=""
+    for a in rest:
+        if a.startswith("--user=") and a[7:]: user=a[7:]
+        elif not what and a in ("-s","--server-mode"): what="on"
+        elif not what and a=="--no-server-mode": what="off"
+        elif not what and a=="--start": what="start"
         else: return "",""
-    if what=="off" and user: return "",""
+    if what in ("off","status") and user: return "",""
     return what,user
+
+def status_text() -> str:
+    user=server_user()
+    if not user: return "Server mode is off."
+    if user=="?": return f"Server mode is on, but {CONF} names no valid account."
+    return f"Server mode is on for {user}."
 
 def menu(ask=input, out=print) -> int:
     """Plain `tvwcs` over SSH: what can be done from here, asked in turn."""
@@ -217,6 +230,7 @@ def cli(args) -> int:
         print(USAGE,file=sys.stderr); return 2
     what,user=parse(args)
     if not what: print(USAGE,file=sys.stderr); return 2
+    if what=="status": print(status_text()); return 0
     if what=="off": return as_root(["off"])
     return as_root([what,user or me()])
 

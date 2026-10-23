@@ -81,9 +81,9 @@ def launcher() -> Path:
     return here.parent/"bin"/"tvwcs"              # sensible default even if missing
 
 def start_launcher(popen=subprocess.Popen) -> bool:
-    """Start TVWCS (`tvwcs start`) on its own, as sway's exec line would at the next login: sway does not run exec
+    """Start TVWCS (`tvwcs launcher`) on its own, as sway's exec line would at the next login: sway does not run exec
     lines again when it reloads."""
-    try: popen([str(launcher()),"start"],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); return True
+    try: popen([str(launcher()),"launcher"],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); return True
     except OSError: return False
 
 def reload(run=subprocess.run) -> bool:

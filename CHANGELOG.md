@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.10.0 — 2026-10-23
+
+- **The `tvwcs` command has a name for each thing it does,** and `tvwcs help` lists them. Plain `tvwcs` still does what fits where you type it (at a text console it starts TVWCS's session as you).
+  - `tvwcs session` starts TVWCS's session at a text console. It refuses in a graphical session and over SSH, with a note on what to do instead.
+  - Server mode: `tvwcs server-mode on [--user=NAME]`, `tvwcs server-mode off` and the new `tvwcs server-mode status`. Starting TVWCS on the screen for someone: `tvwcs start-session [--user=NAME]`.
+  - TVWCS itself, as the sway config starts it: `tvwcs launcher` (it was `tvwcs start`, easy to mix up with `--start`).
+  - The old spellings (`-s`, `--server-mode`, `--no-server-mode`, `--start`, `start`, `control`) still work, so existing hotkeys, scripts and a running older TVWCS's restart after an update are not broken. Settings' notes and the README use the new names.
+
 ## 5.9.2 — 2026-10-23
 
 - README, server mode: how to set up a separate standard account for the TV, and why a numeric password of 4 to 6 digits is enough for it when it cannot sign in over SSH with a password (never for an administrator account).

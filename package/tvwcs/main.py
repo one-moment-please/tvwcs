@@ -573,7 +573,8 @@ class TVWCSApp(Gtk.Application):
         self.hide_window(launched=True); return GLib.SOURCE_REMOVE
     def restart(self,launcher=None):
         """Start a fresh TVWCS once this process has exited (after an update replaced the program files), then quit.
-        `launcher`: the new install's launcher, when the update moved TVWCS to another folder."""
+        `launcher`: the new install's launcher, when the update moved TVWCS to another folder. It runs `tvwcs start`,
+        the old name of `tvwcs launcher`, which a release rolled back to before 5.10.0 knows too."""
         wait='while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2" start'
         try: subprocess.Popen(["sh","-c",wait,"sh",str(os.getpid()),str(launcher or LAUNCHER)],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         except OSError as exc: self.notify_message(f"TVWCS was updated, but could not restart itself: {exc}. Restart it (or sway) to use the new version."); return
@@ -774,8 +775,10 @@ def main():
     if args[:1] in (["settings"],["control"]) and len(args)<=2:   # the Settings app, separate (optionally opened on one page); "control" is its old name
         from tvwcs.ui_control import main as settings_app
         return settings_app(args[1:])
-    if args==["start"]: return TVWCSApp().run([])   # the launcher itself, whatever the session (tvwcs.conf starts it so)
-    if args: print("Usage: tvwcs [start|toggle|guide|stop|reload|--version|lock|lock-at-start|launch PROFILE_ID|settings [PAGE]|-s [--user=NAME]|--no-server-mode|--start [--user=NAME]]",file=sys.stderr); return 2
+    # the launcher itself, whatever the session (tvwcs.conf starts it so); "start" is its old name, which an older
+    # TVWCS's restart after an update still runs
+    if args in (["launcher"],["start"]): return TVWCSApp().run([])
+    if args: from tvwcs import usage; return usage.wrong()
     return start_here()
 
 def start_here():

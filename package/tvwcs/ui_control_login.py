@@ -114,7 +114,7 @@ def draw_server_mode(page, a, server):
     if server and sway_include.in_sway(): draw_idle_times(page)
     page.note("For a computer that is a server first: the account that uses the TV logs in automatically into TVWCS, "
               "and nobody can put the computer to sleep, restart or shut it down, update it, change its network or unmount "
-              "its drives from TVWCS. Also from a terminal or over SSH: tvwcs -s --user=NAME.")
+              "its drives from TVWCS. Also from a terminal or over SSH: tvwcs server-mode on --user=NAME.")
 
 def draw_idle_times(page):
     """Power and sleep is turned off in server mode, so the times there that keep the server safe and do not need an
@@ -136,7 +136,7 @@ def choose_idle_time(page, action, current):
 
 def turn_server_on(page, a):
     if not a.admin:
-        page.win.notice("Server mode","Turning server mode on needs an administrator. Ask one to turn it on here, or to run: tvwcs -s --user="+a.login); return
+        page.win.notice("Server mode","Turning server mode on needs an administrator. Ask one to turn it on here, or to run: tvwcs server-mode on --user="+a.login); return
     names=servermode.accounts() or [a.login]
     def picked(user):
         def done(problem):
@@ -161,7 +161,7 @@ def turn_server_off(page, a):
                          lambda:_run_server(page,["off"],"Turning server mode off",done))
         return
     admins=servermode.admins()
-    if not admins: page.win.notice("Server mode","No account here may use sudo, so nobody can turn server mode off from here. As root, run: tvwcs --no-server-mode"); return
+    if not admins: page.win.notice("Server mode","No account here may use sudo, so nobody can turn server mode off from here. As root, run: tvwcs server-mode off"); return
     def with_admin(admin):
         def got(password):
             if not password: return

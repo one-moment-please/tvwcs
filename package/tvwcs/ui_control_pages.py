@@ -386,7 +386,7 @@ class HotkeysPage(_ConfigPage):
             except OSError as exc: self.win.notice("Add TVWCS to sway",f"Could not change {cfg}: {exc}"); return
             self.not_added=False; self.redraw()
             sway_include.reload(); started=sway_include.start_launcher()
-            self.win.notice("TVWCS is part of sway now",f"TVWCS starts with sway from now on{'' if started else ' (start it now with: tvwcs start)'}. "
+            self.win.notice("TVWCS is part of sway now",f"TVWCS starts with sway from now on{'' if started else ' (start it now with: tvwcs launcher)'}. "
                             "Next, choose the keyboard key that opens the Quick Menu.",lambda:self.change_hotkey(ConfigStore(),"keyboard","menu"))
         self.win.confirm("Add TVWCS to sway?",f"TVWCS adds one line to {cfg}:\n\n    {sway_include.INCLUDE}\n\nWith it, TVWCS starts with sway in "
                          "desktop mode, and its hotkeys and window rules work. A copy of the file from before is kept as "

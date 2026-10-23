@@ -9,19 +9,35 @@ for CAND in "$DIR/.." "$DIR"; do
 done
 PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONPATH
-# Plain `tvwcs` at a text console (no graphical session): TVWCS's own sway session, in TV mode. Elsewhere tvwcs.main
-# decides (sway_include.where).
-# Server mode's options, and plain `tvwcs` over SSH (a menu: start TVWCS on the computer's screen, server mode), need
-# no GTK (servermode.py).
-case "${1:-}" in -s|--server-mode|--no-server-mode|--start|--user=*) exec python3 -m tvwcs.servermode cli "$@" ;; esac
-if [ $# -eq 0 ] && [ -z "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
-    if [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]; then exec python3 -m tvwcs.servermode cli; fi
+# `tvwcs help`, server mode's commands and plain `tvwcs` over SSH (a menu: start TVWCS on the
+# computer's screen, server mode) need no GTK (usage.py, servermode.py). The older spellings -s, --server-mode,
+# --no-server-mode, --start and --user= still work.
+case "${1:-}" in
+    help|-h|--help) exec python3 -m tvwcs.usage ;;
+    server-mode|start-session|-s|--server-mode|--no-server-mode|--start|--user=*) exec python3 -m tvwcs.servermode cli "$@" ;;
+esac
+# `tvwcs session`, and plain `tvwcs` at a text console (no graphical session): TVWCS's own sway session, in TV mode.
+# Elsewhere plain `tvwcs` is for tvwcs.main to decide (sway_include.where).
+session() {
     if command -v pgrep >/dev/null 2>&1 && pgrep -u "$(id -u)" -x sway >/dev/null 2>&1; then
         echo "A sway session of yours is already running (on another console). TVWCS runs once per user: use that one." >&2; exit 1
     fi
     SESSION=/usr/bin/tvwcs-session
     [ "$ROOT" = /usr/lib/tvwcs ] || [ ! -x "$ROOT/../data/tvwcs-session" ] || SESSION=$ROOT/../data/tvwcs-session
     exec "$SESSION"
+}
+if [ "$*" = session ]; then
+    if [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+        echo "This is a graphical session already. tvwcs session starts TVWCS's session at a text console, such as the computer's first one (Ctrl+Alt+F1 ... F6)." >&2; exit 1
+    fi
+    if [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]; then
+        echo "TVWCS's session starts on this computer's own screen, not over SSH. To start it there from here: tvwcs start-session" >&2; exit 1
+    fi
+    session
+fi
+if [ $# -eq 0 ] && [ -z "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+    if [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]; then exec python3 -m tvwcs.servermode cli; fi
+    session
 fi
 # The lock screen without GTK, so a session that starts locked (lockscreen.py) locks as soon as it can
 case "${1:-}" in lock|lock-at-start) exec python3 -m tvwcs.lockscreen "$@" ;; esac
