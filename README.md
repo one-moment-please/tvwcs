@@ -84,6 +84,15 @@ Installing the package only adds the **TVWCS** session to the login screen. It c
 - **At a text console** (no graphical session, as on a computer with no login screen): it starts the TVWCS session, in TV mode. To have it start by itself, turn on **Settings › User › Log in automatically after startup**.
 - **In your usual sway session:** it opens Settings and offers to add TVWCS to that session (one `include /usr/share/tvwcs/tvwcs.conf` line in your sway config), then asks for the key that opens the Quick Menu. Once TVWCS is part of the session, `tvwcs` shows the Quick Menu.
 - **In another desktop** (GNOME, KDE, an X11 session): it opens Settings. The pages that only work in sway (Appearance, Remote and hotkeys, Displays, Power and sleep, and logging in) are shown turned off.
+- **Over SSH:** it offers to start TVWCS on the computer's own screen, or to turn server mode on or off.
+
+### Server mode
+
+For a computer that is a server first and an HTPC second. One account uses the TV: it logs in automatically into TVWCS, and from TVWCS nobody can put the computer to sleep, restart it or shut it down, update it, change its network, or unmount its drives. The Quick Menu's power menu keeps only Lock (and Log out with a login screen). In Settings, Power and sleep, Software updates and Network are turned off, and every other setting that needs an administrator is hidden. A polkit rule backs this up for that account, whatever program asks.
+
+- **Turn it on:** Settings › User › Server mode (an administrator, who chooses the account), or `tvwcs -s --user=NAME` in a terminal or over SSH (`NAME` is you by default; sudo asks for your password).
+- **Turn it off:** Settings › User › Server mode asks for an administrator's password (and which administrator, from a standard account), or `tvwcs --no-server-mode`. The automatic login stays.
+- **Start TVWCS on the screen now,** for example over SSH: `tvwcs --start --user=NAME`. It starts on the first free text console and logs NAME in there once.
 
 ### What the installer asks
 
@@ -126,7 +135,7 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 - **On-screen keyboard:** wherever text is typed, the on-screen keyboard can be hidden (it starts that way), full, or a number pad; buttons on it switch, and it opens next time as you left it.
 - **Other keys:** set the Quick Menu key for a keyboard, a remote or a gamepad in **Settings › Remote and hotkeys**, where the apps with hotkeys of their own are listed too. A gamepad needs a key mapper such as AntiMicroX.
 
-From a terminal, `tvwcs` on its own does what fits where it runs (see [Starting TVWCS](#starting-tvwcs-with-the-tvwcs-command)); it also takes `start` (the launcher itself), `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
+From a terminal, `tvwcs` on its own does what fits where it runs (see [Starting TVWCS](#starting-tvwcs-with-the-tvwcs-command)); it also takes `start` (the launcher itself), `-s`/`--server-mode [--user=NAME]`, `--no-server-mode`, `--start [--user=NAME]`, `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
 
 ## Settings
 
@@ -135,7 +144,7 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
 | **Appearance** (`appearance`) | Interface size (Automatic is TV size in TV mode and desktop size otherwise), the theme: Modern (dark or light, passed on to apps that follow the system's choice, with an accent colour and a background colour) or Retro (an old CRT TV's menus in pixel fonts, green, amber or white, on a gray, blue or TV static background), closing TVWCS when it loses focus (on by default), and the screen edge margin for TVs that cut off the edges (overscan), set on a full-screen preview with a slider. |
-| **User** (`user`) | Your name and password, with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM; without a login screen, on the first text console). The login screen in use, and switching to another one installed. The application to open at login (none, the last one used, or one you choose). |
+| **User** (`user`) | Your name and password, server mode (see above), with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM; without a login screen, on the first text console). The login screen in use, and switching to another one installed. The application to open at login (none, the last one used, or one you choose). |
 | **Remote and hotkeys** (`hotkeys`) | In a sway session TVWCS isn't part of yet, **Add TVWCS to sway**. The Quick Menu key for the keyboard, remote and gamepad (clearing one asks first), and the apps that have a hotkey of their own (give one with ✎ on the app). **Reset all hotkeys** puts back the defaults and removes the app hotkeys. |
 | **Sound** (`sound`) | Volume and mute for the output and the input in use. The others are folded under "2 inactive outputs" or "1 inactive input", which open and close. **Allow over-amplification** lets volumes go up to 150 % (off by default: volumes stop at 100 %). |
 | **Displays** (`displays`) | Resolution, refresh rate, arrangement and scale for each display: a row of buttons from 75 % to 200 %. A change goes back after 15 seconds unless you keep it. |

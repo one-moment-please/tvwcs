@@ -10,7 +10,7 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_ubuntu as ubuntu, control_updates as updates
-from tvwcs import __version__, features, power, privilege, selfupdate, sway_include
+from tvwcs import __version__, features, power, privilege, selfupdate, servermode, sway_include
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (CORNERS, PHOSPHORS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SCALE_LABELS, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, corner_right, is_4k, scale_choices,
@@ -25,6 +25,7 @@ class Page:
     poll=0              # seconds between quiet re-reads while the page is on screen (0: only when asked)
     refreshable=True    # a ⟳ button at the top right re-reads the page
     sway_only=False     # it changes what TVWCS or sway do: shown turned off outside sway (sway_include.in_sway)
+    server_off=False    # an administrator's page: shown turned off in server mode (servermode.py)
 
     def __init__(self, win):
         self.win=win; self.state=None; self.busy=False; self.status=""; self._loaded=False; self._poll=0
@@ -106,7 +107,8 @@ class Page:
         if wanted is not None and old is not None: old=wanted
         scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
         clear_box(self.body); self.groups=[]; self._ids={}
-        if self.feature_off(): self.draw_feature_off()
+        if self.server_off and servermode.active(): self.draw_off(lambda:self.draw(self.state),SERVER_OFF)
+        elif self.feature_off(): self.draw_feature_off()
         elif self.sway_only and not sway_include.in_sway(): self.draw_off(lambda:self.draw(self.state))
         else: self.draw(self.state)
         if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
@@ -128,6 +130,7 @@ class Page:
         f=features.BY_KEY[features.PAGE_FEATURE[self.key]]
         self.section("NOT INSTALLED")
         self.note(f"{f.what} It needs software that is not installed yet.")
+        if servermode.active(): self.note(SERVER_HIDDEN); return
         self.row(f"Install {f.label}","",lambda:install_feature(self,f),icon="list-add-symbolic",fallback="+",ident="feature:on",
                  detail=f"Installs {', '.join(f.packages)}. It asks for your password.")
 
@@ -189,6 +192,10 @@ class Page:
 
 SWAY_ONLY=("These settings work in sway only: in TVWCS's own session (choose \"TVWCS\" at the login screen, or type tvwcs at a "
            "text console) or in a sway session TVWCS is added to.")
+
+SERVER_OFF=("This computer is in server mode, so these settings are left to its administrator. An administrator can turn "
+            "server mode off in Settings › User.")
+SERVER_HIDDEN="This computer is in server mode: changes that need an administrator are left to them."
 
 def _on_off(flag): return "On" if flag else "Off"
 def _outcome(result, otherwise):
@@ -445,7 +452,7 @@ class _SelfUpdate:
 class PowerPage(Page):
     """After how long without input the screen turns off, the computer locks and it sleeps (swayidle, see power.py),
     and what the system does by itself: logind's idle action and the lid."""
-    key="power"; title="Power and sleep"; icon="system-shutdown-symbolic"; fallback="⏻"; sway_only=True
+    key="power"; title="Power and sleep"; icon="system-shutdown-symbolic"; fallback="⏻"; sway_only=True; server_off=True
     def read(self):
         store=ConfigStore(); st=store.settings
         return power.read_state(st,command_for("lock",st) is not None,command_for("sleep",st) is not None)
@@ -825,7 +832,7 @@ class _Console:
 
 class UpdatesPage(_SelfUpdate, _Console, Page):
     """TVWCS's own updates, then the system's packages."""
-    key="updates"; title="Software updates"; icon="software-update-available-symbolic"; fallback="⇩"
+    key="updates"; title="Software updates"; icon="software-update-available-symbolic"; fallback="⇩"; server_off=True
     MAX_ROWS=300
     def __init__(self, win):
         super().__init__(win); self.running=None; self.log=None; self.fetched=None
@@ -959,14 +966,15 @@ class SystemPage(Page):
     # ---------------------------------------------------------- SSH: signing in to this computer from another one
     def draw_ssh(self, s):
         self.section("REMOTE ACCESS (SSH)")
+        admin=not servermode.active()   # server mode: shown, not changed here
         if not s.installed:
-            self.row("SSH server","Not installed",self.install_ssh if ssh.install_argv() else None,
-                     detail="Install it to sign in to this computer from another one",ident="ssh:server"); return
-        self.row("SSH server","On" if s.active else "Off",lambda:self.switch_ssh(s),
+            self.row("SSH server","Not installed",self.install_ssh if admin and ssh.install_argv() else None,
+                     detail="Install it to sign in to this computer from another one" if admin else "",ident="ssh:server"); return
+        self.row("SSH server","On" if s.active else "Off",(lambda:self.switch_ssh(s)) if admin else None,
                  detail=("Starts with the computer" if s.enabled else "Stopped at the next restart") if s.active else
                         ("Starts with the computer" if s.enabled else "Turn it on to sign in from another computer"),
                  ident="ssh:server",value_css="state-on" if s.active else "setting-value")
-        self.row("Sign in with","Keys only" if not s.passwords else "Password or key",lambda:self.choose_sign_in(s),
+        self.row("Sign in with","Keys only" if not s.passwords else "Password or key",(lambda:self.choose_sign_in(s)) if admin else None,
                  detail=f"{s.keys} key{'s' if s.keys!=1 else ''} added for {s.user}",ident="ssh:auth")
         if s.passwords and s.active and ConfigStore().settings["password_keyboard"]=="digits":
             self.note("Your password keyboard is the number pad, so your password may be only digits, which is easy to guess. "
@@ -1016,7 +1024,7 @@ class SystemPage(Page):
 
 # ====================================================================== Network
 class NetworkPage(Page):
-    key="network"; title="Network"; icon="network-wired-symbolic"; fallback="⇄"; poll=6
+    key="network"; title="Network"; icon="network-wired-symbolic"; fallback="⇄"; poll=6; server_off=True
     scanning=False
     def read(self): return network.read_state(scan=self.scanning)
     def summary(self):
@@ -1244,11 +1252,12 @@ class DateTimePage(Page):
         self.section("NOW")
         self.row("Time",timedate.clock_text(now,hours24),None,detail=timedate.date_text(now),icon="preferences-system-time-symbolic",fallback="🕓",ident="dt:now")
         self.section("TIME ZONE")
-        self.row("Time zone",timedate.zone_label(s.timezone),self.choose_zone,ident="dt:zone")
-        self.note("The time zone is set for the whole computer. It may ask for your password.")
+        admin=not servermode.active()   # server mode: shown, not changed here
+        self.row("Time zone",timedate.zone_label(s.timezone),self.choose_zone if admin else None,ident="dt:zone")
+        self.note("The time zone is set for the whole computer. It may ask for your password." if admin else SERVER_HIDDEN)
         self.section("NETWORK TIME")
         if s.timedatectl:
-            self.row("Set the time from the network",_on_off(s.ntp),self.switch_ntp,
+            self.row("Set the time from the network",_on_off(s.ntp),self.switch_ntp if admin else None,
                      detail=("Synchronized" if s.synced else "Not synchronized yet") if s.ntp else
                             ("Turn it on to keep the clock right by itself" if s.can_ntp else "No network time service is installed (such as systemd-timesyncd or chrony)"),
                      ident="dt:ntp",value_css="state-on" if s.ntp else "setting-value")

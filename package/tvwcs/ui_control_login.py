@@ -1,8 +1,8 @@
-"""Settings > User: the account (name, password), the automatic login, the login screen and the application to open at
-login. The system side is loginscreen.py and account.py; the changes that need root go through the window's
-run_as_root."""
+"""Settings > User: the account (name, password), the automatic login, the login screen, the application to open at
+login and server mode. The system side is loginscreen.py, servermode.py and account.py; the changes that need root go
+through the window's run_as_root (or, to turn server mode off from a standard account, an administrator's su)."""
 from __future__ import annotations
-from tvwcs import account, loginscreen, sway_include
+from tvwcs import account, loginscreen, servermode, sway_include
 from tvwcs.model import STARTUP_LABELS, STARTUP_MODES, ConfigStore, startup_choices
 from tvwcs.ui_control import in_background
 
@@ -22,21 +22,25 @@ def run_root(page, args, label, done, packages=()):
 def role(a) -> str: return "Administrator" if a.admin else "Standard User"
 
 def read_user():
-    return (account.read(),loginscreen.status(),loginscreen.profile_starts())
+    return (account.read(),loginscreen.status(),loginscreen.profile_starts(),servermode.server_user())
 
 def draw_user(page, state):
-    a,st,_profile=state
+    a,st,_profile,server=state
     page.section("ACCOUNT")
-    page.row("Name",a.full_name or "Not set",lambda:change_name(page,a),detail="Shown on the login screen",ident="user:name")
+    page.row("Name",a.full_name or "Not set",None if server else lambda:change_name(page,a),detail="Shown on the login screen",ident="user:name")
     page.row("User name",a.login,None,detail="Used to log in and for the home folder; it cannot be changed here",ident="user:login")
     page.row("Password","Change",lambda:change_password(page),detail="Asks for the current one first",ident="user:password")
     page.section("LOGGING IN")
     if sway_include.in_sway(): draw_logging_in(page,state)
     else: page.draw_off(lambda:draw_logging_in(page,state))   # GNOME, KDE...: what starts TVWCS's session is changed from it
+    draw_server_mode(page,a,server)
 
 def draw_logging_in(page, state):
-    a,st,profile=state; cur=st["current"]; who,_sid=st["autologin"]
-    if loginscreen.autologin_supported(cur):
+    a,st,profile,server=state; cur=st["current"]; who,_sid=st["autologin"]
+    if server:   # the automatic login and the login screen are the administrator's
+        page.row("Log in automatically after startup",f"On for {who}" if who else "Off",None,ident="user:auto",
+                 detail="Set with server mode",value_css="state-on" if who==a.login else "setting-value")
+    elif loginscreen.autologin_supported(cur):
         console=cur==""   # no login screen: the first text console logs in, and the shell profile starts TVWCS's session
         mine=who==a.login and (profile or not console)
         page.row("Log in automatically after startup","On" if mine else f"On for {who}" if who else "Off",lambda:toggle_autologin(page,a,mine,console),
@@ -48,12 +52,12 @@ def draw_logging_in(page, state):
     page.row("Lock the screen when TVWCS starts","On" if on else "Off",lambda:toggle_lock_at_start(page,on),
              detail="Your password unlocks it. For the automatic login, so the computer is never left open",
              ident="user:lock-start",value_css="state-on" if on else "setting-value")
-    others=[u for u in st["installed"] if u!=cur]
+    others=[u for u in st["installed"] if u!=cur] if not server else []
     page.row("Login screen",loginscreen.name(cur) if cur else "None (text console)",(lambda:change_login_screen(page,cur,others)) if others else None,
              detail="Choose this to switch to another one installed here" if others else "",ident="user:screen")
     if cur and not loginscreen.wayland_ok(cur):
         page.note(f"{loginscreen.name(cur)} cannot start sway reliably. greetd or SDDM can.","error")
-    if st["old_greeter"]:
+    if st["old_greeter"] and not server:
         page.row("Remove TVWCS's old login screen","",lambda:remove_old_greeter(page),ident="user:old",
                  detail="TVWCS 4's login screen is still set up; TVWCS 5 no longer has one",icon="user-trash-symbolic",fallback="✕")
     draw_startup(page)
@@ -98,6 +102,77 @@ def remove_old_greeter(page):
     page.win.confirm("Remove TVWCS's old login screen?","Another login screen installed here takes over from the next start; without one, "
                      "greetd's text login does, and the automatic login is kept. It asks for your password.","Remove",
                      lambda:run_root(page,["migrate"],"Removing the old login screen",done),danger=False)
+
+# ---------------------------------------------------------------------- server mode
+def draw_server_mode(page, a, server):
+    """Server mode's row: on (choosing who uses the TV) asks for this user's password, which needs an administrator;
+    off asks for an administrator's, named first when this is a standard account."""
+    page.section("SERVER MODE")
+    page.row("Server mode",f"On for {server}" if server else "Off",lambda:(turn_server_off if server else turn_server_on)(page,a),
+             detail="No power, update, network or other administrator settings on the TV" if not server else "Turning it off needs an administrator",
+             ident="user:server",value_css="state-on" if server else "setting-value")
+    page.note("For a computer that is a server first: the account that uses the TV logs in automatically into TVWCS, "
+              "and nobody can put the computer to sleep, restart or shut it down, update it, change its network or unmount "
+              "its drives from TVWCS. Also from a terminal or over SSH: tvwcs -s --user=NAME.")
+
+def turn_server_on(page, a):
+    if not a.admin:
+        page.win.notice("Server mode","Turning server mode on needs an administrator. Ask one to turn it on here, or to run: tvwcs -s --user="+a.login); return
+    names=servermode.accounts() or [a.login]
+    def picked(user):
+        def done(problem):
+            if problem: page.win.notice("Server mode",problem); return
+            _everywhere(page)
+            page.win.notice("Server mode",f"Server mode is on. From the next start {user} is logged in automatically into TVWCS, "
+                            "without power, update, network or other administrator settings.")
+        page.win.confirm("Turn server mode on?",f"{user} uses the TV: they log in automatically into TVWCS, and nobody can put the "
+                         "computer to sleep, restart or shut it down, update it or change its network from TVWCS. Turning it off "
+                         "again needs an administrator. It asks for your password.","Turn on",
+                         lambda:_run_server(page,["on",user],"Turning server mode on",done),danger=False)
+    if len(names)==1: picked(names[0]); return
+    page.win.choose_option("Who uses the TV?",[(n,n+(" (you)" if n==a.login else "")) for n in names],a.login if a.login in names else None,picked)
+
+def turn_server_off(page, a):
+    def done(problem):
+        if problem: page.win.notice("Server mode",problem); return
+        _everywhere(page)
+    if a.admin:
+        page.win.confirm("Turn server mode off?","Every setting comes back on the TV, and it can sleep, restart and shut the computer "
+                         "down again. The automatic login stays as it is. It asks for your password.","Turn off",
+                         lambda:_run_server(page,["off"],"Turning server mode off",done))
+        return
+    admins=servermode.admins()
+    if not admins: page.win.notice("Server mode","No account here may use sudo, so nobody can turn server mode off from here. As root, run: tvwcs --no-server-mode"); return
+    def with_admin(admin):
+        def got(password):
+            if not password: return
+            page.set_status("Turning server mode off…")
+            def finished(result):
+                page.set_status(""); code,why=result
+                done(why if code else "")
+            argv=loginscreen.root_command(["off"],module="tvwcs.servermode")
+            in_background(lambda:account.run_as_admin(admin,password,argv),finished,lambda exc:finished((1,str(exc))))
+        page.win.ask_text(f"{admin}'s password",f"Turning server mode off needs an administrator. Type {admin}'s password. "
+                          "It is used once and never stored.",got,secret=True,ok_label="Turn off")
+    if len(admins)==1: with_admin(admins[0]); return
+    page.win.choose_option("Which administrator?",[(n,n) for n in admins],None,with_admin)
+
+def _everywhere(page):
+    """Server mode changed: every page read so far is drawn again (some turn off or on), and TVWCS reads its options
+    again (its idle times: no sleep in server mode)."""
+    from tvwcs.ui_control_pages import tell_tvwcs
+    for p in page.win.pages:
+        if p is page: p.refresh(quiet=True)
+        elif p.state is not None: p.redraw()
+    tell_tvwcs("reload")
+
+def _run_server(page, args, label, done):
+    lines=[]
+    def finished(code, tail):
+        page.set_status("")
+        done(("\n".join(lines[-6:]) or tail or f"{label} did not work.").strip() if code else "")
+    page.set_status(f"{label}…")
+    page.win.run_as_root(loginscreen.root_command(args,module="tvwcs.servermode"),label,lines.append,finished)
 
 # ---------------------------------------------------------------------- the application to open at login
 def draw_startup(page):

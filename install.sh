@@ -363,7 +363,7 @@ remove_all() {
         say "greetd starts TVWCS's session: it goes back to its plain text login."
         as_root sh -c 'cp "$1" "$1.tvwcs-backup" && printf "%s\n" "[terminal]" "vt = 7" "" "[default_session]" "command = \"/usr/sbin/agreety --cmd /bin/sh\"" "user = \"_greetd\"" > "$1"' sh "$ETC/greetd/config.toml"
     fi
-    for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf" "$ETC/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
+    for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf" "$ETC/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf" "$ETC/tvwcs/server-mode" "$ETC/polkit-1/rules.d/50-tvwcs-server-mode.rules"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
     console_profile off || :
     # shellcheck disable=SC2046
     as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_known tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."

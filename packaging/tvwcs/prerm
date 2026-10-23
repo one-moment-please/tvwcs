@@ -9,4 +9,9 @@ if [ "$1" = remove ] && [ -f /etc/systemd/system/getty@tty1.service.d/tvwcs-auto
     rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
     if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
 fi
+# Server mode's switch and polkit rule: without TVWCS there is no TV to keep away from the server's settings.
+if [ "$1" = remove ]; then
+    rm -f /etc/tvwcs/server-mode /etc/polkit-1/rules.d/50-tvwcs-server-mode.rules
+    rmdir /etc/tvwcs 2>/dev/null || true
+fi
 exit 0
