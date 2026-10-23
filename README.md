@@ -39,7 +39,7 @@ TVWCS has two modes:
 
 ### Demo videos
 
-The apps in these videos are mockups made for the demo (a window with a still picture), labelled MOCKUP on screen. Click a picture to play its video.
+The apps in these videos are mockups made for the demo (a window with a still picture), labelled MOCKUP on screen. The previews below play on their own; click one to download the full-quality video (MP4).
 
 <table>
   <tr>
@@ -47,8 +47,8 @@ The apps in these videos are mockups made for the demo (a window with a still pi
     <th width="50%">Desktop mode</th>
   </tr>
   <tr>
-    <td valign="top"><a href="assets/demo-tv-mode.mp4"><img src="assets/demo-tv-mode.jpg" alt="Play the TV mode demo video" width="100%"></a></td>
-    <td valign="top"><a href="assets/demo-desktop-mode.mp4"><img src="assets/demo-desktop-mode.jpg" alt="Play the desktop mode demo video" width="100%"></a></td>
+    <td valign="top"><a href="https://github.com/one-moment-please/tvwcs/raw/main/assets/demo-tv-mode.mp4"><img src="assets/demo-tv-mode.gif" alt="The TV mode demo" width="100%"></a></td>
+    <td valign="top"><a href="https://github.com/one-moment-please/tvwcs/raw/main/assets/demo-desktop-mode.mp4"><img src="assets/demo-desktop-mode.gif" alt="The desktop mode demo" width="100%"></a></td>
   </tr>
   <tr>
     <td valign="top">With the remote: open an app by its channel number, open a second one by channel, go back to the first from the Quick Menu's list, and open a third by searching its name. Each app gets a workspace of its own.</td>
