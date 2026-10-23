@@ -8,8 +8,8 @@ gi.require_version("Graphene", "1.0")
 from gi.repository import Gdk, Gio, GLib, Graphene, Gtk
 
 from tvwcs import retro
+from tvwcs.model import METRO_COLORS   # re-exported: the pages take it from here
 
-METRO_COLORS=("#0078d7","#e81123","#00b294","#ff8c00","#881798","#107c10","#ea005e","#6b69d6","#00cc6a","#c239b3")
 _scale=[1.0]
 _retro=[False]
 

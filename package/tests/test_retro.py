@@ -43,12 +43,8 @@ class RetroSettingsTests(unittest.TestCase):
         self.assertEqual(appearance.wallpaper_argv("#0000ff"),["swaymsg","output * bg #0000ff solid_color"])
         self.assertEqual(appearance.wallpaper_argv("static"),["swaymsg",f'output * bg "{retro.STATIC_PICTURE}" fill'])
 
-try:
-    from tvwcs import theme
-except (ImportError,ValueError):   # no GTK here (theme.py uses widgets.py's colours)
-    theme=None
+from tvwcs import theme   # needs no GTK
 
-@unittest.skipIf(theme is None,"needs python3-gi with GTK 4")
 class RetroThemeTests(unittest.TestCase):
     def test_retro_sizes_are_on_the_pixel_grid(self):
         for scale in (1.0,1.5,2.0,3.0):

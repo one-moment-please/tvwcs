@@ -23,13 +23,18 @@ def _install_stub():
     sys.modules["gi"]=gi; sys.modules["gi.repository"]=repo; gi.repository=repo
 _install_stub()
 import importlib
+_REAL={k:v for k,v in sys.modules.items() if k.startswith("tvwcs.")}
 for m in ("tvwcs.widgets","tvwcs.theme","tvwcs.ui_settings","tvwcs.ui_window"): sys.modules.pop(m,None)
 ui_window=importlib.import_module("tvwcs.ui_window")
+NavGroup=sys.modules["tvwcs.widgets"].NavGroup
 for k,v in _SAVED.items():
     if v is None: sys.modules.pop(k,None)
     else: sys.modules[k]=v
-
-from tvwcs.widgets import NavGroup
+# the modules loaded against the stub stay with this file: later tests import their own, with the real GTK or none
+for k in [k for k in sys.modules if k.startswith("tvwcs.")]:
+    if k in _REAL: sys.modules[k]=_REAL[k]
+    else: sys.modules.pop(k,None)
+    if hasattr(sys.modules["tvwcs"],k[6:]): setattr(sys.modules["tvwcs"],k[6:],_REAL[k]) if k in _REAL else delattr(sys.modules["tvwcs"],k[6:])
 Editable=ui_window.Gtk.Editable
 
 class W:

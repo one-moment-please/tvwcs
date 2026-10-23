@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.8.1 — 2026-10-23
+
+- Settings › Appearance: the "Interface size" heading (and Displays' "Scale") now changes size with the interface, like the rows around it. It was always GTK's default size, so it looked tiny at size 5 and in 4K.
+- Development: CI no longer installs GTK, which its tests never used: they run on a separate Python. The theme's colour and size tests needed GTK only for the Metro colours (now in model.py). In a full run they had been passing against the fake GTK that the navigation tests load, which those tests now unload when they finish. Test comments no longer mention i3.
+
 ## 5.8.0 — 2026-10-23
 
 - **Settings › Appearance › Interface size is now 1 to 5,** a row of buttons from smallest to largest. 3 is the old Desktop size and 4 the old TV Mode, with 1 and 2 smaller and 5 larger. Auto picks by the mode and the theme: 4 in TV mode and 3 in desktop mode, and a size smaller in the Retro theme (3 and 2), whose pixel text reads well smaller. 4K TV Mode is now the **Sized for a 4K screen** switch (shown when a 4K display is connected), which makes any size about twice as large; size 4 with it is the old 4K TV Mode. A size chosen before keeps its look.

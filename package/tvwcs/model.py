@@ -71,7 +71,8 @@ def is_4k(width, height) -> bool:
 STARTUP_MODES=("none","last","app")
 STARTUP_LABELS={"none":"None","last":"Last application","app":"Chosen application"}
 
-# Settings > Appearance > Accent colour: the Metro colours of widgets.METRO_COLORS, by name (a hand-set colour keeps its hex).
+# Settings > Appearance > Accent colour: the Metro colours (also the letter tiles' colours), and their names (a hand-set colour keeps its hex).
+METRO_COLORS=("#0078d7","#e81123","#00b294","#ff8c00","#881798","#107c10","#ea005e","#6b69d6","#00cc6a","#c239b3")
 ACCENT_NAMES={"#0078d7":"Blue","#e81123":"Red","#00b294":"Teal","#ff8c00":"Orange","#881798":"Purple","#107c10":"Green",
               "#ea005e":"Magenta","#6b69d6":"Iris","#00cc6a":"Mint","#c239b3":"Orchid"}
 def accent_name(colour) -> str: return ACCENT_NAMES.get((colour or "").lower(),colour or "")
