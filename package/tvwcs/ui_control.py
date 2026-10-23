@@ -45,6 +45,7 @@ button.info-row:focus .setting-value { color: #ffffff; }
 .display-name { font-size: 12px; color: #ffffff; }
 /* secondary text: the theme’s #8a8a8a at 12px is about 4:1 on a #2d2d2d row, too faint from a sofa */
 .row-detail, .description { color: @MUTED@; font-size: 13px; }
+.buttons-head { font-size: 15px; }   /* the name over a row of choice buttons (Interface size, Scale): like a row's name */
 .muted { color: @MUTED@; font-size: 14px; }
 .muted.error { color: @ERROR@; }   /* a warning note: .muted comes after the theme's .error and would win */
 button.launch-row:disabled { opacity: 0.45; }   /* rows turned off outside sway (Page.draw_off): the theme's colours would hide GTK's own dimming */

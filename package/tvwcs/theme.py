@@ -4,8 +4,7 @@ the mouse is over one (dashed) or one is selected (solid), the TVWCS Pixel fonts
 8 x 16 for the text of lists and buttons, 8 x 8 for large) at whole multiples of their pixels, and pixel icons (widgets.glyph)."""
 from __future__ import annotations
 import re
-from tvwcs.widgets import METRO_COLORS
-from tvwcs.model import RETRO_WALLPAPERS, WALLPAPERS
+from tvwcs.model import METRO_COLORS, RETRO_WALLPAPERS, WALLPAPERS
 from tvwcs.retro import STATIC_PICTURE
 
 CSS="""

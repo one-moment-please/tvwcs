@@ -285,7 +285,7 @@ class AppearancePage(_ConfigPage):
         """Interface size: Auto, then 1 to 5 from small to large, the one chosen marked; and, with a 4K display, whether
         it is sized for a 4K screen."""
         tv=tv_mode(); chosen=st["scale"] or ""; auto=auto_size(st,tv)
-        head=Gtk.Label(label="Interface size"); head.set_xalign(0); head.set_margin_top(S(6)); self.add(head)
+        head=Gtk.Label(label="Interface size"); head.add_css_class("buttons-head"); head.set_xalign(0); head.set_margin_top(S(6)); self.add(head)
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); buttons=[]
         for key,text in [("","Auto")]+[(str(n),str(n)) for n in SIZES]:
             b=Gtk.Button(label=text); b.set_tooltip_text(f"Automatic: size {auto} here" if not key else size_label(int(key)))
@@ -727,7 +727,7 @@ class DisplaysPage(Page):
 
     def scale_buttons(self, ident, choices, current, pick, detail):
         """Scale: one button per scale (75 % to 200 %), the one in use marked."""
-        head=Gtk.Label(label="Scale"); head.set_xalign(0); head.set_margin_top(S(6)); self.add(head)
+        head=Gtk.Label(label="Scale"); head.add_css_class("buttons-head"); head.set_xalign(0); head.set_margin_top(S(6)); self.add(head)
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); buttons=[]
         for v in choices:
             b=Gtk.Button(label=display.scale_text(v))

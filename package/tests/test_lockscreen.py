@@ -45,8 +45,7 @@ class LockScreenTests(unittest.TestCase):
             self.assertEqual(made,[("HDMI-A-1",f"{d}/lock-HDMI-A-1.svg")]); self.assertIn("<svg",Path(made[0][1]).read_text())
             self.assertIn("/etc/fonts/fonts.conf",lockscreen.fonts_conf(Path(d)))
     def test_colours_match_the_theme(self):
-        try: from tvwcs import theme
-        except Exception: self.skipTest("GTK is not available")
+        from tvwcs import theme
         for name,(bg,fg,muted) in lockscreen.MODERN.items():
             p=theme.PALETTES[name]; self.assertEqual((p["PANE"],p["FG"],p["MUTED"]),(bg,fg,muted))
         for name,(bg,fg,muted,line) in lockscreen.RETRO.items():

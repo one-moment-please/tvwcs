@@ -15,7 +15,7 @@ TREE={"type":"root","nodes":[
 ],"floating_nodes":[]}
 
 class FakeWM(WindowManager):
-    """i3 adapter whose IPC is replaced by a recorder."""
+    """sway adapter whose IPC is replaced by a recorder."""
     def __init__(self,workspaces=(),outputs=()):
         super().__init__(); self.binary="/usr/bin/swaymsg"; self.sent=[]; self._ws=list(workspaces); self._out=list(outputs)
     def _tree(self): return TREE

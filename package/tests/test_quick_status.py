@@ -1,5 +1,5 @@
 """The Quick Menu's clock and status icons, the Date and time page's backend, and TV mode's bar hiding, from saved
-samples (no display, no timedatectl, no i3 needed)."""
+samples (no display, no timedatectl, no sway needed)."""
 import os, tempfile, time, unittest
 from pathlib import Path
 
@@ -116,7 +116,7 @@ class TVModeTests(unittest.TestCase):
             saved=Path(d)/"bars.json"; wm=FakeWM({"bar-0":"dock","bar-1":"hide"})
             self.assertEqual(tv_mode.hide_bars(wm,saved),2); self.assertEqual(wm.modes,{"bar-0":"invisible","bar-1":"invisible"})
             self.assertEqual(tv_mode.hide_bars(wm,saved),0)          # already hidden: nothing to do
-            wm.modes["bar-0"]="dock"                                  # i3 reloaded its config
+            wm.modes["bar-0"]="dock"                                  # sway reloaded its config
             tv_mode.hide_bars(wm,saved); self.assertEqual(wm.modes["bar-0"],"invisible")
             self.assertEqual(tv_mode.restore_bars(wm,saved),2); self.assertEqual(wm.modes,{"bar-0":"dock","bar-1":"hide"})
             self.assertFalse(saved.exists()); self.assertEqual(tv_mode.restore_bars(wm,saved),0)
