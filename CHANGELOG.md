@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.7.2 — 2026-10-23
+
+- In server mode, **Settings › User** also has **Turn off the screen after**, next to Lock after (Power and sleep is turned off there).
+
 ## 5.7.1 — 2026-10-23
 
 - **Lock after, in server mode:** Power and sleep is turned off in server mode, so its lock time is now on **Settings › User**, under Server mode. It sets the time both plugged in and on battery.
