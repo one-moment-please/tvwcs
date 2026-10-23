@@ -155,7 +155,7 @@ entry.tv-search { border-color: @FAINT@; }
 scrollbar slider { background: @FAINT@; }
 scale.muted highlight { background: @FAINT@; }
 checkbutton check { background: transparent; border-color: @MUTED@; }
-checkbutton check:checked { background: transparent; border-color: @FG@; color: @FG@; -gtk-icon-source: -gtk-icontheme("tvwcs-retro-check-symbolic"); }
+checkbutton check:checked { background: transparent; border-color: @FG@; color: @FG@; -gtk-icon-source: -gtk-icontheme("@CHECK@"); }
 .display-box, .display-box.primary { background: transparent; border: 2px solid @MUTED@; }
 .display-box.primary { border-color: @FG@; }
 textview.console, textview.console text { background: @BG@; color: @FG@; font-family: @SMALL@; }
@@ -171,12 +171,20 @@ def _large_fonts(css):
         return "{"+m.group(1).rstrip().rstrip(";")+f"; font-family: {font}; }}"
     return re.sub(r"\{([^{}]*)\}",rule,css)
 
-def retro_css(css):
+# Settings > Appearance > Font (model.RETRO_FONTS): the pixel fonts above, VT323, or Inter. VT323 is drawn 40 %
+# larger, its letters being small for their size; it and Inter are smoothed and sized freely (render_css).
+RETRO_FAMILIES={"vt323":'"VT323", monospace',"readable":'"Inter", "Open Sans", sans-serif'}
+FONT_GROWTH={"vt323":1.4}
+
+def retro_css(css, font="pixel"):
     """The Modern rules made Retro, before the palette is filled in: what was white on the selection is the phosphor
-    colour, every weight is regular (a pixel font has one), large text is in the 8 x 8 font, then RETRO_CSS."""
-    css=css.replace("#ffffff","@FG@").replace("#e3eefa","@MUTED@").replace("#000000","@FG@")
-    css=re.sub(r"font-weight:\s*\d+","font-weight: 400",css).replace("text-shadow: none; ","")   # buttons keep the glow
-    return _large_fonts(css)+RETRO_CSS.replace("@SMALL@",SMALL_FONT)
+    colour, every weight is regular (a pixel font has one; Inter keeps Modern's), with the pixel fonts large text is
+    in the 8 x 8 font and lists in the 8 x 16 one, then RETRO_CSS."""
+    css=css.replace("#ffffff","@FG@").replace("#e3eefa","@MUTED@").replace("#000000","@FG@").replace("text-shadow: none; ","")   # buttons keep the glow
+    if font!="readable": css=re.sub(r"font-weight:\s*\d+","font-weight: 400",css)
+    rules=RETRO_CSS.replace("@CHECK@",{"vt323":"tvwcs-vt-check-symbolic","readable":"object-select-symbolic"}.get(font,"tvwcs-retro-check-symbolic"))
+    if font in RETRO_FAMILIES: return css+rules.replace("@SMALL@",RETRO_FAMILIES[font])
+    return _large_fonts(css)+rules.replace("@SMALL@",SMALL_FONT)
 
 SMALL_BELOW=15  # px at desktop size: notes and details, a step smaller than the text they explain
 
@@ -190,18 +198,21 @@ def snap_font_size(px, scale=1.0):
     if px>=TEXT_FROM: return max(TEXT_GRID,int(scaled//TEXT_GRID)*TEXT_GRID)
     return max(2*PIXEL_GRID if scaled>=12 else PIXEL_GRID,int(scaled//PIXEL_GRID)*PIXEL_GRID)
 
-def render_css(accent, scale=1.0, extra="", theme="dark", style="modern", phosphor="green"):
+def render_css(accent, scale=1.0, extra="", theme="dark", style="modern", phosphor="green", retro_font="pixel"):
     """The theme (plus `extra` rules, such as the Settings app's) with the accent colour and the look's colours filled in
     and every pixel measure multiplied by `scale`. Hover colours apply only while the mouse is in use (the window has
     the "pointer" class, see widgets.PointerWatch): a pointer hidden after a few seconds would otherwise keep marking
     whatever happens to be under it, next to the remote's real selection. The Retro theme's phosphor colour takes the
-    accent's place, and its text sizes are rounded to the pixel fonts' grid after scaling."""
+    accent's place, and in its pixel fonts its text sizes are rounded to their grid after scaling."""
     retro=style=="retro"
     palette=RETRO_PALETTES.get(phosphor,RETRO_PALETTES["green"]) if retro else PALETTES.get(theme,PALETTES["dark"])
-    css=retro_css(CSS+extra) if retro else CSS+extra
+    if retro_font not in RETRO_FAMILIES: retro_font="pixel"
+    css=retro_css(CSS+extra,retro_font) if retro else CSS+extra
     css=css.replace("@ACCENT@",palette["FG"] if retro else accent)
     for key,value in palette.items(): css=css.replace(f"@{key}@",value)
-    if retro:   # sized here, already scaled: "PX" is passed over by the scaling below
+    if retro and retro_font in FONT_GROWTH:
+        css=re.sub(r"font-size:\s*(\d+)px",lambda m:f"font-size: {round(int(m.group(1))*FONT_GROWTH[retro_font])}px",css)
+    elif retro and retro_font=="pixel":   # sized here, already scaled: "PX" is passed over by the scaling below
         css=re.sub(r"font-size:\s*(\d+)px",lambda m:f"font-size: {snap_font_size(int(m.group(1)),scale)}PX",css)
     if scale!=1.0:
         css=re.sub(r"(?<![\w.#-])(\d+)px",lambda m:f"{0 if m.group(1)=='0' else max(1,round(int(m.group(1))*scale))}px",css)

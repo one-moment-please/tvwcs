@@ -8,7 +8,9 @@
 - TVWCSPixel8x8.ttf, the large text: Daniel Hepper's 8 x 8 font (font8x8, public domain, after IBM's VGA font),
   with its Latin-1 and block characters and the same additions;
 - icons/hicolor/scalable/actions/tvwcs-retro-<name>-symbolic.svg, the 9 x 9 icons in glyphs.txt and the Wi-Fi
-  signal bars (in a hicolor folder: GTK recolours only themed symbolic icons);
+  signal bars (in a hicolor folder: GTK recolours only themed symbolic icons), and tvwcs-vt-<name>-symbolic.svg, the
+  same drawn like VT323's letters (for Settings > Appearance > Font: VT323): each row of pixels a bar with rounded
+  ends, so the rows meet in small notches;
 - static.png, the TV static background: grey noise, small, which sway stretches to fill each screen.
 
 Each font pixel is a square of 125 units, in an em of 8 pixels (16 for the 8 x 16 font), so text drawn at a multiple
@@ -139,7 +141,11 @@ def wifi_bars(lit):
         for y in range(9-(height if i<lit else 1),9): rows[y][x]="#"
     return ["".join(r) for r in rows]
 
-def icon_svg(rows):
+def icon_svg(rows, rounded=False):
+    if rounded:   # VT323's look: rounded ends on every run, which leaves a notch where two rows meet
+        body="".join(f'<rect x="{x+0.06:g}" y="{y:g}" width="{w-0.12:g}" height="1" rx="0.4"/>' for x,y,w in runs(rows))
+        return ('<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 9 9">'
+                f'<g fill="#bebebe">{body}</g></svg>\n')
     d="".join(f"M{x} {y}h{w}v1h-{w}z" for x,y,w in runs(rows))
     return ('<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 9 9" shape-rendering="crispEdges">'
             f'<path fill="#bebebe" d="{d}"/></svg>\n')
@@ -174,9 +180,11 @@ def main():
     build_font(OUT/"TVWCSPixel8x16.ttf","TVWCS Pixel 8x16",with_drawings(bdf_font(SRC/"spleen-8x16.bdf"),drawings,"text"),8,16,12,4)
     build_font(OUT/"TVWCSPixel8x8.ttf","TVWCS Pixel 8x8",with_drawings(large_font(),drawings,"large"),8)
     for old in icons.glob("*.svg"): old.unlink()
-    for (kind,name),rows in drawings.items():
-        if kind=="icon": (icons/f"tvwcs-retro-{name}-symbolic.svg").write_text(icon_svg(rows),encoding="ascii")
-    for lit in range(6): (icons/f"tvwcs-retro-wifi-{lit}-symbolic.svg").write_text(icon_svg(wifi_bars(lit)),encoding="ascii")
+    pictures={name:rows for (kind,name),rows in drawings.items() if kind=="icon"}
+    pictures.update({f"wifi-{lit}":wifi_bars(lit) for lit in range(6)})
+    for name,rows in pictures.items():
+        (icons/f"tvwcs-retro-{name}-symbolic.svg").write_text(icon_svg(rows),encoding="ascii")
+        (icons/f"tvwcs-vt-{name}-symbolic.svg").write_text(icon_svg(rows,rounded=True),encoding="ascii")
     static_png(OUT/"static.png")
     print(f"Wrote {OUT.relative_to(ROOT)}: 3 fonts, {len(list(icons.glob('*.svg')))} icons, static.png")
 
