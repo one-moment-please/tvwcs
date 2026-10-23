@@ -17,7 +17,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs import privilege
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
-from tvwcs.model import SCALE_PRESETS, ConfigStore, effective_scale, key_hints, scale_key, tv_mode
+from tvwcs.model import ConfigStore, effective_scale, key_hints, scale_key, tv_mode
 from tvwcs.theme import render_css
 from tvwcs import cursor
 from tvwcs.widgets import METRO_COLORS, NavGroup, PointerWatch, S, clear_box, glyph, held_modifiers, screen_height, scroll_into_view, scroll_to_show, set_scale, usable, use_retro
@@ -644,7 +644,7 @@ class ControlPanelApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         settings=ConfigStore().settings   # TVWCS's interface size, accent colour, use and motion; Options changes them (settings_changed)
-        self.scale_key=scale_key(settings); self.scale=SCALE_PRESETS.get(self.scale_key,1.0); self.accent=settings.get("accent","#0078d7"); self.window=None
+        self.scale_key=scale_key(settings); self.scale=effective_scale(self.scale_key); self.accent=settings.get("accent","#0078d7"); self.window=None
         self.theme=settings.get("theme","dark"); self.keyboard=settings.get("keyboard","hidden")
         self.style=settings.get("style","modern"); self.phosphor=settings.get("phosphor","green")
     def do_startup(self):

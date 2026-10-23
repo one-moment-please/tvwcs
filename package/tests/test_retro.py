@@ -59,6 +59,15 @@ class RetroThemeTests(unittest.TestCase):
         clock=next(l for l in css.splitlines() if l.startswith(".clock-time"))
         self.assertIn("TVWCS Pixel 8x8",clock); self.assertIn("TVWCS Pixel 5x7",css)
         self.assertNotIn("font-weight: 700",css)
+    def test_list_and_button_text_uses_the_thinner_8x16_font(self):
+        for scale in (0.6,1.0,1.6,2.0):
+            css=theme.render_css("#0078d7",scale,style="retro")
+            button=next(l for l in css.splitlines() if l.startswith("button { "))
+            self.assertIn("TVWCS Pixel 8x16",button)
+            self.assertEqual(int(re.search(r"font-size:\s*(\d+)px",button).group(1))%16,0,scale)
+        badge=next(l for l in theme.render_css("#0078d7",style="retro").splitlines() if l.startswith(".badge {"))
+        self.assertNotIn("8x16",badge)   # the smallest text keeps the 5 x 7 font
+        self.assertEqual((theme.snap_font_size(13,1.6),theme.snap_font_size(15,1.6)),(16,32))   # notes a step smaller
     def test_phosphor_replaces_the_accent(self):
         css=theme.render_css("#e81123",style="retro",phosphor="amber")
         self.assertIn("#ffb000",css); self.assertNotIn("@",re.sub(r"@media","",css))

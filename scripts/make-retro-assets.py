@@ -3,14 +3,16 @@
 
 - TVWCSPixel5x7.ttf, the small text: the 5 x 7 font of Adafruit's GFX library (glcdfont.c, BSD licence, in the
   order of code page 437), with the characters in scripts/retro/glyphs.txt added;
+- TVWCSPixel8x16.ttf, the text of lists and buttons (thinner, its strokes one pixel wide in a taller cell): Spleen's
+  8 x 16 font (Frederic Cambus, BSD licence);
 - TVWCSPixel8x8.ttf, the large text: Daniel Hepper's 8 x 8 font (font8x8, public domain, after IBM's VGA font),
   with its Latin-1 and block characters and the same additions;
 - icons/hicolor/scalable/actions/tvwcs-retro-<name>-symbolic.svg, the 9 x 9 icons in glyphs.txt and the Wi-Fi
   signal bars (in a hicolor folder: GTK recolours only themed symbolic icons);
 - static.png, the TV static background: grey noise, small, which sway stretches to fill each screen.
 
-Each font pixel is a square of 125 units in an em of 8 pixels, so text drawn at a multiple of 8 px lands on whole
-screen pixels (theme.py rounds the Retro theme's sizes to those). Needs fontTools (pip install fonttools).
+Each font pixel is a square of 125 units, in an em of 8 pixels (16 for the 8 x 16 font), so text drawn at a multiple
+of 8 px (16 px) lands on whole screen pixels (theme.py rounds the Retro theme's sizes to those). Needs fontTools (pip install fonttools).
 Run it again after changing glyphs.txt: python3 scripts/make-retro-assets.py"""
 from __future__ import annotations
 import random, re, struct, zlib
@@ -62,6 +64,25 @@ def large_font():
             if len(values)==8: chars[chr(int(code,16))]=["".join("#" if v>>x&1 else "." for x in range(8)) for v in values]
     return chars
 
+def bdf_font(path):
+    """{char: 16 rows of 8 pixels} from a BDF font of 8 x 16 cells (ascent 12): each glyph placed by its bounding box."""
+    chars={}; code=None; box=None; rows=None
+    for line in path.read_text(encoding="latin-1").splitlines():
+        part=line.split()
+        if not part: continue
+        if part[0]=="ENCODING": code=int(part[1])
+        elif part[0]=="BBX": box=[int(v) for v in part[1:5]]
+        elif part[0]=="BITMAP": rows=[]
+        elif part[0]=="ENDCHAR":
+            w,h,xo,yo=box; cell=[["."]*8 for _ in range(16)]; top=12-(h+yo)
+            for r,v in enumerate(rows):
+                for x in range(w):
+                    if v>>(((w+7)//8)*8-1-x)&1 and 0<=top+r<16 and 0<=xo+x<8: cell[top+r][xo+x]="#"
+            if code is not None and code>=32: chars[chr(code)]=["".join(r) for r in cell]
+            rows=None
+        elif rows is not None: rows.append(int(part[0],16))
+    return chars
+
 def runs(rows):
     """The lit pixels as rectangles: one per horizontal run. -> (x, row, width)"""
     for y,row in enumerate(rows):
@@ -73,30 +94,31 @@ def runs(rows):
                 yield start,y,x-start
             else: x+=1
 
-def build_font(path, family, chars, advance_px):
+def build_font(path, family, chars, advance_px, em_px=8, ascent_px=8, descent_px=2):
     names=[".notdef","space"]+[f"uni{ord(c):04X}" for c in sorted(chars) if c!=" "]
     cmap={32:"space"}; glyphs={}; metrics={}
     def glyph(rows):
         pen=TTGlyphPen(None)
-        for x,y,w in runs(rows):   # row 6 stands on the baseline, row 7 hangs below it
-            x0,x1=x*UNIT,(x+w)*UNIT; top=(7-y)*UNIT; bottom=top-UNIT
+        base=7 if em_px==8 else 12   # rows above the baseline: in an 8-row character row 6 stands on it, row 7 hangs below
+        for x,y,w in runs(rows):
+            x0,x1=x*UNIT,(x+w)*UNIT; top=(base-y)*UNIT; bottom=top-UNIT
             pen.moveTo((x0,bottom)); pen.lineTo((x0,top)); pen.lineTo((x1,top)); pen.lineTo((x1,bottom)); pen.closePath()
         return pen.glyph()
-    box=["#"*(advance_px-1)]+["#"+"."*(advance_px-3)+"#"]*5+["#"*(advance_px-1),"."*advance_px]
+    box=["#"*(advance_px-1)]+["#"+"."*(advance_px-3)+"#"]*5+["#"*(advance_px-1),"."*advance_px]+["."*advance_px]*(em_px-8)
     glyphs[".notdef"]=glyph(box); glyphs["space"]=glyph([]); metrics[".notdef"]=metrics["space"]=(advance_px*UNIT,0)
     for c in sorted(chars):
         if c==" ": continue
         n=f"uni{ord(c):04X}"; glyphs[n]=glyph(chars[c]); cmap[ord(c)]=n
         metrics[n]=(advance_px*UNIT,min((x for x,_y,_w in runs(chars[c])),default=0)*UNIT)
-    fb=FontBuilder(8*UNIT,isTTF=True); fb.setupGlyphOrder(names); fb.setupCharacterMap(cmap); fb.setupGlyf(glyphs)
+    fb=FontBuilder(em_px*UNIT,isTTF=True); fb.setupGlyphOrder(names); fb.setupCharacterMap(cmap); fb.setupGlyf(glyphs)
     fb.setupHorizontalMetrics(metrics)
-    ascent,descent=8*UNIT,2*UNIT   # a pixel of space above the capitals and below the descenders
+    ascent,descent=ascent_px*UNIT,descent_px*UNIT   # 8 x 8 and 5 x 7: a pixel of space above the capitals and below the descenders
     fb.setupHorizontalHeader(ascent=ascent,descent=-descent,lineGap=0)
     fb.setupNameTable({"familyName":family,"styleName":"Regular","uniqueFontIdentifier":f"TVWCS:{family}",
                        "fullName":family,"psName":family.replace(" ",""),"version":"Version 1.000",
-                       "licenseDescription":"See /usr/share/doc/tvwcs/copyright (font8x8: public domain; glcdfont: BSD, Adafruit Industries)"})
+                       "licenseDescription":"See /usr/share/doc/tvwcs/copyright (font8x8: public domain; glcdfont: BSD, Adafruit Industries; Spleen: BSD, Frederic Cambus)"})
     fb.setupOS2(sTypoAscender=ascent,sTypoDescender=-descent,sTypoLineGap=0,usWinAscent=ascent,usWinDescent=descent,
-                sxHeight=5*UNIT,sCapHeight=7*UNIT,fsType=0,achVendID="TVWC")
+                sxHeight=(5 if em_px==8 else 7)*UNIT,sCapHeight=(7 if em_px==8 else 10)*UNIT,fsType=0,achVendID="TVWC")
     panose=fb.font["OS/2"].panose; panose.bFamilyType=2; panose.bProportion=9   # monospaced
     fb.setupPost(isFixedPitch=1)
     fb.save(str(path))
@@ -149,12 +171,13 @@ def static_png(path):
 def main():
     drawings=read_drawings(); icons=OUT/"icons"/"hicolor"/"scalable"/"actions"; icons.mkdir(parents=True,exist_ok=True)
     build_font(OUT/"TVWCSPixel5x7.ttf","TVWCS Pixel 5x7",with_drawings(small_font(),drawings,"small",SMALL_ALIASES),6)
+    build_font(OUT/"TVWCSPixel8x16.ttf","TVWCS Pixel 8x16",with_drawings(bdf_font(SRC/"spleen-8x16.bdf"),drawings,"text"),8,16,12,4)
     build_font(OUT/"TVWCSPixel8x8.ttf","TVWCS Pixel 8x8",with_drawings(large_font(),drawings,"large"),8)
     for old in icons.glob("*.svg"): old.unlink()
     for (kind,name),rows in drawings.items():
         if kind=="icon": (icons/f"tvwcs-retro-{name}-symbolic.svg").write_text(icon_svg(rows),encoding="ascii")
     for lit in range(6): (icons/f"tvwcs-retro-wifi-{lit}-symbolic.svg").write_text(icon_svg(wifi_bars(lit)),encoding="ascii")
     static_png(OUT/"static.png")
-    print(f"Wrote {OUT.relative_to(ROOT)}: 2 fonts, {len(list(icons.glob('*.svg')))} icons, static.png")
+    print(f"Wrote {OUT.relative_to(ROOT)}: 3 fonts, {len(list(icons.glob('*.svg')))} icons, static.png")
 
 if __name__=="__main__": main()

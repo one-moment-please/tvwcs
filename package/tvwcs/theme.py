@@ -1,7 +1,7 @@
 """TVWCS's two themes. Modern is the Metro / Modern UI look: flat, square, high-contrast; every corner radius is 0.
 Retro is an old CRT television's menus: green, amber or white pixel text on black, buttons without borders until
-the mouse is over one (dashed) or one is selected (solid), the TVWCS Pixel fonts (5 x 7 for small text, 8 x 8 for
-large) at whole multiples of their pixels, and pixel icons (widgets.glyph)."""
+the mouse is over one (dashed) or one is selected (solid), the TVWCS Pixel fonts (5 x 7 for small text, the thinner
+8 x 16 for the text of lists and buttons, 8 x 8 for large) at whole multiples of their pixels, and pixel icons (widgets.glyph)."""
 from __future__ import annotations
 import re
 from tvwcs.widgets import METRO_COLORS
@@ -125,9 +125,12 @@ for _p in RETRO_PALETTES.values():
     _p.update(PANE=_p["BG"],CARD=_p["BG"],STATUS=_p["BG"],BORDER=_p["MUTED"],TROUGH=_p["LINE"],ERROR=_p["FG"],ON=_p["FG"])
 
 SMALL_FONT='"TVWCS Pixel 5x7", monospace'
+TEXT_FONT='"TVWCS Pixel 8x16", "TVWCS Pixel 5x7", monospace'   # what 8 x 16 lacks (★, ✓, ⋯) is in 5 x 7
 LARGE_FONT='"TVWCS Pixel 8x8", monospace'
 LARGE_FROM=20   # px at desktop size: text this big or bigger is in the 8 x 8 font
-PIXEL_GRID=8    # both fonts are 8 pixels to the em: their sizes are rounded to a multiple of 8 px
+PIXEL_GRID=8    # the 5 x 7 and 8 x 8 fonts are 8 pixels to the em: their sizes are rounded to a multiple of 8 px
+TEXT_FROM=12    # px at desktop size: text this big (and under LARGE_FROM) is in the thinner 8 x 16 font, smaller text in 5 x 7
+TEXT_GRID=16    # the 8 x 16 font is 16 pixels to the em: a multiple of 16 px (and so of 8, for what 5 x 7 draws in it)
 
 # Drawn after the Modern rules (and the Settings app's), overriding them: no fills, the selection a solid border.
 RETRO_CSS="""
@@ -160,11 +163,13 @@ textview.console, textview.console text { background: @BG@; color: @FG@; font-fa
 """
 
 def _large_fonts(css):
-    """Give every rule with large text (LARGE_FROM px or more) the 8 x 8 font."""
+    """Give every rule with large text (LARGE_FROM px or more) the 8 x 8 font, and the text of lists, buttons and their
+    notes (TEXT_FROM up to LARGE_FROM px) the 8 x 16 one; the smallest text (badges) keeps the 5 x 7 font."""
     def rule(m):
         size=re.search(r"font-size:\s*(\d+)px",m.group(1))
-        if not size or int(size.group(1))<LARGE_FROM: return m.group(0)
-        return "{"+m.group(1).rstrip().rstrip(";")+f"; font-family: {LARGE_FONT}; }}"
+        if not size or int(size.group(1))<TEXT_FROM: return m.group(0)
+        font=LARGE_FONT if int(size.group(1))>=LARGE_FROM else TEXT_FONT
+        return "{"+m.group(1).rstrip().rstrip(";")+f"; font-family: {font}; }}"
     return re.sub(r"\{([^{}]*)\}",rule,css)
 
 def retro_css(css):
@@ -177,11 +182,13 @@ def retro_css(css):
 SMALL_BELOW=15  # px at desktop size: notes and details, a step smaller than the text they explain
 
 def snap_font_size(px, scale=1.0):
-    """A pixel font's size in screen px, for `px` at desktop size: the nearest whole multiple of its 8 pixels, or for
-    notes and details the multiple below (but never under 16 px for text that is 12 px or more once scaled), so they
-    stay a step smaller than the labels around them."""
+    """A pixel font's size in screen px, for `px` at desktop size: the nearest whole multiple of its pixels (16 for the
+    8 x 16 font, else 8), or for notes and details the multiple below (but never under 16 px for text that is 12 px or
+    more once scaled), so they stay a step smaller than the labels around them."""
     scaled=px*scale
-    if px>=SMALL_BELOW: return max(PIXEL_GRID,round(scaled/PIXEL_GRID)*PIXEL_GRID)
+    if px>=LARGE_FROM: return max(PIXEL_GRID,round(scaled/PIXEL_GRID)*PIXEL_GRID)
+    if px>=SMALL_BELOW: return max(TEXT_GRID,round(scaled/TEXT_GRID)*TEXT_GRID)
+    if px>=TEXT_FROM: return max(TEXT_GRID,int(scaled//TEXT_GRID)*TEXT_GRID)
     return max(2*PIXEL_GRID if scaled>=12 else PIXEL_GRID,int(scaled//PIXEL_GRID)*PIXEL_GRID)
 
 def render_css(accent, scale=1.0, extra="", theme="dark", style="modern", phosphor="green"):

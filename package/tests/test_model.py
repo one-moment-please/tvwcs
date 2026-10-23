@@ -84,7 +84,7 @@ class SettingsAndProfileTests(unittest.TestCase):
     def test_the_mode_is_the_session(self):
         self.assertTrue(tv_mode({"TVWCS_SESSION":"sway"})); self.assertFalse(tv_mode({}))
         self.assertFalse(tv_mode({"TVWCS_SESSION":"i3","TVWCS_MODE":"desktop"})); self.assertTrue(tv_mode({"TVWCS_MODE":"tv"}))
-        self.assertEqual((scale_key({"scale":""},True),scale_key({"scale":""},False),scale_key({"scale":"tenfoot_4k"},False)),("tenfoot","desktop","tenfoot_4k"))
+        self.assertEqual((scale_key({"scale":""},True),scale_key({"scale":""},False),scale_key({"scale":"4","scale_4k":True},False)),((4,False),(3,False),(4,True)))
     def test_settings_removed_in_4_0_are_dropped(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"c.json"
@@ -208,22 +208,29 @@ class ProfileHotkeyTests(unittest.TestCase):
             store.set_profile_hotkey("b",""); self.assertEqual(store.hotkey_profiles(),[])
 
 class ScaleTests(unittest.TestCase):
-    def test_4k_mode_needs_a_4k_display_unless_already_chosen(self):
-        from tvwcs.model import SCALE_LABELS, is_4k, scale_choices
-        self.assertEqual((SCALE_LABELS["tenfoot"],SCALE_LABELS["tenfoot_4k"]),("TV Mode","4K TV Mode"))
-        self.assertEqual([k for k,_ in scale_choices("desktop",False)],["desktop","tenfoot"])
-        self.assertEqual([k for k,_ in scale_choices("desktop",True)],["desktop","tenfoot","tenfoot_4k"])
-        self.assertEqual([k for k,_ in scale_choices("tenfoot_4k",False)],["desktop","tenfoot","tenfoot_4k"])
+    def test_sizes_1_to_5_and_the_automatic_ones(self):
+        from tvwcs.model import SIZES, size_of, size_label
+        self.assertEqual((SIZES[3],SIZES[4]),(1.0,1.6))   # the desktop and TV sizes of before 5.8
+        self.assertEqual((size_of({},True),size_of({},False)),(4,3))
+        self.assertEqual((size_of({"style":"retro"},True),size_of({"style":"retro"},False)),(3,2))   # Retro: a size smaller
+        self.assertEqual(size_of({"scale":"5","style":"retro"},True),5); self.assertEqual(size_of({"scale":"9"},False),3)
+        self.assertEqual((size_label(3),size_label(4),size_label(1)),("3 (desktop size)","4 (TV size)","1"))
+    def test_old_size_names_become_numbers(self):
+        from tvwcs.model import _clean_settings, is_4k
+        self.assertEqual([(_clean_settings({"scale":k})["scale"],_clean_settings({"scale":k})["scale_4k"]) for k in ("desktop","tenfoot","tenfoot_4k")],
+                         [("3",False),("4",False),("4",True)])
+        self.assertEqual((_clean_settings({"scale":"2","scale_4k":True})["scale"],_clean_settings({"scale":"2","scale_4k":True})["scale_4k"]),("2",True))
+        self.assertEqual(_clean_settings({"scale":"0"})["scale"],"")
         self.assertTrue(is_4k(3840,2160)); self.assertTrue(is_4k(2160,3840)); self.assertFalse(is_4k(1920,1080)); self.assertFalse(is_4k(5120,1440))
-
-class ScaleTests(unittest.TestCase):
-    def test_tv_sizes_shrink_on_a_smaller_screen(self):
+    def test_large_sizes_shrink_on_a_smaller_screen(self):
         from tvwcs.model import effective_scale
-        self.assertEqual(effective_scale("tenfoot",1080),1.6); self.assertEqual(effective_scale("tenfoot",0),1.6)
-        self.assertAlmostEqual(effective_scale("tenfoot",720),1.067,places=3)
-        self.assertEqual(effective_scale("tenfoot",480),1.0)                      # never smaller than Desktop
-        self.assertEqual(effective_scale("tenfoot_4k",2160),3.0); self.assertEqual(effective_scale("tenfoot_4k",1080),1.5)
-        self.assertEqual(effective_scale("desktop",720),1.0); self.assertEqual(effective_scale("tenfoot",2160),1.6)
+        self.assertEqual(effective_scale((4,False),1080),1.6); self.assertEqual(effective_scale((4,False),0),1.6)
+        self.assertAlmostEqual(effective_scale((4,False),720),1.067,places=3)
+        self.assertEqual(effective_scale((4,False),480),1.0)                      # never smaller than the desktop size
+        self.assertEqual(effective_scale((4,True),2160),3.0); self.assertEqual(effective_scale((4,True),1080),1.6)   # 4K TV Mode before 5.8
+        self.assertEqual(effective_scale((3,False),720),1.0); self.assertEqual(effective_scale((4,False),2160),1.6)
+        self.assertEqual((effective_scale((1,False),720),effective_scale((2,False),1080),effective_scale((5,False),1080)),(0.6,0.8,2.0))
+        self.assertEqual(effective_scale((3,True),2160),1.875)
 
 class AppNameTests(unittest.TestCase):
     def test_plain_profiles_follow_a_renamed_application(self):

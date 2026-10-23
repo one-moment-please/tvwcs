@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.8.0 — 2026-10-23
+
+- **Settings › Appearance › Interface size is now 1 to 5,** a row of buttons from smallest to largest. 3 is the old Desktop size and 4 the old TV Mode, with 1 and 2 smaller and 5 larger. Auto picks by the mode and the theme: 4 in TV mode and 3 in desktop mode, and a size smaller in the Retro theme (3 and 2), whose pixel text reads well smaller. 4K TV Mode is now the **Sized for a 4K screen** switch (shown when a 4K display is connected), which makes any size about twice as large; size 4 with it is the old 4K TV Mode. A size chosen before keeps its look.
+- **Retro: a thinner font for lists, buttons and notes.** Application names, Settings rows and their notes are in TVWCS Pixel 8x16, built from Frederic Cambus's Spleen font (BSD licence), whose strokes are one pixel wide in a taller cell, so text is thinner at the same size. Large text keeps the 8 × 8 font and the smallest (badges) the 5 × 7 one. Characters Spleen lacks (★, ✓, ⋯) come from the 5 × 7 font.
+
 ## 5.7.2 — 2026-10-23
 
 - In server mode, **Settings › User** also has **Turn off the screen after**, next to Lock after (Power and sleep is turned off there).
