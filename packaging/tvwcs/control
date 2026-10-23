@@ -6,7 +6,7 @@ Section: x11
 Priority: optional
 Homepage: https://github.com/one-moment-please/tvwcs
 Depends: python3, python3-gi, gir1.2-gtk-4.0, sway, swayidle, swaylock, pulseaudio-utils, network-manager, udisks2, libglib2.0-bin, xdg-desktop-portal, xdg-desktop-portal-gtk, adwaita-icon-theme, fonts-open-sans, librsvg2-common
-Recommends: pipewire-pulse | pulseaudio, wireplumber, bluez
+Recommends: pipewire-pulse | pulseaudio, wireplumber, bluez, fonts-inter
 Conflicts: tvwcs-boot-logo
 Installed-Size: @SIZE@
 Description: TV launcher, workspace switcher and settings for sway, made for a remote

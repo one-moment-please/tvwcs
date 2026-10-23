@@ -8,7 +8,7 @@ RETRO_DIR=Path(__file__).resolve().parent/"retro"
 ICON_DIR=RETRO_DIR/"icons"   # an icon theme folder: the icons are in hicolor/scalable/actions, so GTK colours them in
 ICON_FILES=ICON_DIR/"hicolor"/"scalable"/"actions"
 STATIC_PICTURE=RETRO_DIR/"static.png"
-FONT_FILES=(RETRO_DIR/"TVWCSPixel5x7.ttf",RETRO_DIR/"TVWCSPixel8x16.ttf",RETRO_DIR/"TVWCSPixel8x8.ttf")
+FONT_FILES=(RETRO_DIR/"TVWCSPixel5x7.ttf",RETRO_DIR/"TVWCSPixel8x16.ttf",RETRO_DIR/"TVWCSPixel8x8.ttf",RETRO_DIR/"VT323-Regular.ttf")
 
 # The icon names TVWCS asks for (without -symbolic), and the pixel icon drawn for each. Wi-Fi and battery levels
 # are worked out in retro_icon_name. An icon without a pixel one keeps the icon theme's (in the phosphor colour).
@@ -33,9 +33,10 @@ ICONS={
 }
 WIFI_LEVELS=("none","weak","ok","good","excellent")   # 1 to 5 bars lit
 
-def retro_icon_name(name):
+ICON_SETS={"pixel":"tvwcs-retro","vt323":"tvwcs-vt"}   # by Settings > Appearance > Font: square pixels, or VT323's rounded ones
+def retro_icon_name(name, prefix="tvwcs-retro"):
     """The pixel icon for an icon theme name ("audio-volume-high-symbolic" -> "tvwcs-retro-volume-high-symbolic"),
-    or None when there is none."""
+    or None when there is none. `prefix` picks the set (ICON_SETS)."""
     base=re.sub(r"-symbolic$","",name or "")
     wifi=re.fullmatch(r"network-wireless-signal-(\w+)",base)
     battery=re.fullmatch(r"battery-level-(\d+)(-charging|-charged)?",base)
@@ -44,7 +45,7 @@ def retro_icon_name(name):
         level=int(battery.group(1))
         key="battery-charging" if battery.group(2)=="-charging" else f"battery-{0 if level<=10 else 1 if level<=40 else 2 if level<=70 else 3}"
     else: key=ICONS.get(base)
-    return f"tvwcs-retro-{key}-symbolic" if key else None
+    return f"{prefix}-{key}-symbolic" if key else None
 
 def icon_pixel_size(px):
     """An icon's size in screen px: a whole multiple of its 9 pixels, so none is blurred."""

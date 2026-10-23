@@ -13,7 +13,7 @@ from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, 
 from tvwcs import __version__, features, power, privilege, selfupdate, servermode, sway_include
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (AUTO_SIZE, CORNERS, PHOSPHORS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SIZES, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, auto_size, corner_right, is_4k,
+from tvwcs.model import (AUTO_SIZE, CORNERS, PHOSPHORS, RETRO_FONTS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SIZES, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, auto_size, corner_right, is_4k,
                          size_label, tv_mode)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for
@@ -252,6 +252,9 @@ class AppearancePage(_ConfigPage):
             self.note("Like the menus of an old CRT TV: pixel text in one colour on black, buttons without borders until one is "
                       "selected, and no application icons. Applications that follow the desktop's colour scheme are dark.")
             self.row("Colour",PHOSPHORS[st["phosphor"]],self.choose_phosphor,ident="opt:phosphor")
+            self.row("Font",RETRO_FONTS[st["retro_font"]],self.choose_retro_font,ident="opt:retro_font")
+            self.note("Pixel is TVWCS's own pixel fonts, sharp at every size. VT323 is a 1970s computer terminal's font. "
+                      "Inter is a smooth font made to be easy to read.")
             self.row("Background",RETRO_WALLPAPER_LABELS[st["retro_wallpaper"]],self.choose_retro_wallpaper,ident="opt:retro_wallpaper",
                      swatch=st["retro_wallpaper"])
         else:
@@ -308,6 +311,8 @@ class AppearancePage(_ConfigPage):
         self.win.choose_option("Theme",list(STYLES.items()),self.state.settings["style"],lambda t:self.change(lambda s:s.settings.update(style=t)))
     def choose_phosphor(self):
         self.win.choose_option("Colour",list(PHOSPHORS.items()),self.state.settings["phosphor"],lambda c:self.change(lambda s:s.settings.update(phosphor=c)))
+    def choose_retro_font(self):
+        self.win.choose_option("Font",list(RETRO_FONTS.items()),self.state.settings["retro_font"],lambda f:self.change(lambda s:s.settings.update(retro_font=f)))
     def choose_retro_wallpaper(self):
         self.win.choose_swatch("Background","Gray, blue, or the static of a TV between channels.",list(RETRO_WALLPAPERS),
                                self.state.settings["retro_wallpaper"],lambda k:self.change(lambda s:s.settings.update(retro_wallpaper=k)),

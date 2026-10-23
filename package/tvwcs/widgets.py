@@ -12,6 +12,7 @@ from tvwcs.model import METRO_COLORS   # re-exported: the pages take it from her
 
 _scale=[1.0]
 _retro=[False]
+_icon_set=[None]   # the Retro theme's pixel icons in use (retro.ICON_SETS), or None for the icon theme's (Inter)
 
 _I3_MODS=((Gdk.ModifierType.SUPER_MASK,"Mod4"),(Gdk.ModifierType.ALT_MASK,"Mod1"),(Gdk.ModifierType.CONTROL_MASK,"Control"),(Gdk.ModifierType.SHIFT_MASK,"Shift"))
 
@@ -34,26 +35,28 @@ def has_icon(name):
 
 def is_retro(): return _retro[0]
 _retro_ready=[False]
-def use_retro(on):
-    """Draw in the Retro theme (or not): glyph() then uses the pixel icons, app_icon() shows no application icons, and
-    text is drawn without smoothing, so the pixel fonts stay sharp. The fonts and icons are added once, whichever
+def use_retro(on, font="pixel"):
+    """Draw in the Retro theme (or not), in its `font` (model.RETRO_FONTS): app_icon() shows no application icons,
+    glyph() uses the font's icons (square pixel ones, VT323's rounded ones, or for Inter the icon theme's), and the
+    pixel fonts are drawn without smoothing, so they stay sharp. The fonts and icons are added once, whichever
     theme is in use, so switching needs no restart. Call before building widgets; theme.render_css has the rules."""
     if not _retro_ready[0]:
         retro.add_fonts(); theme=_theme()
         if theme is not None and retro.ICON_DIR.is_dir(): theme.add_search_path(str(retro.ICON_DIR)); _retro_ready[0]=True
-    _retro[0]=bool(on)
+    _retro[0]=bool(on); _icon_set[0]=retro.ICON_SETS.get(font) if on else None
     settings=Gtk.Settings.get_default()
     if settings is None: return
+    sharp=bool(on) and font not in ("vt323","readable")   # VT323 and Inter are smooth outline fonts
     if settings.find_property("gtk-font-rendering") is not None:   # GTK 4.16+: the xft settings apply only when manual
-        settings.set_property("gtk-font-rendering",Gtk.FontRendering.MANUAL if on else Gtk.FontRendering.AUTOMATIC)
-    settings.set_property("gtk-xft-antialias",0 if on else -1)
-    settings.set_property("gtk-xft-hinting",0 if on else -1)
+        settings.set_property("gtk-font-rendering",Gtk.FontRendering.MANUAL if sharp else Gtk.FontRendering.AUTOMATIC)
+    settings.set_property("gtk-xft-antialias",0 if sharp else -1)
+    settings.set_property("gtk-xft-hinting",0 if sharp else -1)
 
 def glyph(icon_name, fallback, size=None):
     """A symbolic icon if the icon theme has it, otherwise a text glyph. In the Retro theme its pixel icon, if it has
     one, at a whole multiple of its pixels."""
-    if _retro[0]:
-        pixel=retro.retro_icon_name(icon_name)
+    if _icon_set[0]:
+        pixel=retro.retro_icon_name(icon_name,_icon_set[0])
         if has_icon(pixel):
             img=Gtk.Image.new_from_icon_name(pixel); img.set_pixel_size(retro.icon_pixel_size(S(size or 16)))
             img.set_halign(Gtk.Align.CENTER); img.set_valign(Gtk.Align.CENTER)   # placed on a whole pixel, not centred inside a bigger box

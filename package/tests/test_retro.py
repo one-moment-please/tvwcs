@@ -17,7 +17,7 @@ class RetroIconTests(unittest.TestCase):
     def test_every_icon_named_is_drawn(self):
         names=set(retro.ICONS.values())|{f"wifi-{n}" for n in range(1,6)}|{f"battery-{n}" for n in range(4)}|{"battery-charging","check"}
         for name in names:
-            self.assertTrue((retro.ICON_FILES/f"tvwcs-retro-{name}-symbolic.svg").is_file(),name)
+            for prefix in retro.ICON_SETS.values(): self.assertTrue((retro.ICON_FILES/f"{prefix}-{name}-symbolic.svg").is_file(),(prefix,name))
     def test_icons_are_9_by_9_pixels(self):
         for path in retro.ICON_FILES.glob("*.svg"):
             self.assertIn('viewBox="0 0 9 9"',path.read_text(encoding="ascii"),path.name)
@@ -30,8 +30,9 @@ class RetroIconTests(unittest.TestCase):
 class RetroSettingsTests(unittest.TestCase):
     def test_defaults_are_modern(self):
         s=model._clean_settings({})
-        self.assertEqual((s["style"],s["phosphor"],s["retro_wallpaper"]),("modern","green","gray"))
+        self.assertEqual((s["style"],s["phosphor"],s["retro_wallpaper"],s["retro_font"]),("modern","green","gray","pixel"))
         self.assertEqual(model.wallpaper_of(s),model.DEFAULT_WALLPAPER)
+        self.assertEqual(model._clean_settings({"retro_font":"vt323"})["retro_font"],"vt323"); self.assertEqual(model._clean_settings({"retro_font":"comic"})["retro_font"],"pixel")
     def test_retro_choices_are_kept_and_bad_ones_dropped(self):
         s=model._clean_settings({"style":"retro","phosphor":"amber","retro_wallpaper":"static","theme":"light"})
         self.assertEqual((s["style"],s["phosphor"],s["retro_wallpaper"]),("retro","amber","static"))
@@ -64,6 +65,17 @@ class RetroThemeTests(unittest.TestCase):
         badge=next(l for l in theme.render_css("#0078d7",style="retro").splitlines() if l.startswith(".badge {"))
         self.assertNotIn("8x16",badge)   # the smallest text keeps the 5 x 7 font
         self.assertEqual((theme.snap_font_size(13,1.6),theme.snap_font_size(15,1.6)),(16,32))   # notes a step smaller
+    def test_vt323_and_inter_replace_the_pixel_fonts(self):
+        vt=theme.render_css("#0078d7",1.0,style="retro",retro_font="vt323")
+        self.assertIn('"VT323"',vt); self.assertNotIn("TVWCS Pixel",vt)
+        button=next(l for l in vt.splitlines() if l.startswith("button { "))
+        self.assertIn("font-size: 21px",button)   # 15 px, 40 % larger
+        inter=theme.render_css("#0078d7",1.6,style="retro",retro_font="readable")
+        self.assertIn('"Inter"',inter); self.assertNotIn("TVWCS Pixel",inter); self.assertIn("font-weight: 200",inter)   # Modern's weights
+        self.assertIn("font-size: 24px",next(l for l in inter.splitlines() if l.startswith("button { ")))   # scaled, not snapped
+        self.assertIn("tvwcs-vt-check-symbolic",vt)
+        self.assertEqual(retro.retro_icon_name("view-more-symbolic","tvwcs-vt"),"tvwcs-vt-dots-symbolic")
+        self.assertIn("TVWCS Pixel",theme.render_css("#0078d7",style="retro",retro_font="nonsense"))
     def test_phosphor_replaces_the_accent(self):
         css=theme.render_css("#e81123",style="retro",phosphor="amber")
         self.assertIn("#ffb000",css); self.assertNotIn("@",re.sub(r"@media","",css))

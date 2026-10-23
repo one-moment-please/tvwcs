@@ -91,6 +91,9 @@ def corner_top(corner) -> bool: return str(corner or "").startswith("top")
 # old CRT television's menus, in pixel fonts with pixel icons and no application icons.
 STYLES={"modern":"Modern","retro":"Retro"}
 PHOSPHORS={"green":"Green","amber":"Amber","white":"White"}
+# Settings > Appearance > Font (Retro): TVWCS's pixel fonts, sharp at whole pixels; VT323, after a 1970s DEC terminal's
+# font (bundled); or Inter, smooth and easy to read (the fonts-inter package, else Open Sans).
+RETRO_FONTS={"pixel":"Pixel","vt323":"VT323","readable":"Inter (easy to read)"}
 # Settings > Appearance > Light or dark (Modern): TVWCS's light or dark look; applications that follow the desktop's
 # colour scheme follow it. The Retro theme is always dark.
 THEMES={"dark":"Dark","light":"Light"}
@@ -130,6 +133,7 @@ DEFAULT_SETTINGS={
     "quick_corner":DEFAULT_CORNER,  # CORNERS: where the Quick Menu sits, its layout mirrored to match
     "style":"modern",               # STYLES: the Modern or the Retro theme
     "phosphor":"green",             # PHOSPHORS: the Retro theme's colour
+    "retro_font":"pixel",           # RETRO_FONTS: the Retro theme's font
     "retro_wallpaper":"gray",       # RETRO_WALLPAPERS: the Retro theme's background (Modern keeps its own in wallpaper)
     "theme":"dark",                 # THEMES: the Modern theme's light or dark, passed on to applications that follow the desktop's colour scheme
     "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
@@ -186,7 +190,7 @@ def _clean_settings(raw) -> dict:
     elif scale.isdigit() and int(scale) in SIZES: s["scale"]=scale
     if isinstance(raw.get("scale_4k"),bool) and scale not in LEGACY_SCALES: s["scale_4k"]=raw["scale_4k"]
     if raw.get("theme") in THEMES: s["theme"]=raw["theme"]
-    for key,allowed in (("style",STYLES),("phosphor",PHOSPHORS),("retro_wallpaper",RETRO_WALLPAPERS)):
+    for key,allowed in (("style",STYLES),("phosphor",PHOSPHORS),("retro_font",RETRO_FONTS),("retro_wallpaper",RETRO_WALLPAPERS)):
         if raw.get(key) in allowed: s[key]=raw[key]
     if raw.get("quick_corner") in CORNERS: s["quick_corner"]=raw["quick_corner"]
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()

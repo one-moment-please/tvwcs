@@ -103,9 +103,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         if self._provider is None:
             self._provider=Gtk.CssProvider()
             if display: Gtk.StyleContext.add_provider_for_display(display,self._provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        settings=self.app.store.settings; use_retro(settings.get("style")=="retro")   # before the widgets: their icons depend on it
+        settings=self.app.store.settings; font=settings.get("retro_font","pixel")
+        use_retro(settings.get("style")=="retro",font)   # before the widgets: their icons depend on it
         self._provider.load_from_data(render_css(settings["accent"],self.app.scale_factor,theme=settings.get("theme","dark"),
-                                                 style=settings.get("style","modern"),phosphor=settings.get("phosphor","green")).encode("utf-8"))
+                                                 style=settings.get("style","modern"),phosphor=settings.get("phosphor","green"),retro_font=font).encode("utf-8"))
 
     def set_panels(self,guide,options=None):
         """Show or hide the Applications pane, built once and kept, so closing and opening it again never disturbs
