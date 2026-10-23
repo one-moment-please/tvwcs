@@ -22,7 +22,7 @@ The look follows Metro (Modern UI): flat and typographic.
 - **Solid colour.** Dark surfaces by default (a light mode is an option), one accent colour (chosen in Settings), large light type, small spaced capitals for section titles. Text contrast is kept high.
 - **Clear focus.** The selected item is a solid accent block with a white frame. Dangerous actions turn red.
 - **Real icons.** App logos wherever an app is listed; a coloured letter tile when there is none. Symbols where the meaning is universal (⏻ ✕ ⋯ ≡ ☆ ✎), words elsewhere.
-- **Scales to the room.** Desktop, TV Mode (1080p) and 4K TV Mode sizes. The size applies at once.
+- **Scales to the room.** Interface sizes 1 to 5 (3 the desktop size, 4 the TV size), and sized for a 4K TV with a switch. The size applies at once.
 - **Calm motion.** Short fades, turned off by **Reduce motion**.
 - **Everything in one window.** Dialogs, editors, messages and the on-screen keyboard are drawn inside the TVWCS window, so they cannot get lost behind it.
 - **Remote first.** Every control is reachable with arrows, OK and Back. In TV mode the key hints name the remote's keys (OK, Back).

@@ -8,7 +8,7 @@ RETRO_DIR=Path(__file__).resolve().parent/"retro"
 ICON_DIR=RETRO_DIR/"icons"   # an icon theme folder: the icons are in hicolor/scalable/actions, so GTK colours them in
 ICON_FILES=ICON_DIR/"hicolor"/"scalable"/"actions"
 STATIC_PICTURE=RETRO_DIR/"static.png"
-FONT_FILES=(RETRO_DIR/"TVWCSPixel5x7.ttf",RETRO_DIR/"TVWCSPixel8x8.ttf")
+FONT_FILES=(RETRO_DIR/"TVWCSPixel5x7.ttf",RETRO_DIR/"TVWCSPixel8x16.ttf",RETRO_DIR/"TVWCSPixel8x8.ttf")
 
 # The icon names TVWCS asks for (without -symbolic), and the pixel icon drawn for each. Wi-Fi and battery levels
 # are worked out in retro_icon_name. An icon without a pixel one keeps the icon theme's (in the phosphor colour).

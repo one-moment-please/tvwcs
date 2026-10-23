@@ -36,27 +36,35 @@ def tv_mode(env=None) -> bool:
     if forced in ("tv","desktop"): return forced=="tv"
     return bool(env.get("TVWCS_SESSION"))
 
-SCALE_PRESETS={"desktop":1.0,"tenfoot":1.6,"tenfoot_4k":3.0}
-SCALE_LABELS={"desktop":"Desktop","tenfoot":"TV Mode","tenfoot_4k":"4K TV Mode"}
-AUTO_SCALE={True:"tenfoot",False:"desktop"}   # the interface size when none is chosen ("scale": ""): by the mode
-def scale_key(settings, tv=None) -> str:
-    """The interface size in use: the one chosen, else TV Mode in TV mode and Desktop in desktop mode."""
-    key=settings.get("scale") or ""
-    return key if key in SCALE_PRESETS else AUTO_SCALE[tv_mode() if tv is None else tv]
-# The screen height each TV size is drawn for. On a smaller screen (a 720p TV) it shrinks to fit, never below Desktop.
-SCALE_DESIGN_HEIGHT={"tenfoot":1080,"tenfoot_4k":2160}
+# Settings > Appearance > Interface size: 1 to 5, the size of TVWCS's text and controls on a 1080p screen. 3 is the
+# desktop size and 4 the TV size (Desktop and TV Mode before 5.8). Automatic ("scale": "") picks by the mode and the
+# theme: the Retro theme's pixel text reads well a size smaller.
+SIZES={1:0.6,2:0.8,3:1.0,4:1.6,5:2.0}
+SIZE_NAMES={3:"desktop size",4:"TV size"}
+AUTO_SIZE={(True,False):4,(False,False):3,(True,True):3,(False,True):2}   # (TV mode, Retro) -> size
+LEGACY_SCALES={"desktop":3,"tenfoot":4,"tenfoot_4k":4}   # the sizes' names before 5.8 ("tenfoot_4k" also set scale_4k)
+UHD_FACTOR=3.0/1.6   # "Sized for a 4K screen": TV size 4 is then 3.0, 4K TV Mode before 5.8
+def auto_size(settings, tv=None) -> int:
+    return AUTO_SIZE[(tv_mode() if tv is None else tv, settings.get("style")=="retro")]
+def size_of(settings, tv=None) -> int:
+    """The interface size in use, 1 to 5: the one chosen, else the mode's and theme's own (auto_size)."""
+    try: size=int(settings.get("scale") or 0)
+    except (TypeError,ValueError): size=0
+    return size if size in SIZES else auto_size(settings,tv)
+def scale_key(settings, tv=None):
+    """What decides the interface scale (the size and whether it is sized for 4K): when it changes, TVWCS redraws."""
+    return (size_of(settings,tv),bool(settings.get("scale_4k")))
+# The screen height each size is drawn for: the larger sizes, and every size sized for 4K, shrink to fit a shorter
+# screen (a 720p TV, or a 1080p one), never below the size they would be without it.
 def effective_scale(key, screen_height=0) -> float:
-    """The interface size actually used: the preset, made smaller on a screen shorter than the one it is drawn for."""
-    scale=SCALE_PRESETS.get(key,1.0); design=SCALE_DESIGN_HEIGHT.get(key)
-    if design and screen_height and screen_height<design: scale=max(1.0,round(scale*screen_height/design,3))
-    return scale
-UHD_SCALES=("tenfoot_4k",)   # only offered when a 4K (3840×2160) or larger display is connected
-
-def scale_choices(current, has_4k_display, tv=None):
-    """The interface sizes to offer: Automatic (by the mode), then the sizes; 4K TV Mode needs a 4K display, unless it
-    is the one already chosen."""
-    auto=SCALE_LABELS[AUTO_SCALE[tv_mode() if tv is None else tv]]
-    return [("",f"Automatic ({auto} in this mode)")]+[(k,v) for k,v in SCALE_LABELS.items() if has_4k_display or k not in UHD_SCALES or k==current]
+    """The interface scale actually used, for a scale_key: the size's, made smaller on a screen shorter than the one it
+    is drawn for."""
+    size,uhd=key; scale=SIZES.get(size,1.0); floor=min(scale,1.0); design=1080 if size>=4 else 0
+    if uhd: floor,scale,design=scale,scale*UHD_FACTOR,2160
+    if design and screen_height and screen_height<design: scale=max(floor,round(scale*screen_height/design,3))
+    return round(scale,3)
+def size_label(size) -> str:
+    return f"{size} ({SIZE_NAMES[size]})" if size in SIZE_NAMES else str(size)
 
 def is_4k(width, height) -> bool:
     return max(width,height)>=3840 and min(width,height)>=2160
@@ -112,7 +120,8 @@ DEFAULT_SETTINGS={
     "quick_width":460,              # px (at desktop scale) width of the Quick Menu; the Settings panel matches it
     "accent":"#0078d7",             # Metro accent colour
     "lock_command":"",              # empty = auto-detect a screen locker (desktop mode; TV mode uses TVWCS's lock screen)
-    "scale":"",                     # key of SCALE_PRESETS, or "" for the mode's own size (scale_key)
+    "scale":"",                     # Interface size "1" to "5" (SIZES), or "" for the mode's own size (size_of)
+    "scale_4k":False,               # the interface size is sized for a 4K screen (UHD_FACTOR larger)
     "close_on_click_outside":True,  # close TVWCS when it loses focus (another window takes it)
     "hide_options_buttons":False,   # hide the Quick Menu rows' ⋯ buttons; ← on a row (or a right-click) still opens its options
     "update_prereleases":False,     # TVWCS's updater also offers prereleases (releases not yet tested and marked latest)
@@ -168,9 +177,13 @@ def _clean_settings(raw) -> dict:
     accent=raw.get("accent")
     if isinstance(accent,str) and re.fullmatch(r"#[0-9a-fA-F]{6}",accent): s["accent"]=accent
     if isinstance(raw.get("lock_command"),str): s["lock_command"]=raw["lock_command"].strip()
-    if raw.get("scale") in SCALE_PRESETS: s["scale"]=raw["scale"]
-    # Before 4.0, "Used on" (use) set the size along with it: a size that only followed it now follows the mode
-    if raw.get("use") in ("tv","desktop") and raw.get("scale")==AUTO_SCALE[raw["use"]=="tv"]: s["scale"]=""
+    scale=str(raw.get("scale") or "")
+    if scale in LEGACY_SCALES:   # before 5.8: a named size
+        s["scale"]=str(LEGACY_SCALES[scale]); s["scale_4k"]=scale=="tenfoot_4k"
+        # before 4.0, "Used on" (use) set the size along with it: a size that only followed it now follows the mode
+        if raw.get("use") in ("tv","desktop") and scale==("tenfoot" if raw["use"]=="tv" else "desktop"): s["scale"]=""
+    elif scale.isdigit() and int(scale) in SIZES: s["scale"]=scale
+    if isinstance(raw.get("scale_4k"),bool) and scale not in LEGACY_SCALES: s["scale_4k"]=raw["scale_4k"]
     if raw.get("theme") in THEMES: s["theme"]=raw["theme"]
     for key,allowed in (("style",STYLES),("phosphor",PHOSPHORS),("retro_wallpaper",RETRO_WALLPAPERS)):
         if raw.get(key) in allowed: s[key]=raw[key]

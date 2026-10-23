@@ -13,8 +13,8 @@ from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, 
 from tvwcs import __version__, features, power, privilege, selfupdate, servermode, sway_include
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (CORNERS, PHOSPHORS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SCALE_LABELS, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, corner_right, is_4k, scale_choices,
-                         scale_key, tv_mode)
+from tvwcs.model import (AUTO_SIZE, CORNERS, PHOSPHORS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SIZES, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, auto_size, corner_right, is_4k,
+                         size_label, tv_mode)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for
 from tvwcs.ui_control import StreamedRun, colour_swatch, in_background
@@ -246,10 +246,7 @@ class AppearancePage(_ConfigPage):
     def draw(self, store):
         st=store.settings
         self.section("LOOK")
-        has_4k=self.has_4k(); tv=tv_mode(); size=st["scale"] or ""
-        label=SCALE_LABELS.get(size) or f"Automatic ({SCALE_LABELS[scale_key(st,tv)]})"
-        self.row("Interface size",label,lambda:self.win.choose_option("Interface size",scale_choices(size,has_4k,tv),size,self.pick_scale),ident="opt:scale")
-        self.note("Automatic is TV Mode in a TVWCS session and Desktop otherwise"+("; 4K TV Mode suits a 4K TV." if has_4k else ". 4K TV Mode is offered when a 4K display is connected."))
+        self.size_buttons(st)
         self.row("Theme",STYLES[st["style"]],self.choose_style,ident="opt:style")
         if st["style"]=="retro":
             self.note("Like the menus of an old CRT TV: pixel text in one colour on black, buttons without borders until one is "
@@ -284,6 +281,24 @@ class AppearancePage(_ConfigPage):
             m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor())
             if is_4k(g.width*f,g.height*f): return True
         return False
+    def size_buttons(self, st):
+        """Interface size: Auto, then 1 to 5 from small to large, the one chosen marked; and, with a 4K display, whether
+        it is sized for a 4K screen."""
+        tv=tv_mode(); chosen=st["scale"] or ""; auto=auto_size(st,tv)
+        head=Gtk.Label(label="Interface size"); head.set_xalign(0); head.set_margin_top(S(6)); self.add(head)
+        line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(4)); line.set_homogeneous(True); buttons=[]
+        for key,text in [("","Auto")]+[(str(n),str(n)) for n in SIZES]:
+            b=Gtk.Button(label=text); b.set_tooltip_text(f"Automatic: size {auto} here" if not key else size_label(int(key)))
+            if key==chosen: b.add_css_class("active")
+            else: b.connect("clicked",lambda _b,key=key:self.pick_scale(key))
+            line.append(b); buttons.append(b)
+        self.add(line); self.register(*buttons,ident="opt:scale")
+        self.note(f"From 1 (smallest) to 5 (largest): 3 is the desktop size and 4 the TV size. Auto is size {auto} here: "
+                  f"{AUTO_SIZE[(True,False)]} in TV mode and {AUTO_SIZE[(False,False)]} in desktop mode, and a size smaller in the "
+                  f"Retro theme ({AUTO_SIZE[(True,True)]} and {AUTO_SIZE[(False,True)]}).")
+        if st["scale_4k"] or self.has_4k():
+            self.option("Sized for a 4K screen","scale_4k","Makes every size about twice as large, for a 4K TV whose picture isn't scaled up by "
+                        "Displays (size 4 is then 4K TV Mode from earlier versions).")
     def pick_scale(self, key): self.change(lambda s:s.settings.update(scale=key))   # settings_changed redraws Settings at it
     def choose_accent(self):
         current=self.state.settings["accent"].lower()
