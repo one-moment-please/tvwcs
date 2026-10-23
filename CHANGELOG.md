@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.7.1 — 2026-10-23
+
+- **Lock after, in server mode:** Power and sleep is turned off in server mode, so its lock time is now on **Settings › User**, under Server mode. It sets the time both plugged in and on battery.
+
 ## 5.7.0 — 2026-10-23
 
 - **Server mode,** for a computer that is a server first: one account uses the TV and logs in automatically into TVWCS, and nothing in TVWCS can put the computer to sleep, restart or shut it down, update it, change its network or unmount its drives. The power menu keeps only Lock (and Log out with a login screen); the idle timer never sleeps and a nearly empty battery does nothing. Settings turns off Power and sleep, Software updates and Network, and hides every other setting that needs an administrator (SSH, the time zone and network time, the automatic login and login screen, your full name, installing a page's software). A polkit rule backs it up for the TV's account: logind, UDisks and NetworkManager refuse those actions whatever asks. It is a root-owned file, `/etc/tvwcs/server-mode`.

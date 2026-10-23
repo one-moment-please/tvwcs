@@ -2,7 +2,7 @@
 login and server mode. The system side is loginscreen.py, servermode.py and account.py; the changes that need root go
 through the window's run_as_root (or, to turn server mode off from a standard account, an administrator's su)."""
 from __future__ import annotations
-from tvwcs import account, loginscreen, servermode, sway_include
+from tvwcs import account, loginscreen, power, servermode, sway_include
 from tvwcs.model import STARTUP_LABELS, STARTUP_MODES, ConfigStore, startup_choices
 from tvwcs.ui_control import in_background
 
@@ -111,9 +111,26 @@ def draw_server_mode(page, a, server):
     page.row("Server mode",f"On for {server}" if server else "Off",lambda:(turn_server_off if server else turn_server_on)(page,a),
              detail="No power, update, network or other administrator settings on the TV" if not server else "Turning it off needs an administrator",
              ident="user:server",value_css="state-on" if server else "setting-value")
+    if server and sway_include.in_sway(): draw_lock_after(page)
     page.note("For a computer that is a server first: the account that uses the TV logs in automatically into TVWCS, "
               "and nobody can put the computer to sleep, restart or shut it down, update it, change its network or unmount "
               "its drives from TVWCS. Also from a terminal or over SSH: tvwcs -s --user=NAME.")
+
+def draw_lock_after(page):
+    """Power and sleep is turned off in server mode, so its one setting that keeps the server safe, locking the TV
+    when nobody uses it, is here instead. It sets both of Power's times (plugged in and on battery)."""
+    lock=ConfigStore().settings["idle"]["lock"]
+    page.row(power.LABELS["lock"],power.duration_text(lock),lambda:choose_lock_after(page,lock),
+             detail="When nothing is touched, in place of Power and sleep's time",ident="user:lock")
+
+def choose_lock_after(page, current):
+    def picked(key):
+        store=ConfigStore()
+        for option in ("idle","idle_battery"): store.settings[option]["lock"]=int(key)
+        store.save()
+        from tvwcs.ui_control_pages import tell_tvwcs
+        tell_tvwcs("reload"); page.refresh(quiet=True)
+    page.win.choose_option(power.LABELS["lock"],[(str(v),power.duration_text(v)) for v in power.CHOICES],str(current),picked)
 
 def turn_server_on(page, a):
     if not a.admin:
