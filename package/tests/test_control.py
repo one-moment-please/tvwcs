@@ -1,6 +1,7 @@
 """The Settings app's readers: the output of pactl, bluetoothctl, nmcli, ip, the package managers and /proc, parsed
 from saved samples. No display, sound server, adapter or network needed."""
 import os, tempfile, unittest
+from unittest import mock
 from pathlib import Path
 
 from tvwcs import control_bluetooth as bt, control_network as net, control_sound as sound, control_sysinfo as info, control_updates as upd
@@ -129,6 +130,22 @@ class SoundTests(unittest.TestCase):
         self.assertEqual([sound.stepped(110,-1),sound.stepped(110,1),sound.stepped(112,-1)],[105,110,110])   # above 100 %: down from there
         self.assertEqual([sound.stepped(100,1,boost=True),sound.stepped(150,1,boost=True)],[105,150])   # over-amplification: up to 150 %
         self.assertEqual(sound.top(),100); self.assertEqual(sound.top(True),150)
+    def test_volume_keys_stop_at_the_top(self):
+        def press(volume, step, boost=False):
+            calls=[]
+            def fake_run(cmd, timeout=None):
+                calls.append(cmd)
+                return Result(True,0,f"Volume: front-left: 1 / {volume}% / -3 dB,   front-right: 1 / {volume}% / -3 dB\n" if cmd[1]=="get-sink-volume" else "","")
+            with mock.patch.object(sound,"run",fake_run): sound.volume_key(step,boost)
+            return calls[-1][-1] if calls[-1][1]=="set-sink-volume" else None
+        self.assertEqual([press(95,1),press(100,1),press(100,1,boost=True),press(150,1,boost=True),press(100,-1)],["100%","100%","105%","150%","95%"])
+        self.assertEqual(press(120,1),"120%")   # set louder elsewhere: the key does not make it louder still
+        self.assertEqual(sound.main(["volume","sideways"]),2)
+    def test_tvwcs_conf_binds_the_volume_keys(self):
+        conf=(Path(__file__).resolve().parents[2]/"data"/"tvwcs.conf").read_text().splitlines()
+        for flag in ("--locked ",""):
+            for key,word in (("Raise","up"),("Lower","down")):
+                self.assertIn(f"bindsym {flag}XF86Audio{key}Volume exec /usr/bin/tvwcs volume {word}",conf)
     def test_stream_indexes(self):
         self.assertEqual(sound.parse_short_streams("12\t52\t83\tPipeWire\ts16le\n15\t52\t90\n"),[12,15])
 

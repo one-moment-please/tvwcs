@@ -7,7 +7,7 @@ A sound card only has outputs for its active profile: a computer whose card is o
 at all until the card is switched to an HDMI profile (and a graphics card's HDMI sound often starts switched off).
 So the outputs of every card's other profiles are listed too, and choosing one switches the card to it."""
 from __future__ import annotations
-import re, time
+import re, sys, time
 from dataclasses import dataclass, field
 
 from tvwcs.control_cmd import have, key_values, run
@@ -198,6 +198,24 @@ def stepped(volume, step, boost=False):
 def set_volume(device, percent, boost=False):
     return run(["pactl",f"set-{device.kind}-volume",device.name,f"{max(0,min(top(boost),int(percent)))}%"],timeout=5)
 
+def volume_key(step, boost=False):
+    """A volume key on the remote or keyboard (`tvwcs volume up|down`, bound in tvwcs.conf): the output in use one
+    step up or down, stopping at the same top as Settings (100 %, or 150 % with over-amplification). Sway's standard
+    config binds these keys to a plain `pactl set-sink-volume +5%`, which has no top."""
+    from tvwcs.quick_status import parse_volume
+    current=run(["pactl","get-sink-volume","@DEFAULT_SINK@"],timeout=3)
+    if not current.ok: return current
+    volume=parse_volume(current.out,"")[0]
+    if volume is None: return current
+    return run(["pactl","set-sink-volume","@DEFAULT_SINK@",f"{stepped(volume,step,boost)}%"],timeout=3)
+
+def main(args):
+    """`tvwcs volume up|down` (no GTK, so a held key keeps up)."""
+    if len(args)!=2 or args[0]!="volume" or args[1] not in ("up","down"):
+        print("Usage: tvwcs volume up|down",file=sys.stderr); return 2
+    from tvwcs.model import ConfigStore
+    return 0 if volume_key(1 if args[1]=="up" else -1,bool(ConfigStore().settings["audio_boost"])).ok else 1
+
 def set_muted(device, muted):
     return run(["pactl",f"set-{device.kind}-mute",device.name,"1" if muted else "0"],timeout=5)
 
@@ -228,3 +246,5 @@ def make_default(device):
         for index in parse_short_streams(streams.out):
             run(["pactl","move-sink-input" if device.kind=="sink" else "move-source-output",str(index),device.name],timeout=5)
     return result
+
+if __name__=="__main__": raise SystemExit(main(sys.argv[1:]))

@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.10.1 — 2026-10-24
+
+- **The volume keys of remotes and keyboards stop at 100 %** when Settings › Sound › Allow over-amplification is off (150 % when it is on), like the Sound page. Sway's standard config bound them to a plain `pactl ... +5%`, which went on past that. TVWCS's sway config (`tvwcs.conf`) now binds them to the new `tvwcs volume up|down`, also on the lock screen. A volume set louder by another program is not raised further, and goes down from where it is.
+
 ## 5.10.0 — 2026-10-23
 
 - **The `tvwcs` command has a name for each thing it does,** and `tvwcs help` lists them. Plain `tvwcs` still does what fits where you type it (at a text console it starts TVWCS's session as you).
