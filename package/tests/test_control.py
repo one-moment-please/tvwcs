@@ -145,7 +145,7 @@ class SoundTests(unittest.TestCase):
         conf=(Path(__file__).resolve().parents[2]/"data"/"tvwcs.conf").read_text().splitlines()
         for flag in ("--locked ",""):
             for key,word in (("Raise","up"),("Lower","down")):
-                self.assertIn(f"bindsym {flag}XF86Audio{key}Volume exec /usr/bin/tvwcs volume {word}",conf)
+                self.assertIn(f"bindsym {flag}--no-warn XF86Audio{key}Volume exec /usr/bin/tvwcs volume {word}",conf)
     def test_stream_indexes(self):
         self.assertEqual(sound.parse_short_streams("12\t52\t83\tPipeWire\ts16le\n15\t52\t90\n"),[12,15])
 
