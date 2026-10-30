@@ -1,8 +1,18 @@
 # Installing TVWCS on Arch
 
-TVWCS runs on Arch Linux and on systems built on it (EndeavourOS, CachyOS, Manjaro). It isn't in the AUR yet, so you build its package from the PKGBUILD attached to each [release](https://github.com/one-moment-please/tvwcs/releases). That takes a few seconds, since there is nothing to compile. pacman installs what TVWCS needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
+TVWCS runs on Arch Linux and on systems built on it (EndeavourOS, CachyOS, Manjaro). It isn't in the AUR yet, so its package is built from the PKGBUILD attached to each [release](https://github.com/one-moment-please/tvwcs/releases). That takes a few seconds, since there is nothing to compile. pacman installs what TVWCS needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
 
 ## Install
+
+The installer does it all, asking its questions first (which version, logging in automatically, adding TVWCS to your usual sway session). Once you agree, it downloads the release's PKGBUILD, builds the package with `makepkg` as you, and installs it with pacman (installing `fakeroot` first if it's missing). Run it in a terminal, as your own user (not root), who can use `sudo`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
+```
+
+If pacman says it can't find a package TVWCS needs, update the system first (`sudo pacman -Syu`) and run it again.
+
+### By hand
 
 You need `base-devel` (for `makepkg`) and a user who can use `sudo`:
 
@@ -47,13 +57,15 @@ Until a release with these files has been marked latest, use a version's own add
   - **Arch news:** the page shows what Arch has posted at <https://archlinux.org/news/> since your last full update, and the Install question mentions it. Read those first: they're how Arch announces the rare update that needs a step by hand.
   - **Update step by step** runs pacman without `--noconfirm`. Each question it asks (go ahead, replace a package, remove one that conflicts, choose between packages that provide the same thing, import a key) appears with a button for each answer. Back answers No. Install offers it too when an automatic run stops, which is usually a question whose default answer is No.
   - **New default settings files:** when an update brings a new default version of a settings file you (or a program) changed, pacman keeps yours and saves the new one next to it as `.pacnew`. The page lists those files. Merge each by hand (`sudo pacdiff` walks through them) and delete the `.pacnew`.
-- **TVWCS's own updates.** Settings › Software updates › Check for TVWCS updates tells you when a new release is out. To install it, run the same commands as above in a new folder (or delete the old files first).
+- **TVWCS's own updates.** Settings › Software updates › Check for TVWCS updates tells you when a new release is out. To install it, run the installer again (or the commands above, in a new folder).
 
 ## Remove it
 
 ```sh
 sudo pacman -R tvwcs
 ```
+
+(or the installer's `--remove`, which also takes TVWCS out of your usual sway config and can delete your TVWCS settings).
 
 This also ends an automatic login into TVWCS and turns server mode off. greetd keeps its config, greeter and all: only the automatic login into TVWCS goes (and agreety, if it was starting TVWCS after the password, starts a shell instead). Your settings in `~/.config/tvwcs` are kept.
 

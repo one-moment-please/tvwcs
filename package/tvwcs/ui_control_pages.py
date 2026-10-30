@@ -415,7 +415,7 @@ class _SelfUpdate:
                  icon="view-refresh-symbolic",fallback="⟳")
         if selfupdate.other_package():
             self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}). This copy was built from TVWCS's "
-                      "Arch package: install a new release by building its package the same way (makepkg -si).")
+                      "Arch package: install a new release by running TVWCS's installer again in a terminal (or with makepkg -si, as in docs/INSTALL-ARCH.md).")
             return
         self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
         pre=ConfigStore().settings["update_prereleases"]
@@ -448,8 +448,8 @@ class _SelfUpdate:
         if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
         self.update_text=f"{release.version} available"; self.redraw()
         if selfupdate.other_package():
-            self.win.notice("TVWCS updates",f"TVWCS {release.version} is available (you have {__version__}). Build and install its Arch "
-                            "package as you did this one: download its PKGBUILD and tvwcs.install from the release on GitHub, then run makepkg -si."); return
+            self.win.notice("TVWCS updates",f"TVWCS {release.version} is available (you have {__version__}). Install it by running TVWCS's "
+                            "installer again in a terminal:\n\ncurl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash"); return
         if not selfupdate.packaged():
             self.win.notice("TVWCS updates",f"TVWCS {release.version} is available. This copy runs from a source checkout: update it with git pull."); return
         kind=" prerelease" if release.prerelease else ""
