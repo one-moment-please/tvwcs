@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.12.0 — 2026-10-30
+
+- **Wi-Fi through iwd.** On a computer whose network NetworkManager doesn't run, such as Arch with systemd-networkd and iwd, Settings › Network lists the Wi-Fi networks iwd sees and joins and forgets them. The new `control_iwd.py` reads iwd over D-Bus (`busctl`) as you. Joining, connecting, leaving and forgetting run as root (iwd's D-Bus policy only promises that to root), so each asks for your password. A password is saved where iwd keeps it (`/var/lib/iwd/<network>.psk`) and handed over in a file only you can read, never on a command line. A network that doesn't connect the first time is forgotten again, so a mistyped password isn't kept.
+- **DHCP or set by hand.** Without NetworkManager, the Network page says for each connected port whether DHCP gave its address, and what set it up (systemd-networkd, dhcpcd or iwd). An address set by hand gets a warning saying where to change it from the command line, since Settings can't change it there.
+
 ## 5.11.0 — 2026-10-30
 
 - **Arch support.** TVWCS runs on Arch Linux and on systems built on it (EndeavourOS, CachyOS, Manjaro). Each release now has a `PKGBUILD` and `tvwcs.install` attached, built by the new `scripts/build-arch.sh`. Build and install it with `makepkg -si`; [docs/INSTALL-ARCH.md](docs/INSTALL-ARCH.md) has the steps and what Arch does differently. The same files can go to the AUR later.

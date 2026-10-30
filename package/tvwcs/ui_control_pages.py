@@ -1154,7 +1154,7 @@ class NetworkPage(Page):
     def summary(self):
         s=self.state
         if not s: return ""
-        return "NetworkManager" if s.managed else "Shown only (no NetworkManager)"
+        return "NetworkManager" if s.managed else "Wi-Fi through iwd" if s.iwd else "Shown only (no NetworkManager)"
     def draw(self, s):
         if not s.managed: self.note(s.message)
         unmanaged=[i for i in s.interfaces if i.state.startswith("unmanaged")]
@@ -1169,6 +1169,7 @@ class NetworkPage(Page):
         self.section("WI-FI")
         wireless=s.of_kind("wifi")
         if not wireless: self.note("No Wi-Fi adapter was found."); return
+        if s.iwd: self.draw_iwd(s,wireless); return
         if not s.managed or wireless[0].state.startswith("unmanaged"):
             for i in wireless: self.ethernet_row(i,s.managed)
             return
@@ -1181,6 +1182,35 @@ class NetworkPage(Page):
                  detail="Looks for Wi-Fi networks nearby. The list is not searched again until you choose this.",ident="scan")
         if not s.networks: self.note("Looking…" if self.scanning else "No networks listed. Choose Search for networks to look for them.")
         for n in s.networks: self.wifi_row(n,device)
+
+    def draw_iwd(self, s, wireless):
+        """Wi-Fi run by iwd (no NetworkManager): its adapter, then the networks it sees, to join or forget."""
+        for i in wireless: self.ethernet_row(i,False)
+        if not s.wifi_enabled: self.note("The Wi-Fi adapter is off (iwd). Turn it on with: iwctl device "+wireless[0].device+" set-property Powered on"); return
+        self.row("Search for networks","Searching…" if self.scanning else "",None if self.scanning else self.scan,icon="edit-find-symbolic",fallback="⌕",
+                 detail="Looks for Wi-Fi networks nearby. iwd also looks now and then by itself.",ident="scan")
+        if not s.networks: self.note("Looking…" if self.scanning else "No networks listed. Choose Search for networks to look for them.")
+        device=next((i for i in wireless if i.connected),wireless[0])
+        for n in s.networks: self.wifi_row(n,device)
+
+    def iwd_root(self, args, label, status, cleanup=""):
+        """One of control_iwd's root commands (it asks for the password), then the page is read again."""
+        self.set_status(status); lines=[]
+        def done(code,tail):
+            self.set_status("")
+            if cleanup:
+                try: os.unlink(cleanup)
+                except OSError: pass
+            if code: self.win.notice("Wi-Fi",("\n".join(lines[-4:]) or tail or f"{label} did not work.").strip())
+            self.refresh(quiet=True)
+        self.win.run_as_root(network.iwd.root_argv(*args),label,lines.append,done)
+
+    def plain_ip_row(self, i):
+        """Without NetworkManager: whether DHCP gave the address, with a warning when it was set by hand."""
+        if not i.addresses: return
+        self.row(f"IP settings ({i.device})","Automatic (DHCP)" if i.dynamic else "Set by hand",None,ident=f"ip:{i.device}",
+                 detail={"networkd":"Set up by systemd-networkd","dhcpcd":"Set up by dhcpcd","iwd":"Set up by iwd"}.get(i.set_by,""))
+        if not i.dynamic: self.note(network.hand_set_note(i),"error")
 
     @staticmethod
     def _details(i):
@@ -1205,6 +1235,7 @@ class NetworkPage(Page):
         self.row(label,self._state_text(i),go,detail=detail,icon="network-wired-symbolic" if i.kind=="ethernet" else "network-wireless-symbolic",
                  fallback="⇄",ident=f"if:{i.device}",extras=extras,value_css="state-on" if i.connected else "setting-value")
         if managed: self.ip_row(i)
+        elif i.connected: self.plain_ip_row(i)
 
     def take_over(self, i):
         """Hand a port that NetworkManager leaves alone to it (control_network: with ifupdown, a minimal Debian
@@ -1250,16 +1281,24 @@ class NetworkPage(Page):
     def wifi_row(self, n, device):
         detail=f"{network.signal_bars(n.signal)}  {n.signal} %"+(f" · {n.security}" if n.secured else " · Open")
         if n.in_use and device.addresses: detail+=" · "+self._details(device)
-        extras=[]
+        extras=[]; s=self.state
+        if s.iwd:   # each change is a root command (it asks for the password)
+            forget=lambda n=n:self.iwd_root(["forget",n.ssid],f"Forgetting {n.ssid}",f"Forgetting {n.ssid}…")
+            disconnect=lambda n=n:self.iwd_root(["disconnect",s.iwd_station],f"Disconnecting from {n.ssid}",f"Disconnecting from {n.ssid}…")
+            connect=lambda n=n:self.iwd_root(["join",n.ssid],f"Connecting to {n.ssid}",f"Connecting to {n.ssid}…")
+        else:
+            forget=lambda n=n:self.act(lambda:network.forget(n.saved_uuid),f"Forgetting {n.ssid}…","Wi-Fi")
+            disconnect=lambda n=n:self.act(lambda:network.disconnect_device(device.device),f"Disconnecting from {n.ssid}…","Wi-Fi")
+            connect=lambda n=n:self.act(lambda:network.activate(n.saved_uuid),f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
         if n.saved_uuid:
-            extras.append(self.button("user-trash-symbolic","✕",f"Forget {n.ssid}",lambda n=n:self.win.confirm(f"Forget {n.ssid}?",
+            extras.append(self.button("user-trash-symbolic","✕",f"Forget {n.ssid}",lambda n=n,forget=forget:self.win.confirm(f"Forget {n.ssid}?",
                           f"The saved password and settings for {n.ssid} are removed"+(", and this computer leaves it." if n.in_use else "."),
-                          "Forget",lambda:self.act(lambda:network.forget(n.saved_uuid),f"Forgetting {n.ssid}…","Wi-Fi")),danger=True))
+                          "Forget",forget),danger=True))
         if n.in_use:
-            go=lambda n=n:self.win.confirm(f"Disconnect from {n.ssid}?","Anything using the network will lose it until you connect again.","Disconnect",
-                                          lambda:self.act(lambda:network.disconnect_device(device.device),f"Disconnecting from {n.ssid}…","Wi-Fi"))
-        elif n.saved_uuid: go=lambda n=n:self.act(lambda:network.activate(n.saved_uuid),f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
+            go=lambda n=n:self.win.confirm(f"Disconnect from {n.ssid}?","Anything using the network will lose it until you connect again.","Disconnect",disconnect)
+        elif n.saved_uuid: go=connect
         elif n.secured: go=lambda n=n:self.ask_password(n)
+        elif s.iwd: go=connect
         else: go=lambda n=n:self.act(lambda:network.join_wifi(n.ssid),f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
         locked=n.secured
         self.row(n.ssid,"Connected" if n.in_use else "Saved" if n.saved_uuid else "",go,detail=detail,
@@ -1269,12 +1308,17 @@ class NetworkPage(Page):
     def ask_password(self, n, error=""):
         def join(password):
             if not password: return
+            if self.state.iwd:
+                try: secret=network.iwd.password_file(password)
+                except (ValueError,OSError) as exc: self.ask_password(n,str(exc)); return
+                self.iwd_root(["join",n.ssid,secret],f"Connecting to {n.ssid}",f"Connecting to {n.ssid}…",cleanup=secret); return
             def work():
                 problem=network.join_wifi(n.ssid,password)
                 if problem!="The password was not accepted.": return problem
                 GLib.idle_add(lambda:(self.ask_password(n,"The password was not accepted. Try again."),GLib.SOURCE_REMOVE)[1]); return ""
             self.act(work,f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
-        self.win.ask_text(f"Password for {n.ssid}",f"{n.security} network. NetworkManager saves the password for next time.",join,secret=True,ok_label="Connect",error=error)
+        keeper="iwd saves it (in /var/lib/iwd) for next time. Then Settings asks for your own password, since that needs administrator rights." if self.state.iwd else "NetworkManager saves the password for next time."
+        self.win.ask_text(f"Password for {n.ssid}",f"{n.security} network. {keeper}",join,secret=True,ok_label="Connect",error=error)
 
     def scan(self):
         self.scanning=True; self.redraw(); self.set_status("Searching for networks…")

@@ -29,7 +29,10 @@ Until a release with these files has been marked latest, use a version's own add
 ## Things Arch does differently
 
 - **sudo.** Settings asks for your password and runs administrator actions with `sudo`. Your user has to be allowed to use it: the `%wheel ALL=(ALL:ALL) ALL` line in `/etc/sudoers` must not be commented out (edit it with `sudo EDITOR=nano visudo`), and you have to be in `wheel`. archinstall sets this up for the user you create.
-- **The network.** Settings changes Ethernet and Wi-Fi through NetworkManager. Arch doesn't start a network manager by itself, so many installs use systemd-networkd with iwd, or dhcpcd, instead. To hand the network to NetworkManager:
+- **The network.** Arch doesn't start a network manager by itself, so many installs use systemd-networkd with iwd, or dhcpcd, instead of NetworkManager. Without NetworkManager, Settings › Network:
+  - with **iwd** running, lists the Wi-Fi networks it sees, and joins and forgets them (each asks for your password, since iwd only lets an administrator change them). iwd saves a network's password in `/var/lib/iwd`, as `iwctl` does.
+  - shows each port's addresses and whether DHCP gave them. An address set by hand (in a `.network` file in `/etc/systemd/network`, in `/etc/dhcpcd.conf`, or in a network's file in `/var/lib/iwd`) gets a warning that says where to change it: Settings can't, there.
+  - can't change Ethernet or IP settings. For those, hand the network to NetworkManager:
 
   ```sh
   sudo pacman -S networkmanager

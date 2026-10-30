@@ -160,7 +160,7 @@ Open **TVWCS Settings** with channel 000, from a status panel's settings button,
 | **Date and time** (`datetime`) | Time zone (one list), network time, 12- or 24-hour clock. |
 | **Software updates** (`updates`) | System updates (apt), and TVWCS's own updates (including prereleases and rolling back), installed as packages. |
 | **System information** (`system`) | Hardware and versions. Turns the SSH server on or off and shows how to connect. |
-| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. An Ethernet port the Debian installer set up (shown as "not managed"), or Ubuntu Server's netplan network, can be handed to NetworkManager; the old setup is kept as a backup, and on Ubuntu saved Wi-Fi networks and fixed addresses carry over. |
+| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. Without NetworkManager, Wi-Fi run by iwd (Arch) can be joined and forgotten, and an address set by hand is pointed out with where to change it. An Ethernet port the Debian installer set up (shown as "not managed"), or Ubuntu Server's netplan network, can be handed to NetworkManager; the old setup is kept as a backup, and on Ubuntu saved Wi-Fi networks and fixed addresses carry over. |
 | **Storage** (`storage`) | Drives, with their partitions under them: mount and unmount partitions and safely remove drives. Partitions of the running system are marked as part of it. |
 
 A page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth BlueZ, and so on). When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.
