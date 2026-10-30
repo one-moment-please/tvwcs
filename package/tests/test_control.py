@@ -259,9 +259,15 @@ class UpdatesTests(unittest.TestCase):
     def test_apt(self):
         text="Listing...\nbash/noble-updates,noble-security 5.2.21-2ubuntu4.1 amd64 [upgradable from: 5.2.21-2ubuntu4]\nfirefox/noble 129.0 amd64\n"
         self.assertEqual(upd.parse_apt(text),[upd.Update("bash","5.2.21-2ubuntu4.1","5.2.21-2ubuntu4","noble-updates"),upd.Update("firefox","129.0","","noble")])
+    def test_pacman(self):
+        self.assertEqual(upd.parse_pacman("linux 6.9.7.arch1-1 -> 6.9.8.arch1-1\nmesa 1 -> 2 [ignored]\n"),[upd.Update("linux","6.9.8.arch1-1","6.9.7.arch1-1")])
+        m=next(m for m in upd.MANAGERS if m.id=="pacman")
+        self.assertEqual(m.install_argv,("pacman","-Syu","--noconfirm")); self.assertIn(2,m.ok_codes)   # 2: nothing to update
+        self.assertTrue(m.fresh_lists); self.assertEqual(m.refresh_argv,())   # never pacman -Sy alone (a partial upgrade)
     def test_detect_uses_the_first_manager_found(self):
         self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("apt-get","flatpak") else None).id,"apt")
-        self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","pacman","dnf","xbps-install","apk") else None))   # not supported (TODO.md)
+        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("pacman","checkupdates") else None).id,"pacman")
+        self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","dnf","xbps-install","apk") else None))   # not supported (TODO.md)
         self.assertIsNone(upd.detect(which=lambda c:None))
     def test_age_and_reboot(self):
         self.assertEqual([upd.age_text(t,1000000) for t in (999990,1000000-300,1000000-7200,1000000-86400*3)],["just now","5 minutes ago","2 hours ago","3 days ago"])

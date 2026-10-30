@@ -49,6 +49,7 @@ jobs:
             echo "file=$(ls -t resources/TVWCS-*beta*.zip | head -1)" >> "$GITHUB_OUTPUT"
           else
             ./scripts/make-release.sh
+            ./scripts/build-arch.sh   # the Arch package's PKGBUILD, tvwcs.install and source tarball
             echo "file=$(ls -t resources/TVWCS-*.zip | grep -v beta | head -1)" >> "$GITHUB_OUTPUT"
           fi
       - name: Upload artifact
@@ -70,3 +71,6 @@ jobs:
             ${{ steps.build.outputs.file }}
             resources/tvwcs.tar.gz
             resources/*.deb
+            resources/arch/PKGBUILD
+            resources/arch/tvwcs.install
+            resources/arch/tvwcs-*-src.tar.gz

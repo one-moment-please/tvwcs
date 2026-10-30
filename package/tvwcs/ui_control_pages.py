@@ -10,7 +10,7 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 
 from tvwcs import control_storage as storage
 from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, control_display as display, control_ssh as ssh, control_network as network, control_sound as sound, control_sysinfo as sysinfo, control_ubuntu as ubuntu, control_updates as updates
-from tvwcs import __version__, features, power, privilege, selfupdate, servermode, sway_include
+from tvwcs import __version__, distro, features, power, privilege, selfupdate, servermode, sway_include
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
 from tvwcs.model import (AUTO_SIZE, CORNERS, PHOSPHORS, RETRO_FONTS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SIZES, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, auto_size, corner_right, is_4k,
@@ -132,7 +132,7 @@ class Page:
         self.note(f"{f.what} It needs software that is not installed yet.")
         if servermode.active(): self.note(SERVER_HIDDEN); return
         self.row(f"Install {f.label}","",lambda:install_feature(self,f),icon="list-add-symbolic",fallback="+",ident="feature:on",
-                 detail=f"Installs {', '.join(f.packages)}. It asks for your password.")
+                 detail=f"Installs {', '.join(features.packages_for(f))}. It asks for your password.")
 
     def draw_off(self, draw, note=None):
         """The rows draw() adds, shown turned off under a note: outside sway they would change nothing (a GNOME or KDE
@@ -413,6 +413,10 @@ class _SelfUpdate:
         self.section("TVWCS UPDATES")
         self.row("Check for TVWCS updates",self.update_text or f"Version {__version__}",None if self.updating else self.check_updates,ident="opt:update",
                  icon="view-refresh-symbolic",fallback="⟳")
+        if selfupdate.other_package():
+            self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}). This copy was built from TVWCS's "
+                      "Arch package: install a new release by building its package the same way (makepkg -si).")
+            return
         self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
         pre=ConfigStore().settings["update_prereleases"]
         self.row("Include prereleases",_on_off(pre),self.toggle_prereleases,ident="opt:update_prereleases")
@@ -425,7 +429,7 @@ class _SelfUpdate:
     def check_updates(self):
         self.updating=True; self.update_text="Checking…"; self.redraw()
         def failed(exc): self.updating=False; self.update_text="Check failed"; self.redraw(); self.win.notice("TVWCS updates",f"Could not check for updates: {exc}")
-        prereleases=bool(ConfigStore().settings["update_prereleases"])
+        prereleases=bool(ConfigStore().settings["update_prereleases"]) and not selfupdate.other_package()
         in_background(lambda:selfupdate.latest_release(prereleases),self.checked,failed)
     def roll_back(self):
         self.updating=True; self.update_text="Checking…"; self.redraw()
@@ -443,6 +447,9 @@ class _SelfUpdate:
         self.updating=False
         if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
         self.update_text=f"{release.version} available"; self.redraw()
+        if selfupdate.other_package():
+            self.win.notice("TVWCS updates",f"TVWCS {release.version} is available (you have {__version__}). Build and install its Arch "
+                            "package as you did this one: download its PKGBUILD and tvwcs.install from the release on GitHub, then run makepkg -si."); return
         if not selfupdate.packaged():
             self.win.notice("TVWCS updates",f"TVWCS {release.version} is available. This copy runs from a source checkout: update it with git pull."); return
         kind=" prerelease" if release.prerelease else ""
@@ -600,6 +607,9 @@ class SoundPage(Page):
     @staticmethod
     def no_output_text(state):
         if state.alsa_cards==0:
+            if distro.is_arch():
+                return ("The computer has no sound card the system can use: its driver, or the firmware it needs, is missing. "
+                        "Install sof-firmware (Intel laptops and mini PCs) and linux-firmware, then restart.")
             return ("The computer has no sound card the system can use: its driver, or the firmware it needs, is missing. On Debian, "
                     "install firmware-sof-signed (Intel laptops and mini PCs) or firmware-misc-nonfree (from non-free-firmware), then restart.")
         return "No sound output was found."
@@ -884,6 +894,9 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             self.row(f"Install {s.total} update{'s' if s.total!=1 else ''}","",self.confirm_install,ident="install",
                      detail="Installs everything listed below." + (" Asks for your password." if s.updates else ""),
                      icon="software-update-available-symbolic",fallback="⇩")
+        if m is not None and m.id=="pacman":
+            self.note("pacman updates everything at once, as Arch expects. Now and then an update needs a step by hand: Arch "
+                      "announces those at archlinux.org/news. Packages from the AUR are not included; update them with your AUR helper.")
         if getattr(s,"reboot",False):
             self.row("Restart to finish updating","",self.confirm_reboot,detail="Some updates are only used after a restart.",
                      icon="system-reboot-symbolic",fallback="↻",ident="reboot")
@@ -1328,8 +1341,8 @@ def install_feature(page, f, after=None):
         if after: after()
         page.refresh(quiet=True)
     if features.installed(f): installed(); return
-    missing=features.missing_packages(f) or list(f.packages)
-    if not shutil.which("apt-get"):
+    missing=features.missing_packages(f) or list(features.packages_for(f))
+    if not distro.can_install():
         page.win.notice(f.label,f"{f.label} needs {', '.join(f.packages)} (the Debian names). Install them with your package manager.")
         return
     lines=[]
@@ -1339,7 +1352,7 @@ def install_feature(page, f, after=None):
         installed()
     def go():
         page.set_status(f"Installing {', '.join(missing)}…")
-        page.win.run_as_root(features.install_argv(missing),f"Installing {f.label}",lines.append,done)
+        page.win.run_as_root(features.install_argv(missing,f),f"Installing {f.label}",lines.append,done)
     page.win.confirm(f"Install {f.label}?",f"{f.what} It needs {', '.join(missing)}, which will be installed now. It asks for your password.",
                      "Install",go,danger=False)
 

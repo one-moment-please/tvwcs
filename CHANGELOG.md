@@ -1,5 +1,17 @@
 # Changelog
 
+## 5.11.0 — 2026-10-30
+
+- **Arch support.** TVWCS runs on Arch Linux and on systems built on it (EndeavourOS, CachyOS, Manjaro). Each release now has a `PKGBUILD` and `tvwcs.install` attached, built by the new `scripts/build-arch.sh`. Build and install it with `makepkg -si`; [docs/INSTALL-ARCH.md](docs/INSTALL-ARCH.md) has the steps and what Arch does differently. The same files can go to the AUR later.
+  - **Software updates** uses pacman. `checkupdates` (pacman-contrib) lists what is waiting without touching pacman's own database, and Install runs `pacman -Syu`. The page points to archlinux.org/news for updates that need a step by hand, and to your AUR helper for AUR packages.
+  - **Installing what a page needs** (Sound, Bluetooth, the SSH server) uses Arch's package names and `pacman -S --needed`. Bluetooth's service is turned on with it, because Arch doesn't start services after installing them. The SSH page knows Arch's `sshd.service`.
+  - **The login screen:** greetd is set up with Arch's `greeter` user, `/usr/bin/agreety` and the first console. Debian's `/etc/X11/default-display-manager` is only written on Debian.
+  - **TVWCS updates** doesn't offer to install .debs on an Arch package. It says when a new release is out and how to build it.
+  - Hints name Arch's packages there (sof-firmware, libpulse), and the Network page says how to hand the network to NetworkManager when systemd-networkd, iwd or dhcpcd runs it.
+  - `install.sh` stays Debian-only and points Arch users to the guide.
+  - The tests also run on Arch in CI: the unit tests, a package build, installing it with pacman (which checks every dependency's name), namcap and removing it again.
+  - Behind it all is one new module, `distro.py`, that knows each family's package names, install commands and greetd details. Debian's behaviour is unchanged.
+
 ## 5.10.2 — 2026-10-30
 
 - **Switching the login screen to LightDM leaves it starting.** Debian's and Ubuntu's (and so Mint's) `lightdm.service` has no `[Install]` section, so `systemctl enable lightdm` does nothing: after TVWCS disabled the old login screen (for example SDDM, or greetd when removing TVWCS 4.x's greeter), no login screen started at all. TVWCS now points `/etc/systemd/system/display-manager.service` at the new login screen itself. If a computer is already in that state (LightDM is the default but never starts), run `sudo ln -sf /usr/lib/systemd/system/lightdm.service /etc/systemd/system/display-manager.service`. Removing SDDM after installing KDE does the same thing, and that isn't TVWCS's doing.

@@ -15,3 +15,41 @@ jobs:
         with: { python-version: "3.12" }
       - name: Run unit tests
         run: ./scripts/run-tests.sh
+
+  arch:
+    name: Arch package (tests, build, install, namcap, remove)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install the build tools
+        run: pacman -Syu --noconfirm --needed base-devel git namcap python python-gobject gtk4
+      - uses: actions/checkout@v4
+      - name: Run unit tests with Arch's Python
+        run: ./scripts/run-tests.sh
+      - name: Build the package (makepkg runs as a normal user)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          su builder -c "git config --global --add safe.directory '$GITHUB_WORKSPACE' && ./scripts/build-arch.sh --package"
+          cat resources/arch/.SRCINFO
+      - name: Install it with pacman (pulls every dependency by name)
+        run: pacman -U --noconfirm resources/arch/tvwcs-*.pkg.tar.zst
+      - name: namcap
+        run: |
+          namcap resources/arch/PKGBUILD
+          namcap resources/arch/tvwcs-*.pkg.tar.zst
+      - name: Smoke test the installed package
+        run: |
+          tvwcs help
+          cat /usr/lib/tvwcs/PACKAGE
+          PYTHONPATH=/usr/lib/tvwcs python3 -c 'from tvwcs import distro, control_updates as u, features as f, selfupdate as s; assert distro.family()=="arch"; assert u.detect().id=="pacman"; assert s.other_package()=="arch"; print(f.packages_for(f.BY_KEY["bluetooth"]))'
+          PYTHONPATH=/usr/lib/tvwcs python3 -c 'from tvwcs import control_updates as u; s=u.read_state(); print(s.manager.id, s.total, s.problems)'
+          PYTHONPATH=/usr/lib/tvwcs python3 -c 'import gi; gi.require_version("Gtk","4.0"); from tvwcs import ui_control_pages'
+          PYTHONPATH=/usr/lib/tvwcs python3 -m tvwcs.loginscreen status
+      - name: Remove it again (runs tvwcs.install's pre_remove)
+        run: |
+          mkdir -p /etc/greetd && printf '%s\n' '[default_session]' 'command = "/usr/bin/agreety --cmd /usr/bin/tvwcs-session"' 'user = "greeter"' > /etc/greetd/config.toml
+          pacman -R --noconfirm tvwcs
+          grep -q 'user = "greeter"' /etc/greetd/config.toml && ! grep -q tvwcs-session /etc/greetd/config.toml
+          test ! -e /usr/lib/tvwcs

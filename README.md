@@ -59,13 +59,16 @@ The apps in these videos are mockups made for the demo (a window with a still pi
 ## What you need
 
 - **Debian, Ubuntu LTS (tested on 26.04), or another Debian-based system** (Linux Mint, Pop!_OS, Raspberry Pi OS), with **systemd**. On Ubuntu the installer offers to remove Snap, cloud-init and the Ubuntu Pro client (so does Settings > Software updates), and Settings > Network can hand Ubuntu Server's network (netplan with systemd-networkd) to NetworkManager.
-- **sway.** apt installs it with TVWCS. (i3 was supported until 4.x.)
+- **Or Arch Linux, or a system built on it** (EndeavourOS, CachyOS, Manjaro). TVWCS isn't in the AUR yet: you build its package from the PKGBUILD attached to each release. See [Installing TVWCS on Arch](docs/INSTALL-ARCH.md).
+- **sway.** apt or pacman installs it with TVWCS. (i3 was supported until 4.x.)
 
 Other distributions and systems without systemd are not supported. [TODO.md](TODO.md) records what it would take to bring them back.
 
 **New computer?** [Setting up a TV computer with Debian](docs/INSTALL-DEBIAN.md) goes from an empty computer to one that boots into TVWCS.
 
 ## Install
+
+On Arch, follow [Installing TVWCS on Arch](docs/INSTALL-ARCH.md) instead.
 
 TVWCS comes as a Debian package, **tvwcs**, attached to each [release](https://github.com/one-moment-please/tvwcs/releases): the Quick Menu, Applications, Settings and the **TVWCS** session. apt installs what it needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
 
@@ -169,6 +172,8 @@ A page whose software is missing offers to install it (Sound installs PipeWire, 
 **Update:** **Settings › Software updates › Check for TVWCS updates** downloads the new packages and installs them with apt (it asks for your password), or run the installer again. Your data is never changed.
 
 **Uninstall:** `install.sh --remove` (see above).
+
+On Arch, see [Installing TVWCS on Arch](docs/INSTALL-ARCH.md) for both.
 
 ## Troubleshooting
 

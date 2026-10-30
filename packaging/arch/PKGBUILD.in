@@ -1,0 +1,48 @@
+# Maintainer: TVWCS <https://github.com/one-moment-please/tvwcs>
+# Made by scripts/build-arch.sh from packaging/arch/PKGBUILD.in, which fills in the version and checksum. Each release
+# on GitHub has this PKGBUILD, tvwcs.install and the source tarball attached; it is also what goes to the AUR.
+pkgname=tvwcs
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="TV launcher, workspace switcher and settings for sway, made for a remote"
+arch=('any')
+url="https://github.com/one-moment-please/tvwcs"
+license=('MIT' 'BSD-2-Clause' 'OFL-1.1' 'LicenseRef-font8x8')
+depends=('python' 'python-gobject' 'gtk4' 'sway' 'swayidle' 'swaylock' 'libpulse' 'udisks2' 'glib2'
+         'xdg-desktop-portal' 'xdg-desktop-portal-gtk' 'adwaita-icon-theme' 'ttf-opensans' 'librsvg'
+         'polkit' 'sudo' 'pacman-contrib')
+optdepends=('networkmanager: change Ethernet and Wi-Fi settings'
+            'pipewire-pulse: sound (Settings installs it when asked)'
+            'wireplumber: sound (Settings installs it when asked)'
+            'bluez: Bluetooth (Settings installs it when asked)'
+            'bluez-utils: Bluetooth (Settings installs it when asked)'
+            'inter-font: the interface font'
+            'openssh: the SSH server on the System page'
+            'greetd: a login screen that can log in to TVWCS automatically'
+            'pciutils: display adapters on the System page')
+install=tvwcs.install
+source=("$url/releases/download/v$pkgver/$pkgname-$pkgver-src.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+  cd "$pkgname-$pkgver"
+  local lib="$pkgdir/usr/lib/tvwcs"
+  install -Dm644 -t "$lib/tvwcs" package/tvwcs/*.py
+  install -Dm644 -t "$lib/tvwcs/retro" package/tvwcs/retro/*.ttf package/tvwcs/retro/*.png
+  install -Dm644 -t "$lib/tvwcs/retro/icons/hicolor/scalable/actions" package/tvwcs/retro/icons/hicolor/scalable/actions/*.svg
+  install -Dm644 VERSION "$lib/VERSION"
+  # Settings' TVWCS updates then says to build the next release's package instead of installing a .deb from GitHub
+  echo arch > "$lib/PACKAGE"
+  # compiled here, so pacman owns the bytecode and removes it with the package
+  python -m compileall -q -d /usr/lib/tvwcs/tvwcs "$lib/tvwcs"
+
+  install -Dm755 package/bin/tvwcs "$pkgdir/usr/bin/tvwcs"
+  install -Dm755 data/tvwcs-session "$pkgdir/usr/bin/tvwcs-session"
+  install -Dm644 data/tvwcs.conf "$pkgdir/usr/share/tvwcs/tvwcs.conf"
+  install -Dm644 -t "$pkgdir/usr/share/wayland-sessions" data/tvwcs-sway.desktop
+  install -Dm644 -t "$pkgdir/usr/share/applications" data/com.tvwcs.ControlPanel.desktop
+  install -Dm644 -t "$pkgdir/usr/share/icons/hicolor/scalable/apps" data/tvwcs.svg data/tvwcs-settings.svg
+  install -Dm644 -t "$pkgdir/usr/share/doc/$pkgname" README.md CHANGELOG.md docs/INSTALL-ARCH.md
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 scripts/retro/FONTS.txt "$pkgdir/usr/share/licenses/$pkgname/FONTS.txt"
+}

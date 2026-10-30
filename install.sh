@@ -391,7 +391,10 @@ main() {
         warn "    wget -qO- https://raw.githubusercontent.com/$REPO/main/install.sh | bash"
         exit 1
     fi
-    [ "$(distro)" = debian ] || fail "TVWCS supports Debian and its family (apt) only."
+    if os_is arch || os_is endeavouros || os_is cachyos || os_is manjaro; then
+        fail "This installer is for Debian and its family. On Arch, build TVWCS's package from its PKGBUILD: https://github.com/$REPO/blob/main/docs/INSTALL-ARCH.md"
+    fi
+    [ "$(distro)" = debian ] || fail "TVWCS supports Debian and its family (apt), and Arch (docs/INSTALL-ARCH.md)."
     [ -d "${TVWCS_RUN:-/run}/systemd/system" ] || fail "TVWCS needs systemd."
     have python3 || fail "python3 is not installed."
     WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
