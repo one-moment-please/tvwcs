@@ -4,7 +4,7 @@ bluetoothctl runs one command per call (non-interactive mode). Pairing registers
 pairs headphones, speakers, gamepads and remotes ("just works"); a device that insists on typing a code (some
 keyboards) has to be paired once with a full Bluetooth tool."""
 from __future__ import annotations
-import re
+import os, re
 from dataclasses import dataclass, field
 
 from tvwcs.control_cmd import have, key_values, run
@@ -89,7 +89,9 @@ def read_state():
     show=run(["bluetoothctl","show"],timeout=8)
     controller,powered,blocked=parse_show(show.out)
     if not controller:
-        if show.ok or "No default controller" in show.out+show.err: return BtState(False,"No Bluetooth adapter was found.")
+        # bluetooth.service only starts with an adapter (ConditionPathIsDirectory=/sys/class/bluetooth)
+        if show.ok or "No default controller" in show.out+show.err or not os.path.isdir("/sys/class/bluetooth"):
+            return BtState(False,"No Bluetooth adapter was found.")
         return BtState(False,"The Bluetooth service is not answering. Start it (bluetooth.service, or bluetoothd) and try again.")
     devices=[]
     for address,name in parse_devices(run(["bluetoothctl","devices"],timeout=8).out):

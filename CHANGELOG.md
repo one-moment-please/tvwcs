@@ -13,6 +13,8 @@
   - `install.sh` stays Debian-only and points Arch users to the guide.
   - The tests also run on Arch in CI: the unit tests, a package build, installing it with pacman (which checks every dependency's name), namcap and removing it again.
   - Behind it all is one new module, `distro.py`, that knows each family's package names, install commands and greetd details. Debian's behaviour is unchanged.
+- **Removing TVWCS leaves the rest of greetd's config alone** (on Debian too). It used to replace the whole file with a plain agreety config, so another greeter (tuigreet, ReGreet) or its console was lost. Now only TVWCS's automatic login (`[initial_session]` starting `tvwcs-session`) goes, and agreety starts a shell where it was starting TVWCS. No `config.toml.tvwcs-backup` is left, and the removal says what it changed.
+- Fixes found testing in an Arch VM: Bluetooth says no adapter was found when there is none (its service only starts with one), not that the service isn't answering. The note under pacman's updates only says "below" when there is news below. yay's and paru's questions are titled with their name, and the "Packages to exclude" question shows the question, not yay's warning under it. An answer pacman repeats is shown once in the log. A display without a name is no longer listed as "Unknown Unknown".
 
 ## 5.10.2 — 2026-10-30
 

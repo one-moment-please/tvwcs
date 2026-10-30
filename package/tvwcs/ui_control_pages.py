@@ -685,7 +685,7 @@ class DisplaysPage(Page):
         """Connector -> the display's own name, from GDK."""
         gd=Gdk.Display.get_default(); monitors=gd.get_monitors() if gd else None; names={}
         for i in range(monitors.get_n_items() if monitors is not None else 0):
-            m=monitors.get_item(i); label=" ".join(x for x in ((m.get_manufacturer() or ""),(m.get_model() or "")) if x).strip()
+            m=monitors.get_item(i); label=" ".join(x for x in ((m.get_manufacturer() or ""),(m.get_model() or "")) if x and x!="Unknown").strip()
             if m.get_connector() and label: names[m.get_connector()]=label
         return names
     def summary(self):
@@ -865,7 +865,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
     key="updates"; title="Software updates"; icon="software-update-available-symbolic"; fallback="⇩"; server_off=True
     MAX_ROWS=300
     def __init__(self, win):
-        super().__init__(win); self.running=None; self.log=None; self.fetched=None
+        super().__init__(win); self.running=None; self.log=None; self.fetched=None; self.asker="pacman"; self.echo=None
         self.finished=None; self.outcome=None   # the run that just ended, until the page is read again; then what came of it
     def read(self):
         state=updates.read_state(); state.reboot=updates.reboot_needed(); state.extras=ubuntu.installed_extras()
@@ -902,8 +902,10 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             self.row("Update step by step","",self.confirm_step_by_step,ident="step",
                      detail="Installs them showing each question pacman asks, with buttons to answer it.",icon="dialog-question-symbolic",fallback="?")
         if m is not None and m.id=="pacman":
+            where=(", below." if getattr(s,"news",[]) else " (archlinux.org/news), which has nothing new since your last update."
+                   if not getattr(s,"news_unknown",False) else " (archlinux.org/news).")
             self.note("pacman updates everything at once, as Arch expects. Now and then an update needs a step by hand: Arch "
-                      "announces those in its news, below."+("" if s.aur_helper else " Packages from the AUR are not included: "
+                      "announces those in its news"+where+("" if s.aur_helper else " Packages from the AUR are not included: "
                       "with yay or paru installed, Settings updates them too."))
             self.draw_arch_news(s)
             self.draw_aur(s)
@@ -956,7 +958,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
                          +self.news_warning(),"Start",self.update_step_by_step,danger=False)
     def update_step_by_step(self):
         m=self.state.manager
-        self.run_steps("Updating step by step",[(list(m.step_argv),True)],prompts=True)
+        self.asker="pacman"; self.run_steps("Updating step by step",[(list(m.step_argv),True)],prompts=True)
     def answer_prompt(self, run, question, before):
         p=updates.parse_prompt(question,before)
         if p is None: return
@@ -965,11 +967,12 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
                               "(the one sudo asks for). It is used once and never stored.",lambda pw:(self.win.close_modal(),run.send(pw)),
                               secret=True,ok_label="Continue",back=lambda:(self.win.close_modal(),run.stop()))
             return
-        def answer(text): self._append(f"→ {text or '(default)'}"); run.send(text)
+        def answer(text): self._append(f"→ {text or '(default)'}"); self.echo=text or None; run.send(text)
+        title=f"{self.asker} asks"
         if len(p.answers)>4:   # a long choice between packages: a list
-            self.win.choose_option("pacman asks",[(a,label) for label,a in p.answers],p.answers[0][1],answer,back=lambda:(self.win.close_modal(),answer(p.back)))
+            self.win.choose_option(title,[(a,label) for label,a in p.answers],p.answers[0][1],answer,back=lambda:(self.win.close_modal(),answer(p.back)))
         else:
-            self.win.ask_choice("pacman asks",p.question,[(label,lambda a=a:answer(a)) for label,a in p.answers],lambda:answer(p.back))
+            self.win.ask_choice(title,p.question,[(label,lambda a=a:answer(a)) for label,a in p.answers],lambda:answer(p.back))
     def draw_aur(self, s):
         if not s.aur: return
         self.section(f"AUR PACKAGES ({len(s.aur)})")
@@ -985,7 +988,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
                          "build script (choose Show all), and you can stop there. It asks for your password before installing them.",
                          "Start",self.update_aur,danger=False)
     def update_aur(self):
-        h=self.state.aur_helper
+        h=self.state.aur_helper; self.asker=h
         self.run_steps("Updating AUR packages",[(updates.aur_update_argv(h),False)],prompts=True,env=updates.AUR_ENV)
     def draw_arch_news(self, s):
         news=getattr(s,"news",[])
@@ -1030,11 +1033,14 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
                 if fetch: self.fetched=time.time()
                 finish(); return
             argv,root=steps[i]; self._append("$ "+" ".join(argv))
+            def out(line):   # pacman writes the answer it read from a pipe; it is already shown as → answer
+                echo,self.echo=self.echo,None
+                if echo is None or line.strip()!=echo: self._append(line)
             def done(code,tail):
                 if code!=0: finish(tail.strip().splitlines()[-1] if tail.strip() else f"It stopped with exit status {code}."); return
                 next_step(i+1)
-            if root: self.win.run_as_root(argv,label,self._append,done,on_prompt=self.answer_prompt if prompts else None)
-            else: StreamedRun(argv,self._append,done,env=privilege.c_locale_env({**os.environ,**(env or {})}),
+            if root: self.win.run_as_root(argv,label,out,done,on_prompt=self.answer_prompt if prompts else None)
+            else: StreamedRun(argv,out,done,env=privilege.c_locale_env({**os.environ,**(env or {})}),
                               on_prompt=self.answer_prompt if prompts else None)
         next_step(0)
 
@@ -1136,7 +1142,7 @@ class SystemPage(Page):
         display=Gdk.Display.get_default(); monitors=display.get_monitors() if display else None; rows=[]
         for i in range(monitors.get_n_items() if monitors is not None else 0):
             m=monitors.get_item(i); g=m.get_geometry(); f=max(1,m.get_scale_factor()); hz=m.get_refresh_rate()/1000 if m.get_refresh_rate() else 0
-            name=" ".join(x for x in ((m.get_manufacturer() or ""),(m.get_model() or "")) if x).strip() or (m.get_connector() or f"Display {i+1}")
+            name=" ".join(x for x in ((m.get_manufacturer() or ""),(m.get_model() or "")) if x and x!="Unknown").strip() or (m.get_connector() or f"Display {i+1}")
             rows.append((name,f"{g.width*f} × {g.height*f}"+(f" at {hz:.0f} Hz" if hz else "")))
         return rows
 

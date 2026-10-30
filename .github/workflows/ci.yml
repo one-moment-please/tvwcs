@@ -61,7 +61,11 @@ jobs:
           su builder -c "PYTHONPATH=/usr/lib/tvwcs python3 scripts/ci/aur-update.py tvpass yay-bin"
       - name: Remove it again (runs tvwcs.install's pre_remove)
         run: |
-          mkdir -p /etc/greetd && printf '%s\n' '[default_session]' 'command = "/usr/bin/agreety --cmd /usr/bin/tvwcs-session"' 'user = "greeter"' > /etc/greetd/config.toml
+          # only TVWCS's automatic login goes: another greeter and its console stay
+          mkdir -p /etc/greetd && printf '%s\n' '[terminal]' 'vt = 2' '' '[default_session]' 'command = "tuigreet --cmd sway"' 'user = "greeter"' '' '[initial_session]' 'command = "/usr/bin/tvwcs-session"' 'user = "tester"' > /etc/greetd/config.toml
           pacman -R --noconfirm tvwcs
-          grep -q 'user = "greeter"' /etc/greetd/config.toml && ! grep -q tvwcs-session /etc/greetd/config.toml
+          cat /etc/greetd/config.toml
+          grep -q 'command = "tuigreet --cmd sway"' /etc/greetd/config.toml && grep -q 'vt = 2' /etc/greetd/config.toml
+          if grep -q 'tvwcs-session\|initial_session' /etc/greetd/config.toml; then exit 1; fi
+          test ! -e /etc/greetd/config.toml.tvwcs-backup
           test ! -e /usr/lib/tvwcs

@@ -362,8 +362,15 @@ remove_all() {
     ask_no "Remove TVWCS now?" || { say "Nothing was changed."; exit 0; }
     KEEP=1; ask_no "Also delete your TVWCS settings ($TVCONF)?" && KEEP="" || :
     if [ "$(login_screen)" = greetd ] && grep -q tvwcs-session "$ETC/greetd/config.toml" 2>/dev/null; then
-        say "greetd starts TVWCS's session: it goes back to its plain text login."
-        as_root sh -c 'cp "$1" "$1.tvwcs-backup" && printf "%s\n" "[terminal]" "vt = 7" "" "[default_session]" "command = \"/usr/sbin/agreety --cmd /bin/sh\"" "user = \"_greetd\"" > "$1"' sh "$ETC/greetd/config.toml"
+        say "greetd starts TVWCS's session: that goes from its config, and the rest of it stays."
+        # as the package's prerm does: [initial_session] goes, and agreety starts a shell instead of TVWCS
+        as_root sh -c 'awk -v greeter="/usr/sbin/agreety --cmd /bin/sh" '"'"'
+            function flush() { if (held != "" && held !~ /tvwcs-session/) printf "%s", held; held = "" }
+            /^[ \t]*\[/ { flush(); s = $0; gsub(/[ \t]/, "", s); sub(/^\[/, "", s); sub(/\].*/, "", s) }
+            s == "initial_session" { held = held $0 "\n"; next }
+            s == "default_session" && /^[ \t]*command[ \t]*=/ && /tvwcs-session/ { print "command = \"" greeter "\""; next }
+            { print }
+            END { flush() }'"'"' "$1" > "$1.tvwcs-new" && cat "$1.tvwcs-new" > "$1" && rm -f "$1.tvwcs-new"' sh "$ETC/greetd/config.toml"
     fi
     for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf" "$ETC/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf" "$ETC/tvwcs/server-mode" "$ETC/polkit-1/rules.d/50-tvwcs-server-mode.rules"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
     console_profile off || :

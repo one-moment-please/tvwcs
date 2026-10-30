@@ -165,6 +165,13 @@ class BluetoothTests(unittest.TestCase):
         text="Controller 5C:F3:70:11:22:33 (public)\n\tName: tv\n\tPowered: no\n\tPowerState: off-blocked\n"
         self.assertEqual(bt.parse_show(text),("5C:F3:70:11:22:33",False,True))
         self.assertEqual(bt.parse_show("No default controller available\n"),("",False,False))
+    def test_no_adapter_is_not_a_stopped_service(self):
+        # bluetoothctl waits for a service that never starts without an adapter (ConditionPathIsDirectory=/sys/class/bluetooth)
+        failed=Result(False,1,"","Waiting to connect to bluetoothd...")
+        with mock.patch.object(bt,"have",lambda _n:True), mock.patch.object(bt,"run",lambda *_a,**_k:failed):
+            for adapter,message in ((False,"No Bluetooth adapter was found."),(True,"The Bluetooth service is not answering")):
+                with mock.patch.object(bt.os.path,"isdir",lambda _p,a=adapter:a):
+                    self.assertTrue(bt.read_state().message.startswith(message))
     def test_device_list_skips_status_lines(self):
         text="Agent registered\n[CHG] Controller 5C:F3:70:11:22:33 Discovering: yes\nDevice 00:1B:66:AA:BB:CC MOMENTUM 4\nDevice 4C:B9:9B:01:02:03 4C-B9-9B-01-02-03\n"
         self.assertEqual(bt.parse_devices(text),[("00:1B:66:AA:BB:CC","MOMENTUM 4"),("4C:B9:9B:01:02:03","4C-B9-9B-01-02-03")])
@@ -294,6 +301,9 @@ class UpdatesTests(unittest.TestCase):
         self.assertEqual(upd.parse_prompt("==> ",["==> Packages to cleanBuild?",menu]).answers[0],("None","N"))
         p=upd.parse_prompt("==> ",['==> Packages to exclude: (eg: "1 2 3", "1-3", "^4" or repo name)'])
         self.assertEqual((p.question,p.answers),("Packages to exclude:",(("None, update them all",""),)))
+        p=upd.parse_prompt("==> ",['==> Packages to exclude: (eg: "1 2 3", "1-3", "^4" or repo name)',
+                                   " -> Excluding packages may cause partial upgrades and break systems"])
+        self.assertEqual(p.question,"Packages to exclude:")   # not yay's warning under it
         self.assertFalse(upd.is_prompt("==> Making package: tvwcs 5.12.0-1"))
     def test_arch_news_since_the_last_upgrade(self):
         rss=("<rss><channel><item><title>Manual step for foo</title><link>https://archlinux.org/news/foo/</link>"

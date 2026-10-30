@@ -176,7 +176,9 @@ def parse_prompt(text, recent=()):
         lines=[re.sub(r"^\s*(==>|::)\s*","",l).strip() for l in recent if l.strip()]
         menu=next((i for i in range(len(lines)-1,-1,-1) if _MENU.search(lines[i])),None)
         if menu is None:   # "Packages to exclude: (eg: "1 2 3" ...)": nothing typed excludes nothing
-            question=re.sub(r"\s*\(eg:.*$","",lines[-1] if lines else "") or "Packages to leave out?"
+            # its question, not the warning yay prints under it ("-> Excluding packages may cause partial upgrades...")
+            asked=[l for l in lines if not l.startswith("->")]
+            question=re.sub(r"\s*\(eg:.*$","",next((l for l in reversed(asked) if "exclude" in l.lower()),asked[-1] if asked else "")) or "Packages to leave out?"
             return Prompt(question,(("None, update them all",""),),"")
         before=lines[menu].split("[N]one")[0].strip()
         question=before or (lines[menu-1] if menu>0 else "") or "Choose"

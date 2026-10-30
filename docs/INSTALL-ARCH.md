@@ -52,7 +52,7 @@ Until a release with these files has been marked latest, use a version's own add
 sudo pacman -R tvwcs
 ```
 
-This also ends an automatic login into TVWCS (greetd goes back to its own text login, and the old config is kept as `/etc/greetd/config.toml.tvwcs-backup`) and turns server mode off. Your settings in `~/.config/tvwcs` are kept.
+This also ends an automatic login into TVWCS and turns server mode off. greetd keeps its config, greeter and all: only the automatic login into TVWCS goes (and agreety, if it was starting TVWCS after the password, starts a shell instead). Your settings in `~/.config/tvwcs` are kept.
 
 ## For the maintainer: sending it to the AUR
 

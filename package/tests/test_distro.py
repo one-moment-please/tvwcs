@@ -1,5 +1,5 @@
 """distro.py: Debian's family and Arch's, and what Settings does differently on Arch."""
-import os, tempfile, unittest
+import os, subprocess, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -73,6 +73,32 @@ class ArchGreetdTests(unittest.TestCase):
     def test_root_command_installs_with_pacman(self):
         argv=loginscreen.root_command(["greetd","tv"],("greetd",))
         self.assertIn("pacman -S --needed --noconfirm $packages",argv[2]); self.assertNotIn("apt-get",argv[2])
+
+REPO=Path(__file__).resolve().parents[2]
+class RemoveGreetdTests(unittest.TestCase):
+    """The .deb's prerm and the Arch package's pre_remove take only TVWCS's part out of greetd's config."""
+    def remove(self, text, arch_pkg):
+        with tempfile.TemporaryDirectory() as d:
+            conf=Path(d,"etc","greetd","config.toml"); conf.parent.mkdir(parents=True); conf.write_text(text)
+            script=(REPO/("packaging/arch/tvwcs.install" if arch_pkg else "packaging/tvwcs/prerm")).read_text().replace("/etc/",f"{d}/etc/")
+            if arch_pkg: argv=["sh","-c",script+"\npre_remove"]
+            else: argv=["sh","-c",script,"prerm","remove"]
+            subprocess.run(argv,check=True,capture_output=True)
+            self.assertEqual(sorted(p.name for p in conf.parent.iterdir()),["config.toml"])
+            return conf.read_text()
+    def test_another_greeter_stays(self):
+        text=('[terminal]\nvt = 2\n\n[default_session]\ncommand = "tuigreet --cmd sway"\nuser = "greeter"\n\n'
+              '[initial_session]\ncommand = "/usr/bin/tvwcs-session"\nuser = "tv"\n')
+        for arch_pkg in (True,False):
+            out=self.remove(text,arch_pkg)
+            self.assertIn('command = "tuigreet --cmd sway"',out); self.assertIn("vt = 2",out); self.assertNotIn("initial_session",out)
+    def test_agreety_starting_tvwcs_starts_a_shell(self):
+        for arch_pkg,agreety in ((True,"agreety"),(False,"/usr/sbin/agreety")):
+            out=self.remove(f'[default_session]\ncommand = "{agreety} --cmd /usr/bin/tvwcs-session"\nuser = "x"\n',arch_pkg)
+            self.assertIn(f'command = "{agreety} --cmd /bin/sh"',out); self.assertIn('user = "x"',out)
+    def test_someone_elses_autologin_stays(self):
+        text='[default_session]\ncommand = "tuigreet"\nuser = "greeter"\n\n[initial_session]\ncommand = "sway"\nuser = "tv"\n'
+        self.assertEqual(self.remove(text,True),text)
 
 class SelfUpdateTests(unittest.TestCase):
     def test_arch_package_is_not_updated_from_github(self):
