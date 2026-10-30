@@ -48,6 +48,9 @@ jobs:
           PYTHONPATH=/usr/lib/tvwcs python3 -c 'from tvwcs import control_updates as u; s=u.read_state(); print(s.manager.id, s.total, s.problems)'
           PYTHONPATH=/usr/lib/tvwcs python3 -c 'import gi; gi.require_version("Gtk","4.0"); from tvwcs import ui_control_pages'
           PYTHONPATH=/usr/lib/tvwcs python3 -m tvwcs.loginscreen status
+          PYTHONPATH=/usr/lib/tvwcs python3 -c 'from tvwcs import control_updates as u; n=u.read_news(); print(len(n), n[0].title) if n else print(n)'
+      - name: Step-by-step updates answer a real pacman's questions
+        run: PYTHONPATH=/usr/lib/tvwcs python3 scripts/ci/pacman-prompts.py nano
       - name: Remove it again (runs tvwcs.install's pre_remove)
         run: |
           mkdir -p /etc/greetd && printf '%s\n' '[default_session]' 'command = "/usr/bin/agreety --cmd /usr/bin/tvwcs-session"' 'user = "greeter"' > /etc/greetd/config.toml
