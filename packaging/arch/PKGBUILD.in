@@ -8,7 +8,7 @@ pkgdesc="TV launcher, workspace switcher and settings for sway, made for a remot
 arch=('any')
 url="https://github.com/one-moment-please/tvwcs"
 license=('MIT' 'BSD-2-Clause' 'OFL-1.1' 'LicenseRef-font8x8')
-depends=('python' 'python-gobject' 'gtk4' 'sway' 'swayidle' 'swaylock' 'libpulse' 'udisks2' 'glib2'
+depends=('python' 'python-gobject' 'gtk4' 'pango' 'graphene' 'hicolor-icon-theme' 'sway' 'swayidle' 'swaylock' 'libpulse' 'udisks2' 'glib2'
          'xdg-desktop-portal' 'xdg-desktop-portal-gtk' 'adwaita-icon-theme' 'ttf-opensans' 'librsvg'
          'polkit' 'sudo' 'pacman-contrib')
 optdepends=('networkmanager: change Ethernet and Wi-Fi settings'
@@ -45,4 +45,10 @@ package() {
   install -Dm644 -t "$pkgdir/usr/share/doc/$pkgname" README.md CHANGELOG.md docs/INSTALL-ARCH.md
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 scripts/retro/FONTS.txt "$pkgdir/usr/share/licenses/$pkgname/FONTS.txt"
+  # one file per licence, as Arch asks: the Retro theme's fonts (FONTS.txt has them all, with what each is used for)
+  awk -v d="$pkgdir/usr/share/licenses/$pkgname" '
+    /^TVWCS Pixel 5x7:/ || /^TVWCS Pixel 8x16:/ { f="BSD-2-Clause.txt" }
+    /^TVWCS Pixel 8x8:/ { f="LicenseRef-font8x8.txt" }
+    /^tvwcs\/retro\/VT323/ { f="OFL-1.1.txt" }
+    f { print > (d "/" f) }' scripts/retro/FONTS.txt
 }

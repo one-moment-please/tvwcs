@@ -38,7 +38,8 @@ jobs:
       - name: namcap
         run: |
           namcap resources/arch/PKGBUILD
-          namcap resources/arch/tvwcs-*.pkg.tar.zst
+          namcap resources/arch/tvwcs-*.pkg.tar.zst | tee namcap.txt
+          if grep -q " E: " namcap.txt; then exit 1; fi   # warnings are fine (namcap cannot see what Python and sh run); errors are not
       - name: Smoke test the installed package
         run: |
           tvwcs help
