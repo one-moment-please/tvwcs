@@ -323,11 +323,15 @@ class Changer:
         old=active_unit()
         if old and old!=unit: self.systemctl("disable",f"{old}.service")
         if self.remove(GETTY_DROPIN): self.systemctl("daemon-reload")   # the text console's automatic login (no login screen) would log in too
-        link=path("/etc/systemd/system/display-manager.service")
-        if os.environ.get("TVWCS_ROOT"):   # what systemctl enable / disable would do to the alias
-            if link.is_symlink(): link.unlink()
-            link.parent.mkdir(parents=True,exist_ok=True); link.symlink_to(f"/lib/systemd/system/{unit}.service")
         self.systemctl("enable","--force",f"{unit}.service")
+        # Debian's and Ubuntu's lightdm.service has no [Install] section: enable does nothing for it (its postinst makes
+        # the link by hand), and with the old one disabled, no login screen would start. The link is made here too.
+        link=path("/etc/systemd/system/display-manager.service")
+        target=next((f"{d}/{unit}.service" for d in UNIT_DIRS[1:] if path(f"{d}/{unit}.service").exists()),f"/lib/systemd/system/{unit}.service")
+        if not (link.is_symlink() and os.path.basename(os.readlink(link))==f"{unit}.service"):
+            if link.is_symlink() or link.exists(): link.unlink()
+            link.parent.mkdir(parents=True,exist_ok=True); link.symlink_to(target)
+            self.systemctl("daemon-reload")
         exe=shutil.which(unit,path="/usr/sbin:/usr/bin:/sbin:/bin") or f"/usr/sbin/{unit}"
         self.write("/etc/X11/default-display-manager",exe+"\n")
         self.systemctl("set-default","graphical.target")   # greetd is only started by graphical.target

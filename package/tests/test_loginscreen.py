@@ -77,6 +77,13 @@ class RootTests(unittest.TestCase):
         with self.assertRaises(SystemExit): self.c.set_autologin("",unit="")   # not TVWCS's file: it says where to change it
         (d/"zz.conf").write_text("[Service]\nExecStart=\nExecStart=-/sbin/agetty --noclear %I $TERM\n")   # a later drop-in wins
         self.assertEqual(loginscreen.console_autologin(),"")
+    def test_switching_to_lightdm_makes_the_link_systemctl_enable_cannot(self):
+        units=self.root/"usr"/"lib"/"systemd"/"system"; units.mkdir(parents=True); (units/"lightdm.service").write_text("[Unit]\n")
+        link=self.etc/"systemd"/"system"/"display-manager.service"; link.parent.mkdir(parents=True,exist_ok=True)
+        link.symlink_to("/usr/lib/systemd/system/sddm.service")
+        self.c.switch_to("lightdm")
+        self.assertEqual(os.readlink(link),"/usr/lib/systemd/system/lightdm.service")
+        self.assertIn(["systemctl","disable","sddm.service"],self.c.calls)
     def test_switching_to_a_login_screen_ends_the_consoles_automatic_login(self):
         self.c.set_autologin("tv",unit=""); self.c.switch_to("greetd")
         self.assertFalse((self.etc/"systemd"/"system"/"getty@tty1.service.d"/"tvwcs-autologin.conf").exists())

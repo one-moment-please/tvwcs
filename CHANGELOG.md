@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.10.2 — 2026-10-30
+
+- **Switching the login screen to LightDM leaves it starting.** Debian's and Ubuntu's (and so Mint's) `lightdm.service` has no `[Install]` section, so `systemctl enable lightdm` does nothing: after TVWCS disabled the old login screen (for example SDDM, or greetd when removing TVWCS 4.x's greeter), no login screen started at all. TVWCS now points `/etc/systemd/system/display-manager.service` at the new login screen itself. If a computer is already in that state (LightDM is the default but never starts), run `sudo ln -sf /usr/lib/systemd/system/lightdm.service /etc/systemd/system/display-manager.service`. Removing SDDM after installing KDE does the same thing, and that isn't TVWCS's doing.
+
 ## 5.10.1 — 2026-10-24
 
 - **The volume keys of remotes and keyboards stop at 100 %** when Settings › Sound › Allow over-amplification is off (150 % when it is on), like the Sound page. Sway's standard config bound them to a plain `pactl ... +5%`, which went on past that. TVWCS's sway config (`tvwcs.conf`) now binds them to the new `tvwcs volume up|down`, also on the lock screen (with `--no-warn`, so replacing sway's binding shows no warning bar). A volume set louder by another program is not raised further, and goes down from where it is.
