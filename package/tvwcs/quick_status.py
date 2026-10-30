@@ -87,7 +87,7 @@ def count_updates():
     from tvwcs import control_updates
     try: s=control_updates.read_state()
     except Exception: return 0   # a broken package manager never breaks the Quick Menu
-    return s.total if s.available else 0
+    return s.all_total if s.available else 0
 
 # ---------------------------------------------------------------------- battery
 def read_battery(root=None):

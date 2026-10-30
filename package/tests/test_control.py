@@ -275,6 +275,26 @@ class UpdatesTests(unittest.TestCase):
         self.assertEqual(upd.parse_prompt("Enter a selection (default=all): ",[":: There are 2 members in group xorg-apps:"]).answers,(("All (default)",""),))
         self.assertIsNone(upd.parse_prompt("downloading linux..."))
         self.assertTrue(upd.is_prompt(":: Import PGP key 1234? [Y/n] ")); self.assertFalse(upd.is_prompt("checking keys in keyring"))
+    def test_aur_helper_updates(self):
+        self.assertEqual(upd.aur_helper(which=lambda n:"/usr/bin/paru" if n=="paru" else None),"paru")
+        self.assertEqual(upd.aur_helper(which=lambda n:None),"")
+        with mock.patch.object(upd,"run",lambda argv,timeout=0:Result(False,1,"tvwcs 5.11.0-1 -> 5.12.0-1\n","")):
+            self.assertEqual(upd._list_aur("yay"),([upd.Update("tvwcs","5.12.0-1","5.11.0-1")],""))
+        with mock.patch.object(upd,"run",lambda argv,timeout=0:Result(False,1,"","")):
+            self.assertEqual(upd._list_aur("paru"),([],""))   # 1: nothing to update
+        with mock.patch.object(upd,"run",lambda argv,timeout=0:Result(False,1,"","error: failed to reach the AUR")):
+            self.assertEqual(upd._list_aur("yay")[1],"error: failed to reach the AUR")
+        self.assertEqual(upd.aur_update_argv("yay"),["yay","-Sua","--sudoflags=-S"])   # as the user; sudo reads the password from Settings
+    def test_aur_helper_questions(self):
+        p=upd.parse_prompt("[sudo] password for tv: ")
+        self.assertEqual(p.kind,"password"); self.assertTrue(upd.is_prompt("[sudo] password for tv: "))
+        menu="==> [N]one [A]ll [Ab]ort [I]nstalled [No]tInstalled or (1 2 3, 1-3, ^4)"
+        p=upd.parse_prompt("==> ",["  1 tvwcs  (Installed)","==> Diffs to show?",menu])
+        self.assertEqual((p.question,p.answers[0],p.back),("Diffs to show?",("Show all","A"),"Ab"))   # reviewing comes first
+        self.assertEqual(upd.parse_prompt("==> ",["==> Packages to cleanBuild?",menu]).answers[0],("None","N"))
+        p=upd.parse_prompt("==> ",['==> Packages to exclude: (eg: "1 2 3", "1-3", "^4" or repo name)'])
+        self.assertEqual((p.question,p.answers),("Packages to exclude:",(("None, update them all",""),)))
+        self.assertFalse(upd.is_prompt("==> Making package: tvwcs 5.12.0-1"))
     def test_arch_news_since_the_last_upgrade(self):
         rss=("<rss><channel><item><title>Manual step for foo</title><link>https://archlinux.org/news/foo/</link>"
              "<pubDate>Wed, 29 Oct 2026 10:00:00 +0000</pubDate><description>&lt;p&gt;Run &lt;code&gt;pacman -Syu&lt;/code&gt; first.&lt;/p&gt;</description></item>"

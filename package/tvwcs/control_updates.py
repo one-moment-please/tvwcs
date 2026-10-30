@@ -7,7 +7,7 @@ On Arch, an update can also run step by step: pacman without --noconfirm, with e
 answered with buttons. The page also shows Arch's news since the last full upgrade (read_news, last_upgrade) and the
 .pacnew files updates left in /etc (pacnew_files)."""
 from __future__ import annotations
-import html, os, platform, re, time, urllib.request
+import html, os, platform, re, shutil, time, urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -43,8 +43,12 @@ class UpdatesState:
     updates: list = field(default_factory=list)
     problems: list = field(default_factory=list)   # a list command that failed: (label, message)
     checked: float | None = None                   # when the package lists were last downloaded (epoch seconds)
+    aur_helper: str = ""                           # Arch: yay or paru, when one is installed
+    aur: list = field(default_factory=list)        # its updates for packages from the AUR
     @property
     def total(self): return len(self.updates)
+    @property
+    def all_total(self): return len(self.updates)+len(self.aur)
 
 # ------------------------------------------------------------------ parsing (pure)
 _APT=re.compile(r"^(\S+?)/(\S+)\s+(\S+)\s+\S+(?:\s+\[upgradable from:\s*([^\]]+)\])?")
@@ -117,7 +121,34 @@ def read_state():
     state.updates,problem=_list(manager)
     state.checked=time.time() if manager.fresh_lists and not problem else lists_checked(manager)
     if problem: state.problems.append((manager.label,problem))
+    if manager.id=="pacman":
+        state.aur_helper=aur_helper()
+        if state.aur_helper:
+            state.aur,problem=_list_aur(state.aur_helper)
+            if problem: state.problems.append((f"AUR ({state.aur_helper})",problem))
     return state
+
+# ------------------------------------------------------------------ the AUR, through an AUR helper
+# pacman cannot see packages built from the AUR (TVWCS's own, once it is there). yay and paru can: listing needs
+# nothing, updating runs as the user (makepkg refuses root), and the helper asks for the sudo password itself
+# (--sudoflags=-S makes sudo read it from the pipe Settings answers on). It only runs step by step, so the
+# PKGBUILD changes are shown before anything is built.
+AUR_HELPERS=("yay","paru")
+def aur_helper(which=shutil.which):
+    return next((h for h in AUR_HELPERS if which(h)),"")
+
+def _list_aur(helper):
+    """`yay -Qua` / `paru -Qua`: 'name 1.0-1 -> 1.1-1', like checkupdates. Both exit 1 when there is nothing to update."""
+    result=run([helper,"-Qua"],timeout=120)
+    found=parse_pacman(result.out)
+    if result.code not in (0,1) or (not found and "error" in result.err.lower()): return found,result.message
+    return found,""
+
+def aur_update_argv(helper):
+    """Update the AUR packages, as the user, asking each question."""
+    return [helper,"-Sua","--sudoflags=-S"]
+AUR_ENV={"PAGER":"cat","GIT_PAGER":"cat"}   # reviews and diffs are printed into Settings' log, not opened in a pager
+
 
 # ------------------------------------------------------------------ step by step (pacman's questions)
 @dataclass(frozen=True)
@@ -125,8 +156,11 @@ class Prompt:
     question: str
     answers: tuple   # (button label, what to type), the default first
     back: str = ""   # what Back (Esc) types: "n" for a yes/no question, so leaving never says yes
+    kind: str = "buttons"   # or "password": sudo's, asked for in a password field (Back stops the run)
 
-PROMPT_END=re.compile(r"(\[[Yy]/[Nn]\]|Enter a number \(default=\d+\):|Enter a selection \(default=all\):)\s*$")
+PROMPT_END=re.compile(r"(\[[Yy]/[Nn]\]|Enter a number \(default=\d+\):|Enter a selection \(default=all\):|"
+                      r"\[sudo\] password for [^:\n]*:|^==>|\n==>)\s*$")
+_MENU=re.compile(r"\[N\]one")
 _PROVIDERS=re.compile(r"There (?:are|is) \d+ providers? available for (\S+?):?\s*$")
 _GROUP=re.compile(r"There (?:are|is) \d+ members? in group (\S+?):?\s*$")
 _CHOICE=re.compile(r"(\d+)\)\s+(\S+)")
@@ -137,6 +171,18 @@ def parse_prompt(text, recent=()):
     """One of pacman's questions (the unfinished line it waits on), with the buttons that answer it. recent: the
     lines printed before it, where a choice between providers lists its options. None when it is not a question."""
     line=(text or "").strip()
+    if re.search(r"\[sudo\] password for [^:]*:$",line): return Prompt("Enter your password (the one sudo asks for).",(),"","password")
+    if re.fullmatch(r"==>",line):   # yay's menus: "==> Diffs to show?", "==> [N]one [A]ll [Ab]ort ...", then "==> " waits
+        lines=[re.sub(r"^\s*(==>|::)\s*","",l).strip() for l in recent if l.strip()]
+        menu=next((i for i in range(len(lines)-1,-1,-1) if _MENU.search(lines[i])),None)
+        if menu is None:   # "Packages to exclude: (eg: "1 2 3" ...)": nothing typed excludes nothing
+            question=re.sub(r"\s*\(eg:.*$","",lines[-1] if lines else "") or "Packages to leave out?"
+            return Prompt(question,(("None, update them all",""),),"")
+        before=lines[menu].split("[N]one")[0].strip()
+        question=before or (lines[menu-1] if menu>0 else "") or "Choose"
+        answers=(("Show all","A"),("None","N")) if "diff" in question.lower() else (("None","N"),("All","A"))
+        if "[Ab]ort" in lines[menu]: answers+=(("Stop","Ab"),)
+        return Prompt(question,answers,"Ab" if "[Ab]ort" in lines[menu] else "N")
     q=re.sub(r"^::\s*","",line)
     if re.search(r"\[Y/n\]\s*$",line): return Prompt(re.sub(r"\s*\[Y/n\]\s*$","",q),(("Yes","y"),("No","n")),"n")
     if re.search(r"\[y/N\]\s*$",line): return Prompt(re.sub(r"\s*\[y/N\]\s*$","",q),(("No","n"),("Yes","y")),"n")

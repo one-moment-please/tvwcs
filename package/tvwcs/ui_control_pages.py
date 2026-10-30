@@ -888,7 +888,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         self.draw_self_update()
         self.section("SYSTEM")
         if not s.available: self.note(s.message); return
-        self.row("Check for updates",f"{s.total} available" if s.total else "Up to date",self.refresh,ident="check",
+        self.row("Check for updates",f"{s.all_total} available" if s.all_total else "Up to date",self.refresh,ident="check",
                  icon="view-refresh-symbolic",fallback="⟳")
         m=s.manager
         if m is not None and m.refresh_argv:
@@ -903,8 +903,10 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
                      detail="Installs them showing each question pacman asks, with buttons to answer it.",icon="dialog-question-symbolic",fallback="?")
         if m is not None and m.id=="pacman":
             self.note("pacman updates everything at once, as Arch expects. Now and then an update needs a step by hand: Arch "
-                      "announces those in its news, below. Packages from the AUR are not included; update them with your AUR helper.")
+                      "announces those in its news, below."+("" if s.aur_helper else " Packages from the AUR are not included: "
+                      "with yay or paru installed, Settings updates them too."))
             self.draw_arch_news(s)
+            self.draw_aur(s)
         if getattr(s,"reboot",False):
             self.row("Restart to finish updating","",self.confirm_reboot,detail="Some updates are only used after a restart.",
                      icon="system-reboot-symbolic",fallback="↻",ident="reboot")
@@ -925,8 +927,10 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
     @staticmethod
     def outcome_text(label, s):
         """The line that says a run has finished and what it found, such as: Package lists downloaded at 23:05. Everything is up to date."""
-        done={"Downloading package lists":"Package lists downloaded","Installing updates":"Updates installed"}.get(label,f"{label}: finished")
-        found=f"{s.total} update{'s' if s.total!=1 else ''} available." if s.total else "Everything is up to date."
+        done={"Downloading package lists":"Package lists downloaded","Installing updates":"Updates installed","Updating step by step":"Updates installed",
+              "Updating AUR packages":"AUR packages updated"}.get(label,f"{label}: finished")
+        n=getattr(s,"all_total",s.total)
+        found=f"{n} update{'s' if n!=1 else ''} available." if n else "Everything is up to date."
         return f"{done} at {time.strftime('%H:%M')}. {found}"
 
     def details(self, u):
@@ -956,11 +960,33 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
     def answer_prompt(self, run, question, before):
         p=updates.parse_prompt(question,before)
         if p is None: return
+        if p.kind=="password":   # an AUR helper's sudo, reading from the pipe (--sudoflags=-S)
+            self.win.ask_text("Administrator password","Installing the built packages needs administrator rights. Enter your password "
+                              "(the one sudo asks for). It is used once and never stored.",lambda pw:(self.win.close_modal(),run.send(pw)),
+                              secret=True,ok_label="Continue",back=lambda:(self.win.close_modal(),run.stop()))
+            return
         def answer(text): self._append(f"→ {text or '(default)'}"); run.send(text)
         if len(p.answers)>4:   # a long choice between packages: a list
             self.win.choose_option("pacman asks",[(a,label) for label,a in p.answers],p.answers[0][1],answer,back=lambda:(self.win.close_modal(),answer(p.back)))
         else:
             self.win.ask_choice("pacman asks",p.question,[(label,lambda a=a:answer(a)) for label,a in p.answers],lambda:answer(p.back))
+    def draw_aur(self, s):
+        if not s.aur: return
+        self.section(f"AUR PACKAGES ({len(s.aur)})")
+        self.row(f"Update {len(s.aur)} AUR package{'s' if len(s.aur)!=1 else ''}","",self.confirm_aur,ident="aur",
+                 detail=f"With {s.aur_helper}, step by step: it shows what changed in each package's build script first.",
+                 icon="software-update-available-symbolic",fallback="⇩")
+        for u in s.aur[:self.MAX_ROWS]:
+            self.row(u.name,f"{u.old} → {u.new}" if u.old else u.new,lambda u=u:self.details(u),detail="AUR",ident=f"aurpkg:{u.name}")
+    def confirm_aur(self):
+        h=self.state.aur_helper; n=len(self.state.aur)
+        self.win.confirm("Update AUR packages?",f"{h} downloads and builds the new version of {'this package' if n==1 else f'these {n} packages'} "
+                         "here, as you. AUR packages are written by their users, not checked by Arch, so it first shows what changed in each "
+                         "build script (choose Show all), and you can stop there. It asks for your password before installing them.",
+                         "Start",self.update_aur,danger=False)
+    def update_aur(self):
+        h=self.state.aur_helper
+        self.run_steps("Updating AUR packages",[(updates.aur_update_argv(h),False)],prompts=True,env=updates.AUR_ENV)
     def draw_arch_news(self, s):
         news=getattr(s,"news",[])
         if news:
@@ -983,7 +1009,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         return (f"New default: {f}\nIn use: {old}\n\nCompare them in a terminal with  diff {old} {f}  and copy over what you want "
                 "to keep, then delete the .pacnew file. pacdiff (from pacman-contrib) goes through every such file for you: sudo pacdiff")
 
-    def run_steps(self, label, steps, fetch=False, prompts=False):
+    def run_steps(self, label, steps, fetch=False, prompts=False, env=None):
         """Run each (argv, as root) in turn, showing their output; stop at the first that fails. prompts: answer the
         questions they ask with buttons (pacman step by step)."""
         self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
@@ -1008,7 +1034,8 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
                 if code!=0: finish(tail.strip().splitlines()[-1] if tail.strip() else f"It stopped with exit status {code}."); return
                 next_step(i+1)
             if root: self.win.run_as_root(argv,label,self._append,done,on_prompt=self.answer_prompt if prompts else None)
-            else: StreamedRun(argv,self._append,done)
+            else: StreamedRun(argv,self._append,done,env=privilege.c_locale_env({**os.environ,**(env or {})}),
+                              on_prompt=self.answer_prompt if prompts else None)
         next_step(0)
 
     def draw_ubuntu_extras(self, extras):
