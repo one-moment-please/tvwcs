@@ -9,7 +9,7 @@ colour chosen in its Options (a change to them is drawn at once), and it works w
 - Dialogs are drawn over the window, as in TVWCS. Text (a Wi-Fi password, an address) is typed on a keyboard, or on
   the on-screen keyboard with the D-pad."""
 from __future__ import annotations
-import codecs, os, subprocess, sys, threading, time
+import codecs, os, re, subprocess, sys, threading, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -107,6 +107,8 @@ def in_background(work, done, failed=None):
         GLib.idle_add(lambda:(done(result),GLib.SOURCE_REMOVE)[1])
     threading.Thread(target=run,daemon=True).start()
 
+_COLOUR=re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
 class StreamedRun:
     """Run a command and pass each line it prints (stdout and stderr together) to on_line, then done(exit code, the
     last lines) on the GTK main loop. `password` is written to its stdin (sudo -S) and the pipe closed.
@@ -141,7 +143,7 @@ class StreamedRun:
             try: chunk=os.read(fd,4096)
             except OSError: break
             if not chunk: break
-            buf+=decode.decode(chunk)
+            buf+=_COLOUR.sub("",decode.decode(chunk))   # a question in colour (yay's) still ends in "[Y/n] "
             *lines,buf=buf.split("\n")
             for line in lines: self._line(line)
             if is_prompt(buf):

@@ -19,6 +19,6 @@ def on_prompt(run, question, before):
 def done(code, tail): result["code"]=code; loop.quit()
 helper=updates.aur_helper()
 StreamedRun([helper,"-S","--aur","--sudoflags=-S",PACKAGE],print,done,env=privilege.c_locale_env({**os.environ,**updates.AUR_ENV}),on_prompt=on_prompt)
-GLib.timeout_add_seconds(600,loop.quit); loop.run()
+GLib.timeout_add_seconds(300,loop.quit); loop.run()
 print("exit",result.get("code"),"questions",[(p.kind,p.question) for p in asked if p])
 sys.exit(0 if result.get("code")==0 and any(p and p.kind=="password" for p in asked) and all(asked) else 1)
