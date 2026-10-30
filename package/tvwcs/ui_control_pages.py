@@ -869,6 +869,10 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         self.finished=None; self.outcome=None   # the run that just ended, until the page is read again; then what came of it
     def read(self):
         state=updates.read_state(); state.reboot=updates.reboot_needed(); state.extras=ubuntu.installed_extras()
+        state.news=[]; state.pacnew=[]; state.news_unknown=False
+        if state.manager is not None and state.manager.id=="pacman":   # Arch: its news since the last full upgrade, and .pacnew files
+            items=updates.read_news(); state.news_unknown=items is None
+            state.news=updates.news_since(items or [],updates.last_upgrade()); state.pacnew=updates.pacnew_files()
         if self.fetched and (state.checked or 0)<self.fetched: state.checked=self.fetched   # unchanged lists keep their old date
         return state
     def summary(self):
@@ -894,15 +898,20 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             self.row(f"Install {s.total} update{'s' if s.total!=1 else ''}","",self.confirm_install,ident="install",
                      detail="Installs everything listed below." + (" Asks for your password." if s.updates else ""),
                      icon="software-update-available-symbolic",fallback="⇩")
+        if m is not None and m.step_argv and s.total:
+            self.row("Update step by step","",self.confirm_step_by_step,ident="step",
+                     detail="Installs them showing each question pacman asks, with buttons to answer it.",icon="dialog-question-symbolic",fallback="?")
         if m is not None and m.id=="pacman":
             self.note("pacman updates everything at once, as Arch expects. Now and then an update needs a step by hand: Arch "
-                      "announces those at archlinux.org/news. Packages from the AUR are not included; update them with your AUR helper.")
+                      "announces those in its news, below. Packages from the AUR are not included; update them with your AUR helper.")
+            self.draw_arch_news(s)
         if getattr(s,"reboot",False):
             self.row("Restart to finish updating","",self.confirm_reboot,detail="Some updates are only used after a restart.",
                      icon="system-reboot-symbolic",fallback="↻",ident="reboot")
         for label,problem in s.problems: self.note(f"{label}: {problem}","error")
         if self.finished: self.outcome=self.outcome_text(self.finished,s); self.finished=None; self._append(f"\n✓ {self.outcome}")
         if self.outcome: self.note(self.outcome,"state-on")
+        self.draw_pacnew(getattr(s,"pacnew",[]))
         if self.log is not None and self.log.get_buffer().get_char_count():
             self.section("LAST RUN"); self.add(self.console())
         self.draw_ubuntu_extras(getattr(s,"extras",[]))
@@ -929,16 +938,65 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
         if s.updates: parts.append(f"{len(s.updates)} package{'s' if len(s.updates)!=1 else ''} from {s.manager.label}")
         steps=[]
         if s.updates: steps.append((list(s.manager.install_argv),True))
-        self.win.confirm("Install updates?",f"Install {' and '.join(parts)} now? Apps being updated may need to be restarted afterwards.",
+        self.win.confirm("Install updates?",f"Install {' and '.join(parts)} now? Apps being updated may need to be restarted afterwards."+self.news_warning(),
                          "Install",lambda:self.run_steps("Installing updates",steps),danger=False)
+    def news_warning(self):
+        n=len(getattr(self.state,"news",[]))
+        return (f"\n\nArch has posted {'a news item' if n==1 else f'{n} news items'} since your last update (on this page). "
+                "Read it first: it says when an update needs a step by hand." if n else "")
 
-    def run_steps(self, label, steps, fetch=False):
-        """Run each (argv, as root) in turn, showing their output; stop at the first that fails."""
+    # -------------------------------------------------------------- Arch: step by step, its news, .pacnew files
+    def confirm_step_by_step(self):
+        self.win.confirm("Update step by step?","pacman installs the updates and stops at each question it asks (go ahead, replace a "
+                         "package, remove one that conflicts, choose between packages), with a button for each answer. Back answers No."
+                         +self.news_warning(),"Start",self.update_step_by_step,danger=False)
+    def update_step_by_step(self):
+        m=self.state.manager
+        self.run_steps("Updating step by step",[(list(m.step_argv),True)],prompts=True)
+    def answer_prompt(self, run, question, before):
+        p=updates.parse_prompt(question,before)
+        if p is None: return
+        def answer(text): self._append(f"→ {text or '(default)'}"); run.send(text)
+        if len(p.answers)>4:   # a long choice between packages: a list
+            self.win.choose_option("pacman asks",[(a,label) for label,a in p.answers],p.answers[0][1],answer,back=lambda:(self.win.close_modal(),answer(p.back)))
+        else:
+            self.win.ask_choice("pacman asks",p.question,[(label,lambda a=a:answer(a)) for label,a in p.answers],lambda:answer(p.back))
+    def draw_arch_news(self, s):
+        news=getattr(s,"news",[])
+        if news:
+            self.section(f"ARCH NEWS SINCE YOUR LAST UPDATE ({len(news)})")
+            for n in news:
+                self.row(n.title,time.strftime("%d %b %Y",time.localtime(n.date)),lambda n=n:self.win.notice(n.title,f"{n.text}\n\n{n.link}"),
+                         ident=f"news:{n.link}",icon="dialog-information-symbolic",fallback="i")
+        elif getattr(s,"news_unknown",False):
+            self.note("Arch's news could not be read (archlinux.org/news). Check it before a big update.")
+    def draw_pacnew(self, files):
+        if not files: return
+        self.section(f"NEW DEFAULT SETTINGS FILES ({len(files)})")
+        for f in files:
+            self.row(f,"",lambda f=f:self.win.notice(os.path.basename(f),self.pacnew_text(f)),ident=f"pacnew:{f}",icon="document-edit-symbolic",fallback="✎")
+        self.note("An update brought a new default version of these settings files, but the old ones had been changed, so pacman kept "
+                  "them and put the new version next to each as .pacnew. Compare each pair and merge them by hand, then delete the .pacnew file.")
+    @staticmethod
+    def pacnew_text(f):
+        old=f[:-len(".pacnew")]
+        return (f"New default: {f}\nIn use: {old}\n\nCompare them in a terminal with  diff {old} {f}  and copy over what you want "
+                "to keep, then delete the .pacnew file. pacdiff (from pacman-contrib) goes through every such file for you: sudo pacdiff")
+
+    def run_steps(self, label, steps, fetch=False, prompts=False):
+        """Run each (argv, as root) in turn, showing their output; stop at the first that fails. prompts: answer the
+        questions they ask with buttons (pacman step by step)."""
         self.running=label; self.outcome=None; self.console(); self.log.get_buffer().set_text(""); self.redraw(); self.set_status(label+"…")
         self.win._focus_first(self.groups)
         def finish(problem=""):
             self.running=None; self.set_status(""); self.redraw()
-            if problem: self._append(f"\n✗ Stopped: {problem}"); self.win.notice(label,problem)
+            if problem:
+                self._append(f"\n✗ Stopped: {problem}")
+                m=self.state.manager if self.state else None
+                if label=="Installing updates" and m is not None and m.step_argv:   # often a question --noconfirm answered No
+                    self.win.confirm(label,f"{problem}\n\nUpdating step by step shows each question pacman asks, so you can answer "
+                                     "it yourself.","Update step by step",self.update_step_by_step,danger=False)
+                else: self.win.notice(label,problem)
             else: self.finished=label   # said once the page has been read again, with what it found
             self.refresh(); tell_tvwcs("status")   # the Quick Menu's updates icon counts again
         def next_step(i):
@@ -949,7 +1007,7 @@ class UpdatesPage(_SelfUpdate, _Console, Page):
             def done(code,tail):
                 if code!=0: finish(tail.strip().splitlines()[-1] if tail.strip() else f"It stopped with exit status {code}."); return
                 next_step(i+1)
-            if root: self.win.run_as_root(argv,label,self._append,done)
+            if root: self.win.run_as_root(argv,label,self._append,done,on_prompt=self.answer_prompt if prompts else None)
             else: StreamedRun(argv,self._append,done)
         next_step(0)
 

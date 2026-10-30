@@ -39,7 +39,10 @@ Until a release with these files has been marked latest, use a version's own add
 
   Do this at the computer itself, or be ready to reconnect: SSH drops while the network changes over. Wi-Fi networks you saved with iwd have to be joined again from Settings › Network.
 - **Sound and Bluetooth.** When their software is missing, the Sound and Bluetooth pages offer to install it (PipeWire, BlueZ). Bluetooth's service is turned on with it, since Arch doesn't start services after installing them.
-- **Software updates** lists waiting updates with `checkupdates`, which never touches pacman's own database, and installs them with `sudo pacman -Syu`, all at once, as Arch expects. If an update ever needs a step by hand, Arch announces it at <https://archlinux.org/news/>. Packages from the AUR are updated with your AUR helper, not from Settings.
+- **Software updates** lists waiting updates with `checkupdates`, which never touches pacman's own database, and installs them with `sudo pacman -Syu`, all at once, as Arch expects. Packages from the AUR are updated with your AUR helper, not from Settings.
+  - **Arch news:** the page shows what Arch has posted at <https://archlinux.org/news/> since your last full update, and the Install question mentions it. Read those first: they're how Arch announces the rare update that needs a step by hand.
+  - **Update step by step** runs pacman without `--noconfirm`. Each question it asks (go ahead, replace a package, remove one that conflicts, choose between packages that provide the same thing, import a key) appears with a button for each answer. Back answers No. Install offers it too when an automatic run stops, which is usually a question whose default answer is No.
+  - **New default settings files:** when an update brings a new default version of a settings file you (or a program) changed, pacman keeps yours and saves the new one next to it as `.pacnew`. The page lists those files. Merge each by hand (`sudo pacdiff` walks through them) and delete the `.pacnew`.
 - **TVWCS's own updates.** Settings › Software updates › Check for TVWCS updates tells you when a new release is out. To install it, run the same commands as above in a new folder (or delete the old files first).
 
 ## Remove it

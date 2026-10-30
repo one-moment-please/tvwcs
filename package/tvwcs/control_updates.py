@@ -1,10 +1,17 @@
 """Software updates for Settings: the distribution's package manager (apt, or pacman on Arch). No GTK dependency.
 
 Listing the waiting updates never needs root. Installing them does: the panel runs the `install` command through
-sudo or doas (see privilege.py and ui_control.py)."""
+sudo or doas (see privilege.py and ui_control.py).
+
+On Arch, an update can also run step by step: pacman without --noconfirm, with each question it asks (parse_prompt)
+answered with buttons. The page also shows Arch's news since the last full upgrade (read_news, last_upgrade) and the
+.pacnew files updates left in /etc (pacnew_files)."""
 from __future__ import annotations
-import os, platform, re, time
+import html, os, platform, re, time, urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 
 from tvwcs.control_cmd import have, run
 
@@ -26,6 +33,7 @@ class Manager:
     ok_codes: tuple = (0,)   # exit codes of list_argv that mean "it worked" (some exit non-zero when updates wait)
     refresh_argv: tuple = () # downloads fresh package lists, as root, where listing alone reads the cached ones
     fresh_lists: bool = False  # listing downloads fresh package lists itself (pacman's checkupdates)
+    step_argv: tuple = ()    # installs them asking each question (answered from the page), as root; () when it can't
 
 @dataclass
 class UpdatesState:
@@ -63,7 +71,8 @@ MANAGERS=(
     Manager("apt","APT",("apt","list","--upgradable"),parse_apt,_APT_INSTALL,refresh_argv=("apt-get","update")),
     # checkupdates (pacman-contrib) downloads fresh lists into a copy of pacman's database, so listing never leaves the
     # real one half updated; it exits 2 when nothing waits. Installing is always a full upgrade: Arch has no other kind.
-    Manager("pacman","pacman",("checkupdates",),parse_pacman,("pacman","-Syu","--noconfirm"),ok_codes=(0,2),fresh_lists=True),
+    Manager("pacman","pacman",("checkupdates",),parse_pacman,("pacman","-Syu","--noconfirm"),ok_codes=(0,2),fresh_lists=True,
+            step_argv=("pacman","-Syu")),
 )
 _TOOL={"apt":"apt-get","pacman":"pacman"}
 
@@ -109,3 +118,113 @@ def read_state():
     state.checked=time.time() if manager.fresh_lists and not problem else lists_checked(manager)
     if problem: state.problems.append((manager.label,problem))
     return state
+
+# ------------------------------------------------------------------ step by step (pacman's questions)
+@dataclass(frozen=True)
+class Prompt:
+    question: str
+    answers: tuple   # (button label, what to type), the default first
+    back: str = ""   # what Back (Esc) types: "n" for a yes/no question, so leaving never says yes
+
+PROMPT_END=re.compile(r"(\[[Yy]/[Nn]\]|Enter a number \(default=\d+\):|Enter a selection \(default=all\):)\s*$")
+_PROVIDERS=re.compile(r"There (?:are|is) \d+ providers? available for (\S+?):?\s*$")
+_GROUP=re.compile(r"There (?:are|is) \d+ members? in group (\S+?):?\s*$")
+_CHOICE=re.compile(r"(\d+)\)\s+(\S+)")
+
+def is_prompt(text): return bool(PROMPT_END.search(text or ""))
+
+def parse_prompt(text, recent=()):
+    """One of pacman's questions (the unfinished line it waits on), with the buttons that answer it. recent: the
+    lines printed before it, where a choice between providers lists its options. None when it is not a question."""
+    line=(text or "").strip()
+    q=re.sub(r"^::\s*","",line)
+    if re.search(r"\[Y/n\]\s*$",line): return Prompt(re.sub(r"\s*\[Y/n\]\s*$","",q),(("Yes","y"),("No","n")),"n")
+    if re.search(r"\[y/N\]\s*$",line): return Prompt(re.sub(r"\s*\[y/N\]\s*$","",q),(("No","n"),("Yes","y")),"n")
+    m=re.search(r"Enter a number \(default=(\d+)\):\s*$",line)
+    if m:
+        default=m.group(1); head="Choose which package to install."; choices=[]
+        for l in recent:
+            h=_PROVIDERS.search(l)
+            if h: head=f"There is more than one package that provides {h.group(1)}. Choose one."; choices=[]; continue
+            choices+=_CHOICE.findall(l)
+        answers=[(f"{name} (default)" if n==default else name,n) for n,name in choices]
+        answers.sort(key=lambda a:a[1]!=default)
+        return Prompt(head,tuple(answers) or ((f"Number {default} (default)",""),),"")
+    if re.search(r"Enter a selection \(default=all\):\s*$",line):
+        group=next((g.group(1) for l in reversed(list(recent)) for g in [_GROUP.search(l)] if g),"")
+        return Prompt(f"Install every package in the group {group}?" if group else "Install every package in the group?",(("All (default)",""),),"")
+    return None
+
+# ------------------------------------------------------------------ Arch's news and .pacnew files
+NEWS_URL="https://archlinux.org/feeds/news/"
+NEWS_CACHE=3600
+@dataclass(frozen=True)
+class News:
+    title: str
+    date: float      # epoch seconds
+    link: str
+    text: str        # the article as plain text
+
+def _plain(fragment):
+    text=re.sub(r"<\s*(br|/p|/li|/h\d)\s*/?>","\n",fragment or "",flags=re.I)
+    text=re.sub(r"<li[^>]*>","\n• ",text,flags=re.I)
+    text=html.unescape(re.sub(r"<[^>]+>","",text))
+    return re.sub(r"\n{3,}","\n\n",text).strip()
+
+def parse_news(xml_text):
+    """Arch's news feed (RSS), newest first. [] when it cannot be read."""
+    try: root=ET.fromstring(xml_text)
+    except ET.ParseError: return []
+    found=[]
+    for item in root.iter("item"):
+        try: when=parsedate_to_datetime(item.findtext("pubDate") or "").timestamp()
+        except (TypeError,ValueError): continue
+        found.append(News((item.findtext("title") or "").strip(),when,(item.findtext("link") or "").strip(),_plain(item.findtext("description"))))
+    return sorted(found,key=lambda n:n.date,reverse=True)
+
+_news=(0.0,None)
+def read_news(now=None, fetch=None):
+    """Arch's news, fetched at most once an hour; None when it could not be fetched (offline, say)."""
+    global _news
+    now=time.time() if now is None else now
+    if _news[1] is not None and now-_news[0]<NEWS_CACHE: return _news[1]
+    try:
+        if fetch is None:
+            req=urllib.request.Request(NEWS_URL,headers={"User-Agent":"TVWCS-settings"})
+            with urllib.request.urlopen(req,timeout=8) as r: text=r.read(2_000_000).decode("utf-8","replace")
+        else: text=fetch(NEWS_URL)
+    except (OSError,ValueError): return None
+    items=parse_news(text); _news=(now,items); return items
+
+_UPGRADE=re.compile(r"^\[([^\]]+)\] \[PACMAN\] starting full system upgrade")
+def last_upgrade(log="/var/log/pacman.log"):
+    """When the last full upgrade (pacman -Syu) started, from pacman's log; None when it says nothing."""
+    try:
+        with open(log,"rb") as f:
+            f.seek(0,2); f.seek(max(0,f.tell()-4_000_000)); text=f.read().decode("utf-8","replace")
+    except OSError: return None
+    for line in reversed(text.splitlines()):
+        m=_UPGRADE.match(line)
+        if not m: continue
+        for fmt in ("%Y-%m-%dT%H:%M:%S%z","%Y-%m-%d %H:%M"):
+            try:
+                when=datetime.strptime(m.group(1),fmt)
+                return when.timestamp()
+            except ValueError: continue
+    return None
+
+def news_since(items, since, keep=5):
+    """The news posted after `since` (the last full upgrade), at most `keep`; without a date, the newest one."""
+    if not items: return []
+    if since is None: return list(items[:1])
+    return [n for n in items if n.date>since][:keep]
+
+def pacnew_files(root="/etc", limit=50):
+    """Config files an update could not replace because they had been changed: pacman put the new default next to
+    each as <name>.pacnew, to be merged by hand (pacdiff, from pacman-contrib, helps)."""
+    found=[]
+    for folder,dirs,files in os.walk(root,onerror=lambda _e:None):
+        dirs.sort()
+        found+=[os.path.join(folder,f) for f in sorted(files) if f.endswith(".pacnew")]
+        if len(found)>=limit: break
+    return found[:limit]

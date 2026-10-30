@@ -264,6 +264,34 @@ class UpdatesTests(unittest.TestCase):
         m=next(m for m in upd.MANAGERS if m.id=="pacman")
         self.assertEqual(m.install_argv,("pacman","-Syu","--noconfirm")); self.assertIn(2,m.ok_codes)   # 2: nothing to update
         self.assertTrue(m.fresh_lists); self.assertEqual(m.refresh_argv,())   # never pacman -Sy alone (a partial upgrade)
+    def test_pacman_questions_become_buttons(self):
+        p=upd.parse_prompt(":: Proceed with installation? [Y/n] ")
+        self.assertEqual((p.question,p.answers,p.back),("Proceed with installation?",(("Yes","y"),("No","n")),"n"))
+        p=upd.parse_prompt(":: python-a and python-b are in conflict. Remove python-b? [y/N] ")
+        self.assertEqual(p.answers[0],("No","n")); self.assertEqual(p.back,"n")   # the default first; Back never says yes
+        p=upd.parse_prompt("Enter a number (default=2): ",[":: There are 3 providers available for ttf-font:",":: Repository extra",
+                                                            "   1) gnu-free-fonts  2) noto-fonts  3) ttf-dejavu"])
+        self.assertIn("ttf-font",p.question); self.assertEqual(p.answers[0],("noto-fonts (default)","2")); self.assertEqual(len(p.answers),3)
+        self.assertEqual(upd.parse_prompt("Enter a selection (default=all): ",[":: There are 2 members in group xorg-apps:"]).answers,(("All (default)",""),))
+        self.assertIsNone(upd.parse_prompt("downloading linux..."))
+        self.assertTrue(upd.is_prompt(":: Import PGP key 1234? [Y/n] ")); self.assertFalse(upd.is_prompt("checking keys in keyring"))
+    def test_arch_news_since_the_last_upgrade(self):
+        rss=("<rss><channel><item><title>Manual step for foo</title><link>https://archlinux.org/news/foo/</link>"
+             "<pubDate>Wed, 29 Oct 2026 10:00:00 +0000</pubDate><description>&lt;p&gt;Run &lt;code&gt;pacman -Syu&lt;/code&gt; first.&lt;/p&gt;</description></item>"
+             "<item><title>Old</title><link>https://archlinux.org/news/old/</link><pubDate>Mon, 01 Sep 2026 10:00:00 +0000</pubDate>"
+             "<description>x</description></item></channel></rss>")
+        items=upd.parse_news(rss)
+        self.assertEqual([n.title for n in items],["Manual step for foo","Old"]); self.assertEqual(items[0].text,"Run pacman -Syu first.")
+        with tempfile.TemporaryDirectory() as d:
+            log=Path(d,"pacman.log")
+            log.write_text("[2026-10-01T09:00:00+0000] [PACMAN] starting full system upgrade\n[2026-10-01T09:01:00+0000] [ALPM] upgraded x\n")
+            since=upd.last_upgrade(str(log))
+            self.assertEqual([n.title for n in upd.news_since(items,since)],["Manual step for foo"])
+            self.assertIsNone(upd.last_upgrade(str(Path(d,"missing.log"))))
+            Path(d,"etc","pacman.d").mkdir(parents=True); Path(d,"etc","pacman.d","mirrorlist.pacnew").write_text("")
+            self.assertEqual(upd.pacnew_files(str(Path(d,"etc"))),[str(Path(d,"etc","pacman.d","mirrorlist.pacnew"))])
+        self.assertEqual(len(upd.news_since(items,None)),1); self.assertEqual(upd.news_since(None,0),[])
+        self.assertIsNone(upd.read_news(now=1e12,fetch=lambda _u:(_ for _ in ()).throw(OSError("offline"))))
     def test_detect_uses_the_first_manager_found(self):
         self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("apt-get","flatpak") else None).id,"apt")
         self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("pacman","checkupdates") else None).id,"pacman")
