@@ -9,13 +9,21 @@ if [ "$1" = remove ] && [ -f /etc/systemd/system/getty@tty1.service.d/tvwcs-auto
     rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
     if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
 fi
-# A login screen's automatic login into TVWCS's session would fail without it: greetd goes back to its plain text
-# login (as install.sh --remove does; the old config is kept as config.toml.tvwcs-backup), LightDM and SDDM lose
-# TVWCS's automatic-login file.
+# A login screen's automatic login into TVWCS's session would fail without it: LightDM and SDDM lose TVWCS's
+# automatic-login file, and greetd what TVWCS added to its config.
 if [ "$1" = remove ]; then
+    # greetd: only what TVWCS added goes (the automatic login into its session, and agreety starting it after the
+    # password, which then starts a shell); the greeter, console and anything else in the file stay as they are.
     if grep -q tvwcs-session /etc/greetd/config.toml 2>/dev/null; then
-        cp /etc/greetd/config.toml /etc/greetd/config.toml.tvwcs-backup
-        printf '%s\n' "[terminal]" "vt = 7" "" "[default_session]" 'command = "/usr/sbin/agreety --cmd /bin/sh"' 'user = "_greetd"' > /etc/greetd/config.toml
+      awk -v greeter="/usr/sbin/agreety --cmd /bin/sh" '
+        function flush() { if (held != "" && held !~ /tvwcs-session/) printf "%s", held; held = "" }
+        /^[ \t]*\[/ { flush(); s = $0; gsub(/[ \t]/, "", s); sub(/^\[/, "", s); sub(/\].*/, "", s) }
+        s == "initial_session" { held = held $0 "\n"; next }
+        s == "default_session" && /^[ \t]*command[ \t]*=/ && /tvwcs-session/ { print "command = \"" greeter "\""; next }
+        { print }
+        END { flush() }' /etc/greetd/config.toml > /etc/greetd/config.toml.tvwcs-new
+      cat /etc/greetd/config.toml.tvwcs-new > /etc/greetd/config.toml; rm -f /etc/greetd/config.toml.tvwcs-new
+      echo "greetd no longer starts TVWCS (/etc/greetd/config.toml)."
     fi
     rm -f /etc/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf /etc/sddm.conf.d/50-tvwcs-autologin.conf
 fi

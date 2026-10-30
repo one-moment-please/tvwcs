@@ -9,13 +9,14 @@ colour chosen in its Options (a change to them is drawn at once), and it works w
 - Dialogs are drawn over the window, as in TVWCS. Text (a Wi-Fi password, an address) is typed on a keyboard, or on
   the on-screen keyboard with the D-pad."""
 from __future__ import annotations
-import os, subprocess, sys, threading, time
+import codecs, os, re, subprocess, sys, threading, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 from tvwcs import privilege
+from tvwcs.control_updates import is_prompt
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
 from tvwcs.model import ConfigStore, effective_scale, key_hints, scale_key, tv_mode
 from tvwcs.theme import render_css
@@ -106,28 +107,61 @@ def in_background(work, done, failed=None):
         GLib.idle_add(lambda:(done(result),GLib.SOURCE_REMOVE)[1])
     threading.Thread(target=run,daemon=True).start()
 
+_COLOUR=re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
 class StreamedRun:
     """Run a command and pass each line it prints (stdout and stderr together) to on_line, then done(exit code, the
-    last lines) on the GTK main loop. `password` is written to its stdin (sudo -S) and the pipe closed."""
-    def __init__(self, argv, on_line, done, password=None, env=None):
-        self.argv=argv; self.on_line=on_line; self.done=done; self.tail=[]
+    last lines) on the GTK main loop. `password` is written to its stdin (sudo -S) and the pipe closed.
+    With on_prompt, its stdin stays open: a question it waits on without ending the line (pacman's "[Y/n]") goes to
+    on_prompt(run, question, the lines before it) on the GTK main loop, and run.send(answer) types the answer."""
+    def __init__(self, argv, on_line, done, password=None, env=None, on_prompt=None):
+        self.argv=argv; self.on_line=on_line; self.done=done; self.tail=[]; self.on_prompt=on_prompt
         try:
-            self.proc=subprocess.Popen(argv,stdin=subprocess.PIPE if password is not None else subprocess.DEVNULL,stdout=subprocess.PIPE,
+            self.proc=subprocess.Popen(argv,stdin=subprocess.PIPE if password is not None or on_prompt else subprocess.DEVNULL,stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT,env=env or privilege.c_locale_env(),start_new_session=True)
         except OSError as exc:
             GLib.idle_add(lambda why=f"Could not run {argv[0]}: {exc}":(done(-1,why),GLib.SOURCE_REMOVE)[1]); self.proc=None; return
         if password is not None:
-            try: self.proc.stdin.write((password+"\n").encode()); self.proc.stdin.close()
+            try:
+                self.proc.stdin.write((password+"\n").encode())
+                if on_prompt: self.proc.stdin.flush()
+                else: self.proc.stdin.close()
             except OSError: pass
-        threading.Thread(target=self._read,daemon=True).start()
+        threading.Thread(target=self._read_prompts if on_prompt else self._read,daemon=True).start()
+    def _line(self, line):
+        for part in line.split("\r"):   # progress bars redraw a line with \r: show each state
+            if part.strip():
+                self.tail=(self.tail+[part])[-12:]; GLib.idle_add(lambda p=part:(self.on_line(p),GLib.SOURCE_REMOVE)[1])
+                if "sorry, try again" in part.lower(): self._close_stdin()   # a wrong sudo password: sudo would wait for another
     def _read(self):
-        for raw in iter(self.proc.stdout.readline,b""):
-            line=raw.decode(errors="replace").rstrip("\n")
-            for part in line.split("\r"):   # progress bars redraw a line with \r: show each state
-                if part.strip():
-                    self.tail=(self.tail+[part])[-12:]; GLib.idle_add(lambda p=part:(self.on_line(p),GLib.SOURCE_REMOVE)[1])
+        for raw in iter(self.proc.stdout.readline,b""): self._line(raw.decode(errors="replace").rstrip("\n"))
+        self._finish()
+    def _read_prompts(self):
+        """Read as it comes, not by lines: a question ends without a newline."""
+        decode=codecs.getincrementaldecoder("utf-8")(errors="replace"); buf=""; fd=self.proc.stdout.fileno()
+        while True:
+            try: chunk=os.read(fd,4096)
+            except OSError: break
+            if not chunk: break
+            buf+=_COLOUR.sub("",decode.decode(chunk))   # a question in colour (yay's) still ends in "[Y/n] "
+            *lines,buf=buf.split("\n")
+            for line in lines: self._line(line)
+            if is_prompt(buf):
+                question=buf; buf=""; before=list(self.tail); self._line(question)
+                GLib.idle_add(lambda q=question,b=before:(self.on_prompt(self,q,b),GLib.SOURCE_REMOVE)[1])
+        if buf: self._line(buf)
+        self._close_stdin(); self._finish()
+    def _finish(self):
         code=self.proc.wait()
         GLib.idle_add(lambda:(self.done(code,"\n".join(self.tail)),GLib.SOURCE_REMOVE)[1])
+    def send(self, answer):
+        """Type an answer to the question it waits on."""
+        try: self.proc.stdin.write((answer+"\n").encode()); self.proc.stdin.flush()
+        except (OSError,ValueError,AttributeError): pass
+    def _close_stdin(self):
+        try:
+            if self.proc.stdin is not None and not self.proc.stdin.closed: self.proc.stdin.close()
+        except OSError: pass
     def stop(self):
         if self.proc is not None and self.proc.poll() is None:
             try: os.killpg(self.proc.pid,15)
@@ -403,6 +437,14 @@ class ControlWindow(Gtk.ApplicationWindow):
         done=lambda:(self.close_modal(),on_close and on_close())
         ok,=self._buttons(("OK",done,"active")); self._finish_modal([[ok]],done)
 
+    def ask_choice(self, title, message, answers, back):
+        """A question with a button for each answer: answers are (label, handler), the default first and selected.
+        Back (Esc) runs back()."""
+        self._begin_modal(title)
+        if message: self._message(message)
+        made=self._buttons(*[(label,lambda h=h:(self.close_modal(),h()),"active" if i==0 else None) for i,(label,h) in enumerate(answers)])
+        self._finish_modal([made],lambda:(self.close_modal(),back()),made[0])
+
     def confirm(self, title, message, label, on_confirm, danger=True, back=None):
         """Ask before doing something that is hard to undo. Cancel is selected, so a stray Enter is harmless."""
         self._begin_modal(title); self._message(message)
@@ -605,38 +647,39 @@ class ControlWindow(Gtk.ApplicationWindow):
         return False
 
     # ================================================================== commands that need root
-    def run_as_root(self, argv, label, on_line, done, tries=0, message=""):
+    def run_as_root(self, argv, label, on_line, done, tries=0, message="", on_prompt=None):
         """Run argv as root and stream its output: directly when already root, through a no-password doas or sudo
         rule when there is one, else with the sudo password asked for in a dialog (used once, never stored).
-        done(exit code, last lines) runs at the end; a refused or cancelled password reports code -1."""
-        if os.geteuid()==0: StreamedRun(argv,on_line,done); return
+        done(exit code, last lines) runs at the end; a refused or cancelled password reports code -1.
+        on_prompt: see StreamedRun (questions the command asks while it runs)."""
+        if os.geteuid()==0: StreamedRun(argv,on_line,done,on_prompt=on_prompt); return
         doas=privilege.doas_command(argv)
         if doas and tries==0 and not message:
             def after_doas(code,tail):
-                if code!=0 and _doas_refused(tail): self._sudo(argv,label,on_line,done)
+                if code!=0 and _doas_refused(tail): self._sudo(argv,label,on_line,done,on_prompt=on_prompt)
                 else: done(code,tail)
-            StreamedRun(doas,lambda line:None if _doas_refused(line) else on_line(line),after_doas); return
-        self._sudo(argv,label,on_line,done,tries,message)
-    def _sudo(self, argv, label, on_line, done, tries=0, message=""):
+            StreamedRun(doas,lambda line:None if _doas_refused(line) else on_line(line),after_doas,on_prompt=on_prompt); return
+        self._sudo(argv,label,on_line,done,tries,message,on_prompt)
+    def _sudo(self, argv, label, on_line, done, tries=0, message="", on_prompt=None):
         sudo=privilege.sudo_command(argv)
         if sudo is None: done(-1,f"{label} needs administrator rights, and neither sudo nor a doas rule for it is available."); return
         def after(code,tail):
             outcome=privilege.sudo_outcome(code,tail)
-            if outcome=="password": self._ask_password(argv,label,on_line,done,tries,message)
+            if outcome=="password": self._ask_password(argv,label,on_line,done,tries,message,on_prompt)
             elif outcome in ("denied","tty"): done(-1,f"{label} needs administrator rights, and sudo will not run it for this user"
                                                      +(" outside a terminal (requiretty)." if outcome=="tty" else "."))
             else: done(code,tail)
-        StreamedRun(sudo,lambda line:None if line.startswith("sudo:") else on_line(line),after)   # sudo's own complaints are handled here
-    def _ask_password(self, argv, label, on_line, done, tries, message):
+        StreamedRun(sudo,lambda line:None if line.startswith("sudo:") else on_line(line),after,on_prompt=on_prompt)   # sudo's own complaints are handled here
+    def _ask_password(self, argv, label, on_line, done, tries, message, on_prompt=None):
         def go(password):
             if not password: done(-1,"No password was given."); return
             def after(code,tail):
                 outcome=privilege.sudo_outcome(code,tail)
-                if outcome=="wrong" and tries+1<PASSWORD_TRIES: self._ask_password(argv,label,on_line,done,tries+1,"Wrong password. Try again.")
+                if outcome=="wrong" and tries+1<PASSWORD_TRIES: self._ask_password(argv,label,on_line,done,tries+1,"Wrong password. Try again.",on_prompt)
                 elif outcome=="wrong": done(-1,f"The password was wrong {PASSWORD_TRIES} times.")
                 else: done(code,tail)
             StreamedRun(privilege.sudo_command(argv,with_password=True),
-                        lambda line:None if line.startswith("sudo:") or "try again" in line.lower() else on_line(line),after,password=password)
+                        lambda line:None if line.startswith("sudo:") or "try again" in line.lower() else on_line(line),after,password=password,on_prompt=on_prompt)
         self.ask_text("Administrator password",f"{label} needs administrator rights. Enter your password (the one sudo asks for). "
                       "It is used once and never stored.",go,secret=True,ok_label="Continue",
                       back=lambda:(self.close_modal(),done(-1,"Cancelled.")),error=message)

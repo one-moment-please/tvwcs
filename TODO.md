@@ -220,7 +220,10 @@ them.
 
 ## 3. Supporting other distributions (removed)
 
-TVWCS now supports Debian and its family (Ubuntu, Mint, Pop!_OS, Raspberry Pi OS) through apt, with systemd, plus Flatpak. Everything below was removed in the commit after
+TVWCS now supports Debian and its family (Ubuntu, Mint, Pop!_OS, Raspberry Pi OS) through apt, and (again, from 5.11.0)
+Arch and its family through pacman, both with systemd. Arch came back as one family in `package/tvwcs/distro.py`, which
+holds the package names, install commands and greetd details; the rows for it below are history. To add another family,
+start there. Everything below was removed in the commit after
 `9e7ef12`, except openSUSE, which was removed in 3.0.2 (its last commit is `a6a81ca`; see 3.10). To bring a distribution back, restore its rows in each place listed, add its tests back, and test the
 installer end to end on it.
 

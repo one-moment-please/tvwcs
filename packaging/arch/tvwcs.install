@@ -1,0 +1,33 @@
+# pacman runs these. What TVWCS's Settings set up outside its own files goes when the package is removed (as the .deb's
+# prerm does): without TVWCS's session, an automatic login into it would fail.
+
+post_install() {
+  echo "TVWCS is installed. Choose the TVWCS session at your login screen, or type tvwcs at a text console."
+  echo "Settings > User sets up the automatic login. See /usr/share/doc/tvwcs/INSTALL-ARCH.md."
+}
+
+pre_remove() {
+  # the first text console's automatic login (Settings > User, without a login screen)
+  if [ -f /etc/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf ]; then
+    rm -f /etc/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf
+    rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+    [ -d /run/systemd/system ] && systemctl daemon-reload || true
+  fi
+  # greetd: only what TVWCS added goes (the automatic login into its session, and agreety starting it after the
+  # password, which then starts a shell); the greeter, console and anything else in the file stay as they are.
+  if grep -q tvwcs-session /etc/greetd/config.toml 2>/dev/null; then
+    awk -v greeter="agreety --cmd /bin/sh" '
+        function flush() { if (held != "" && held !~ /tvwcs-session/) printf "%s", held; held = "" }
+        /^[ \t]*\[/ { flush(); s = $0; gsub(/[ \t]/, "", s); sub(/^\[/, "", s); sub(/\].*/, "", s) }
+        s == "initial_session" { held = held $0 "\n"; next }
+        s == "default_session" && /^[ \t]*command[ \t]*=/ && /tvwcs-session/ { print "command = \"" greeter "\""; next }
+        { print }
+        END { flush() }' /etc/greetd/config.toml > /etc/greetd/config.toml.tvwcs-new
+    cat /etc/greetd/config.toml.tvwcs-new > /etc/greetd/config.toml; rm -f /etc/greetd/config.toml.tvwcs-new
+    echo "greetd no longer starts TVWCS (/etc/greetd/config.toml)."
+  fi
+  rm -f /etc/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf /etc/sddm.conf.d/50-tvwcs-autologin.conf
+  # server mode's switch and polkit rule
+  rm -f /etc/tvwcs/server-mode /etc/polkit-1/rules.d/50-tvwcs-server-mode.rules
+  rmdir /etc/tvwcs 2>/dev/null || true
+}

@@ -87,6 +87,13 @@ def packaged(package_dir=None):
     which is updated with git instead."""
     return Path(package_dir or Path(__file__).resolve().parent).resolve().parent==Path(LIB)
 
+PACKAGE_MARK="PACKAGE"       # in LIB: names the distribution package TVWCS came from when it is not the .deb (arch)
+def other_package(lib=LIB):
+    """The kind of package this TVWCS was installed from when it is not the .deb from GitHub ("arch": built from its
+    PKGBUILD), or "". Those are updated by building and installing the new release's package, never from here."""
+    try: return Path(lib,PACKAGE_MARK).read_text(encoding="utf-8").strip()
+    except OSError: return ""
+
 def installed_packages(run=subprocess.run):
     """Which of TVWCS's packages are installed here."""
     try: done=run(["dpkg-query","-W","-f=${Package} ${db:Status-Status}\\n",*PACKAGES],capture_output=True,text=True,timeout=20)

@@ -165,6 +165,13 @@ class BluetoothTests(unittest.TestCase):
         text="Controller 5C:F3:70:11:22:33 (public)\n\tName: tv\n\tPowered: no\n\tPowerState: off-blocked\n"
         self.assertEqual(bt.parse_show(text),("5C:F3:70:11:22:33",False,True))
         self.assertEqual(bt.parse_show("No default controller available\n"),("",False,False))
+    def test_no_adapter_is_not_a_stopped_service(self):
+        # bluetoothctl waits for a service that never starts without an adapter (ConditionPathIsDirectory=/sys/class/bluetooth)
+        failed=Result(False,1,"","Waiting to connect to bluetoothd...")
+        with mock.patch.object(bt,"have",lambda _n:True), mock.patch.object(bt,"run",lambda *_a,**_k:failed):
+            for adapter,message in ((False,"No Bluetooth adapter was found."),(True,"The Bluetooth service is not answering")):
+                with mock.patch.object(bt.os.path,"isdir",lambda _p,a=adapter:a):
+                    self.assertTrue(bt.read_state().message.startswith(message))
     def test_device_list_skips_status_lines(self):
         text="Agent registered\n[CHG] Controller 5C:F3:70:11:22:33 Discovering: yes\nDevice 00:1B:66:AA:BB:CC MOMENTUM 4\nDevice 4C:B9:9B:01:02:03 4C-B9-9B-01-02-03\n"
         self.assertEqual(bt.parse_devices(text),[("00:1B:66:AA:BB:CC","MOMENTUM 4"),("4C:B9:9B:01:02:03","4C-B9-9B-01-02-03")])
@@ -259,9 +266,66 @@ class UpdatesTests(unittest.TestCase):
     def test_apt(self):
         text="Listing...\nbash/noble-updates,noble-security 5.2.21-2ubuntu4.1 amd64 [upgradable from: 5.2.21-2ubuntu4]\nfirefox/noble 129.0 amd64\n"
         self.assertEqual(upd.parse_apt(text),[upd.Update("bash","5.2.21-2ubuntu4.1","5.2.21-2ubuntu4","noble-updates"),upd.Update("firefox","129.0","","noble")])
+    def test_pacman(self):
+        self.assertEqual(upd.parse_pacman("linux 6.9.7.arch1-1 -> 6.9.8.arch1-1\nmesa 1 -> 2 [ignored]\n"),[upd.Update("linux","6.9.8.arch1-1","6.9.7.arch1-1")])
+        m=next(m for m in upd.MANAGERS if m.id=="pacman")
+        self.assertEqual(m.install_argv,("pacman","-Syu","--noconfirm")); self.assertIn(2,m.ok_codes)   # 2: nothing to update
+        self.assertTrue(m.fresh_lists); self.assertEqual(m.refresh_argv,())   # never pacman -Sy alone (a partial upgrade)
+    def test_pacman_questions_become_buttons(self):
+        p=upd.parse_prompt(":: Proceed with installation? [Y/n] ")
+        self.assertEqual((p.question,p.answers,p.back),("Proceed with installation?",(("Yes","y"),("No","n")),"n"))
+        p=upd.parse_prompt(":: python-a and python-b are in conflict. Remove python-b? [y/N] ")
+        self.assertEqual(p.answers[0],("No","n")); self.assertEqual(p.back,"n")   # the default first; Back never says yes
+        p=upd.parse_prompt("Enter a number (default=2): ",[":: There are 3 providers available for ttf-font:",":: Repository extra",
+                                                            "   1) gnu-free-fonts  2) noto-fonts  3) ttf-dejavu"])
+        self.assertIn("ttf-font",p.question); self.assertEqual(p.answers[0],("noto-fonts (default)","2")); self.assertEqual(len(p.answers),3)
+        self.assertEqual(upd.parse_prompt("Enter a selection (default=all): ",[":: There are 2 members in group xorg-apps:"]).answers,(("All (default)",""),))
+        self.assertIsNone(upd.parse_prompt("downloading linux..."))
+        self.assertTrue(upd.is_prompt(":: Import PGP key 1234? [Y/n] ")); self.assertFalse(upd.is_prompt("checking keys in keyring"))
+    def test_aur_helper_updates(self):
+        self.assertEqual(upd.aur_helper(which=lambda n:"/usr/bin/paru" if n=="paru" else None),"paru")
+        self.assertEqual(upd.aur_helper(which=lambda n:None),"")
+        with mock.patch.object(upd,"run",lambda argv,timeout=0:Result(False,1,"tvwcs 5.11.0-1 -> 5.12.0-1\n","")):
+            self.assertEqual(upd._list_aur("yay"),([upd.Update("tvwcs","5.12.0-1","5.11.0-1")],""))
+        with mock.patch.object(upd,"run",lambda argv,timeout=0:Result(False,1,"","")):
+            self.assertEqual(upd._list_aur("paru"),([],""))   # 1: nothing to update
+        with mock.patch.object(upd,"run",lambda argv,timeout=0:Result(False,1,"","error: failed to reach the AUR")):
+            self.assertEqual(upd._list_aur("yay")[1],"error: failed to reach the AUR")
+        self.assertEqual(upd.aur_update_argv("yay"),["yay","-Sua","--sudoflags=-S"])   # as the user; sudo reads the password from Settings
+    def test_aur_helper_questions(self):
+        p=upd.parse_prompt("[sudo] password for tv: ")
+        self.assertEqual(p.kind,"password"); self.assertTrue(upd.is_prompt("[sudo] password for tv: "))
+        menu="==> [N]one [A]ll [Ab]ort [I]nstalled [No]tInstalled or (1 2 3, 1-3, ^4)"
+        p=upd.parse_prompt("==> ",["  1 tvwcs  (Installed)","==> Diffs to show?",menu])
+        self.assertEqual((p.question,p.answers[0],p.back),("Diffs to show?",("Show all","A"),"Ab"))   # reviewing comes first
+        self.assertEqual(upd.parse_prompt("==> ",["==> Packages to cleanBuild?",menu]).answers[0],("None","N"))
+        p=upd.parse_prompt("==> ",['==> Packages to exclude: (eg: "1 2 3", "1-3", "^4" or repo name)'])
+        self.assertEqual((p.question,p.answers),("Packages to exclude:",(("None, update them all",""),)))
+        p=upd.parse_prompt("==> ",['==> Packages to exclude: (eg: "1 2 3", "1-3", "^4" or repo name)',
+                                   " -> Excluding packages may cause partial upgrades and break systems"])
+        self.assertEqual(p.question,"Packages to exclude:")   # not yay's warning under it
+        self.assertFalse(upd.is_prompt("==> Making package: tvwcs 5.12.0-1"))
+    def test_arch_news_since_the_last_upgrade(self):
+        rss=("<rss><channel><item><title>Manual step for foo</title><link>https://archlinux.org/news/foo/</link>"
+             "<pubDate>Wed, 29 Oct 2026 10:00:00 +0000</pubDate><description>&lt;p&gt;Run &lt;code&gt;pacman -Syu&lt;/code&gt; first.&lt;/p&gt;</description></item>"
+             "<item><title>Old</title><link>https://archlinux.org/news/old/</link><pubDate>Mon, 01 Sep 2026 10:00:00 +0000</pubDate>"
+             "<description>x</description></item></channel></rss>")
+        items=upd.parse_news(rss)
+        self.assertEqual([n.title for n in items],["Manual step for foo","Old"]); self.assertEqual(items[0].text,"Run pacman -Syu first.")
+        with tempfile.TemporaryDirectory() as d:
+            log=Path(d,"pacman.log")
+            log.write_text("[2026-10-01T09:00:00+0000] [PACMAN] starting full system upgrade\n[2026-10-01T09:01:00+0000] [ALPM] upgraded x\n")
+            since=upd.last_upgrade(str(log))
+            self.assertEqual([n.title for n in upd.news_since(items,since)],["Manual step for foo"])
+            self.assertIsNone(upd.last_upgrade(str(Path(d,"missing.log"))))
+            Path(d,"etc","pacman.d").mkdir(parents=True); Path(d,"etc","pacman.d","mirrorlist.pacnew").write_text("")
+            self.assertEqual(upd.pacnew_files(str(Path(d,"etc"))),[str(Path(d,"etc","pacman.d","mirrorlist.pacnew"))])
+        self.assertEqual(len(upd.news_since(items,None)),1); self.assertEqual(upd.news_since(None,0),[])
+        self.assertIsNone(upd.read_news(now=1e12,fetch=lambda _u:(_ for _ in ()).throw(OSError("offline"))))
     def test_detect_uses_the_first_manager_found(self):
         self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("apt-get","flatpak") else None).id,"apt")
-        self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","pacman","dnf","xbps-install","apk") else None))   # not supported (TODO.md)
+        self.assertEqual(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("pacman","checkupdates") else None).id,"pacman")
+        self.assertIsNone(upd.detect(which=lambda c:"/usr/bin/"+c if c in ("zypper","dnf","xbps-install","apk") else None))   # not supported (TODO.md)
         self.assertIsNone(upd.detect(which=lambda c:None))
     def test_age_and_reboot(self):
         self.assertEqual([upd.age_text(t,1000000) for t in (999990,1000000-300,1000000-7200,1000000-86400*3)],["just now","5 minutes ago","2 hours ago","3 days ago"])

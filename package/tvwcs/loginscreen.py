@@ -15,12 +15,13 @@ from __future__ import annotations
 import json, os, pwd, re, shlex, shutil, subprocess, sys
 from pathlib import Path
 
+from tvwcs import distro
+
 SESSION="tvwcs-sway"                                # TVWCS's session (/usr/share/wayland-sessions/tvwcs-sway.desktop)
 SESSION_COMMAND="/usr/bin/tvwcs-session"           # what that session runs
 GREETD_CONF="/etc/greetd/config.toml"
-GREETD_USER="_greetd"                              # Debian's greetd user
-AGREETY="/usr/sbin/agreety"                        # greetd's text login; on Debian it is not on _greetd's PATH
-GREETD_VT=7                                        # Debian's greetd runs on the seventh console, like other login screens
+# greetd's user, its text login (agreety) and its console come from distro.greetd(): on Debian _greetd, /usr/sbin/agreety
+# (not on _greetd's PATH) and the seventh console, like other login screens; on Arch greeter, /usr/bin/agreety and the first.
 LIGHTDM_AUTOLOGIN="/etc/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf"
 SDDM_AUTOLOGIN="/etc/sddm.conf.d/50-tvwcs-autologin.conf"
 SESSION_DIRS=("/usr/share/wayland-sessions","/usr/local/share/wayland-sessions","/usr/share/xsessions","/usr/local/share/xsessions")
@@ -287,9 +288,10 @@ def set_profile(on, home=None, shell=None) -> str:
         return ""
     except OSError as exc: return f"Could not change your shell profile: {exc}"
 
-def greetd_text(greeter_command, user, autologin_to=None, vt=GREETD_VT) -> str:
+def greetd_text(greeter_command, user, autologin_to=None, vt=None) -> str:
     """greetd's config. autologin_to: (user, command) for the initial session, which logs that user in at start-up (the
     greeter then shows after logging out)."""
+    vt=distro.greetd()[2] if vt is None else vt
     lines=["# Written by TVWCS (Settings > User > Logging in).","[terminal]",f"vt = {vt}","",
            "[default_session]",f"command = {json.dumps(greeter_command)}",f"user = {json.dumps(user)}"]
     if autologin_to:
@@ -299,7 +301,7 @@ def greetd_text(greeter_command, user, autologin_to=None, vt=GREETD_VT) -> str:
 
 def agreety_command() -> str:
     """greetd's text login, which starts TVWCS's session after the password."""
-    return f"{AGREETY} --cmd {shlex.quote(shlex.join(session_command()))}"
+    return f"{distro.greetd()[1]} --cmd {shlex.quote(shlex.join(session_command()))}"
 
 # ---------------------------------------------------------------------- changing the system (as root)
 class Changer:
@@ -332,8 +334,9 @@ class Changer:
             if link.is_symlink() or link.exists(): link.unlink()
             link.parent.mkdir(parents=True,exist_ok=True); link.symlink_to(target)
             self.systemctl("daemon-reload")
-        exe=shutil.which(unit,path="/usr/sbin:/usr/bin:/sbin:/bin") or f"/usr/sbin/{unit}"
-        self.write("/etc/X11/default-display-manager",exe+"\n")
+        if distro.family()!=distro.ARCH:   # only Debian's family reads it
+            exe=shutil.which(unit,path="/usr/sbin:/usr/bin:/sbin:/bin") or f"/usr/sbin/{unit}"
+            self.write("/etc/X11/default-display-manager",exe+"\n")
         self.systemctl("set-default","graphical.target")   # greetd is only started by graphical.target
 
     def write_greetd(self, autologin_to=None, greeter=None):
@@ -341,14 +344,15 @@ class Changer:
         autologin_to: (user, session id), or None for no automatic login."""
         cfg=greetd_config(); ds=cfg.get("default_session",{})
         cmd=greeter or ("" if current_greeter(cfg) in ("","tvwcs") else str(ds.get("command",""))) or agreety_command()
-        user=ds.get("user") or GREETD_USER
-        vt=cfg.get("terminal",{}).get("vt",GREETD_VT)
+        default_user,_agreety,default_vt=distro.greetd()
+        user=ds.get("user") or default_user
+        vt=cfg.get("terminal",{}).get("vt",default_vt)
         init=None
         if autologin_to and autologin_to[0]:
             argv=session_command(autologin_to[1] or SESSION)
             if not argv: raise SystemExit(f"There is no session called {autologin_to[1]} (no .desktop file in /usr/share/wayland-sessions).")
             init=(autologin_to[0],shlex.join(argv))
-        self.write(GREETD_CONF,greetd_text(cmd,user,init,vt if isinstance(vt,(int,str)) else GREETD_VT))
+        self.write(GREETD_CONF,greetd_text(cmd,user,init,vt if isinstance(vt,(int,str)) else default_vt))
 
     def set_autologin(self, user, session=SESSION, unit=None):
         """Log `user` in automatically at start-up into `session` (a session id), or stop it (user "")."""
@@ -414,16 +418,16 @@ class Changer:
 INSTALL_THEN="""set -e
 n=$1; shift; packages=""
 while [ "$n" -gt 0 ]; do packages="$packages $1"; shift; n=$((n-1)); done
-if [ -n "$packages" ]; then apt-get update -q; DEBIAN_FRONTEND=noninteractive apt-get install -y $packages; fi
+if [ -n "$packages" ]; then {install}; fi
 exec "$@"
 """
 def root_command(args, packages=(), module="tvwcs.loginscreen") -> list:
-    """The command (for sudo) that installs `packages` with apt, then runs `python3 -m <module> args` (this module, or
+    """The command (for sudo) that installs `packages` with apt or pacman, then runs `python3 -m <module> args` (this module, or
     tvwcs.servermode) from this copy of TVWCS."""
     run=["env","PYTHONDONTWRITEBYTECODE=1",f"PYTHONPATH={Path(__file__).resolve().parent.parent}","python3","-m",module,*args]
     if not packages: return run
     if not all(re.fullmatch(r"[a-z0-9][a-z0-9+.-]*",p) for p in packages): raise ValueError("Unexpected package name.")
-    return ["sh","-c",INSTALL_THEN,"sh",str(len(packages)),*packages,*run]
+    return ["sh","-c",INSTALL_THEN.format(install=distro.install_script()),"sh",str(len(packages)),*packages,*run]
 
 USAGE="""Usage (as root): python3 -m tvwcs.loginscreen <command>
   autologin USER [SESSION] | autologin --off   log USER in at start-up into SESSION (default: tvwcs-sway)

@@ -6,6 +6,7 @@ from __future__ import annotations
 import ipaddress, json, os, re
 from dataclasses import dataclass, field
 
+from tvwcs import distro
 from tvwcs.control_cmd import have, run, split_terse
 
 @dataclass
@@ -184,6 +185,9 @@ def read_state(scan=False):
         addr=run(["ip","-j","addr"],timeout=5); route=run(["ip","-j","route"],timeout=5)
         why=("NetworkManager is not running, so these settings can only be shown here. Start NetworkManager to change them."
              if have("nmcli") else "Changing these settings needs NetworkManager (nmcli). Without it they can only be shown here.")
+        if distro.is_arch():   # Arch starts no network manager by itself: the installer picks systemd-networkd, iwd or NetworkManager
+            why+=(" On Arch: install networkmanager, turn off what runs the network now (systemd-networkd and iwd, or dhcpcd), then "
+                  "turn on NetworkManager: sudo systemctl disable --now systemd-networkd iwd; sudo systemctl enable --now NetworkManager")
         return NetState(False,why,parse_ip_json(addr.out,route.out))
     interfaces=parse_device_list(run(["nmcli","-t","-f","DEVICE,TYPE,STATE,CONNECTION","device"],timeout=8).out)
     connections=parse_connections(run(["nmcli","-t","-f","NAME,UUID,TYPE,DEVICE","connection","show"],timeout=8).out)
