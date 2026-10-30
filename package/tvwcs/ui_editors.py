@@ -74,7 +74,7 @@ class ProfileEditor:
         box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=S(2)); scroll.set_child(box); win.modal_card.append(scroll)
         actions=dict(app.desktop_actions) if app else {}
         rows=[("name","Profile name",DEFAULT_LABEL if self.primary else d.name or "(none)",None if self.primary else self._edit_name),
-              ("channel","Channel number",f"{int(d.channel):03d}" if d.channel.strip().isdigit() else "None",self._edit_channel),
+              ("channel","Channel number",self.app.store.channel_text(int(d.channel)) if d.channel.strip().isdigit() else "None",self._edit_channel),
               ("hotkey","Hotkey",describe(d.hotkey) if d.hotkey else "None",self._edit_hotkey)]
         if actions: rows.append(("action","Desktop Action",actions.get(d.action,"None set") if d.action else "None set",self._edit_action))
         rows.append(("command","Custom command",d.command or "None: the application's own launcher",self._edit_command))

@@ -36,7 +36,7 @@ class ProfileDraft:
     def profile(self):
         """The LaunchProfile to store. Raises ValueError for a channel that is not a number (the store checks the rest)."""
         raw=self.channel.strip()
-        if raw and not raw.isdigit(): raise ValueError("The channel is a number from 000 to 999.")
+        if raw and not raw.isdigit(): raise ValueError("The channel must be a number.")
         return LaunchProfile(id=self.id,desktop_id=self.desktop_id,name=self.name.strip(),command=self.command.strip(),
                              channel=int(raw) if raw else None,favorite=self.favorite,
                              launch_mode=LAUNCH_NEW_WORKSPACE if self.new_workspace else LAUNCH_SAME,desktop_action=self.action,
