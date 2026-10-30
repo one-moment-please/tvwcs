@@ -23,7 +23,7 @@ Until a release with these files has been marked latest, use a version's own add
 ## Start it
 
 - **With a login screen** (greetd, LightDM, SDDM, GDM): pick the **TVWCS** session. Settings › User can log you in to it automatically.
-- **Without one:** type `tvwcs` at a text console. Settings › User can then log you in automatically on the first console, or set up greetd with its text login. It installs greetd for you.
+- **Without one:** type `tvwcs` at a text console. Settings › User can then log you in automatically on the first console. TVWCS never installs a login screen itself: if you want one, install greetd (or another) and Settings › User sets up its automatic login.
 - **In your usual sway session:** Settings › Hotkeys › Add TVWCS to sway adds one line to your sway config, and TVWCS then runs in desktop mode.
 
 ## Things Arch does differently
