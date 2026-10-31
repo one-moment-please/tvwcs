@@ -1,27 +1,25 @@
 #!/bin/sh
-# TVWCS's installer. It installs, upgrades or removes TVWCS's Debian packages. Run it in a terminal:
+# TVWCS's installer. It installs, upgrades or removes TVWCS: its Debian package, or on Arch the package it builds from
+# the release's PKGBUILD. Run it in a terminal:
 #
 #     wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
 #
 # (it then downloads the release you choose), or from an unpacked release (./install.sh; it then offers to install the
-# packages next to it, or to download another release). It asks every question first and changes nothing until you
-# agree to the list of what it will do:
+# .deb next to it, or to download another release). It asks every question first and changes nothing (downloads
+# nothing either) until you agree to the list of what it will do:
 #   - with TVWCS installed: upgrade, install a different version (the prerelease, or one of the two releases before
 #     the latest) or remove TVWCS;
 #   - logging in automatically into TVWCS's session. Without a login screen, the first text console logs in and starts
 #     it (typing tvwcs there starts it too);
 #   - adding TVWCS to your usual sway session (one include line in its config), where it runs in desktop mode;
 #   - on Ubuntu, removing Snap, cloud-init and the Ubuntu Pro client, each asked.
-# apt installs the packages TVWCS needs with it. Supported: Debian and its family (apt), with systemd.
+# apt (or pacman) installs the packages TVWCS needs with it. Supported, with systemd: Debian and its family (apt), and
+# Arch and its family (pacman; run it as your own user, since makepkg will not build as root; it needs fakeroot, from
+# base-devel, and offers to install it).
 #
-# TVWCS 4.x was installed in ~/.local/share/tvwcs, for one user, with its own login screen and i3 or sway. Upgrading
-# from it removes that copy and TVWCS's old login screen (another installed login screen takes over; without one,
-# greetd's text login does, and the automatic login is kept), and moves TV mode to sway. Your channels, favorites,
-# options and hotkeys in ~/.config/tvwcs are kept.
-#
-# Options: --remove removes TVWCS. --help shows this text. (--missing, which 4.x's updater asks, lists nothing.)
+# Options: --remove removes TVWCS. --help shows this text.
 # Environment: TVWCS_VERSION=package|latest|<x.y.z> answers which version (default: asked).
-# The tests use TVWCS_ETC, TVWCS_RUN, TVWCS_SHARE, TVWCS_LIB, TVWCS_LOCAL, TVWCS_UNITS, TVWCS_GITHUB, TVWCS_API and TVWCS_PACKAGES (the packages
+# The tests use TVWCS_ETC, TVWCS_RUN, TVWCS_SHARE, TVWCS_LIB, TVWCS_UNITS, TVWCS_GITHUB, TVWCS_API and TVWCS_PACKAGES (the packages
 # to treat as installed) to stand in for the system.
 set -eu
 
@@ -29,13 +27,11 @@ REPO=one-moment-please/tvwcs
 GITHUB=${TVWCS_GITHUB:-https://github.com}
 API=${TVWCS_API:-https://api.github.com}
 CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
-DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 ETC=${TVWCS_ETC:-/etc}
 SHARE=${TVWCS_SHARE:-/usr/share}
 LIB=${TVWCS_LIB:-/usr/lib/tvwcs}
-LOCAL=${TVWCS_LOCAL:-/usr/local}       # where TVWCS 4.x put its login screen and session script
 TVCONF=$CONFIG_HOME/tvwcs
-OLD_DEST=$DATA_HOME/tvwcs              # TVWCS 4.x
+FIRST_ARCH=5.11.0                      # the first release with a PKGBUILD
 INCLUDE="include /usr/share/tvwcs/tvwcs.conf"
 
 # ====================================================================== talking to the person installing
@@ -75,9 +71,11 @@ choose() {
 fail() { warn ""; warn "The installation failed: $*"; exit 1; }
 
 # ====================================================================== this computer
-distro() {   # debian (Debian and its family) or unknown
+distro() {   # debian (Debian and its family), arch (Arch and its family) or unknown
     ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi
-      for D in ${ID:-} ${ID_LIKE:-}; do case "$D" in debian|ubuntu|linuxmint|pop|raspbian) echo debian; exit ;; esac; done; echo unknown )
+      for D in ${ID:-} ${ID_LIKE:-}; do case "$D" in
+          debian|ubuntu|linuxmint|pop|raspbian) echo debian; exit ;;
+          arch|archarm|endeavouros|cachyos|manjaro|manjaro-arm|garuda) echo arch; exit ;; esac; done; echo unknown )
 }
 os_is() {   # os_is <id>: this system is <id> or built on it (os-release's ID or ID_LIKE)
     ( if [ -r "$ETC/os-release" ]; then . "$ETC/os-release"; elif [ "$ETC" = /etc ] && [ -r /usr/lib/os-release ]; then . /usr/lib/os-release; fi
@@ -94,14 +92,15 @@ as_root() {
 }
 pkg_installed() {   # pkg_installed <package>
     if [ -n "${TVWCS_PACKAGES+set}" ]; then case " $TVWCS_PACKAGES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; fi
+    if [ "$OS" = arch ]; then pacman -Q "$1" >/dev/null 2>&1; return; fi
     dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii'
 }
 pkg_known() {   # pkg_known <package>: installed, or removed with its settings left ("rc"), so that a purge does something
     pkg_installed "$1" && return 0
-    [ -z "${TVWCS_PACKAGES+set}" ] || return 1
+    [ -z "${TVWCS_PACKAGES+set}" ] && [ "$OS" != arch ] || return 1
     dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^rc'
 }
-installed_version() { if [ -f "$LIB/VERSION" ]; then cat "$LIB/VERSION"; elif [ -f "$OLD_DEST/VERSION" ]; then cat "$OLD_DEST/VERSION"; fi; }
+installed_version() { [ ! -f "$LIB/VERSION" ] || cat "$LIB/VERSION"; }
 
 # ---- login screens
 DISPLAY_MANAGERS="gdm3 gdm sddm lightdm lxdm xdm slim ly greetd emptty nodm entrance lemurs"
@@ -113,28 +112,19 @@ login_screen() {   # the login screen that runs at start-up (lightdm, gdm3, gree
     elif [ -s "$ETC/X11/default-display-manager" ]; then N=$(sed -n 1p "$ETC/X11/default-display-manager"); N=${N##*/}; fi
     echo "$N"
 }
-old_greeter() { grep -q 'tvwcs-greeter/greeter' "$ETC/greetd/config.toml" 2>/dev/null; }
 login_screen_name() {
     case "$1" in
         gdm|gdm3) echo "GNOME's login screen (GDM)" ;; sddm) echo SDDM ;; lightdm) echo LightDM ;; greetd) echo greetd ;;
         "") echo "no login screen" ;; *) echo "$1" ;;
     esac
 }
-installed_unit() { for D in "$ETC/systemd/system" "${TVWCS_UNITS:-/usr/lib/systemd/system}" /lib/systemd/system; do [ -f "$D/$1.service" ] && return 0; done; return 1; }
-graphical_login_screen() {   # another graphical login screen installed here, to take over from TVWCS 4.x's own
-    for U in gdm3 gdm sddm lightdm lxdm slim ly emptty lemurs; do installed_unit "$U" && { echo "$U"; return; }; done; echo ""
-}
-autologin_user() {   # who greetd logs in automatically now (TVWCS 4.x's login screen kept it there too)
+autologin_user() {   # who greetd logs in automatically now
     sed -n '/^\[initial_session\]/,/^\[/p' "$ETC/greetd/config.toml" 2>/dev/null | sed -n 's/^user *= *"\(.*\)"$/\1/p'
 }
-GETTY_OVERRIDE=$ETC/systemd/system/getty@tty1.service.d/autologin.conf
-START_BEGIN="# >>> TVWCS: start the window manager after the automatic login (added by install.sh; delete to undo) >>>"
-START_END="# <<< TVWCS <<<"
 
 # ---- the usual sway config (desktop mode)
 sway_config() { for C in "$CONFIG_HOME/sway/config" "$HOME/.sway/config"; do [ -f "$C" ] && { echo "$C"; return; }; done; echo ""; }
 has_include() { grep -q '^[[:space:]]*include[[:space:]].*/usr/share/tvwcs/tvwcs\.conf' "$1" 2>/dev/null; }
-has_old_include() { grep -q '^[[:space:]]*include[[:space:]].*\.local/share/tvwcs/tvwcs\.conf' "$1" 2>/dev/null; }
 backup() { [ -f "$1.tvwcs-backup" ] || cp "$1" "$1.tvwcs-backup"; }
 
 # ====================================================================== releases
@@ -146,18 +136,20 @@ fetch() {   # fetch <url> <file>
 # The release list, one line per release: "<version> <latest|prerelease|release>", newest first. GitHub's answer is
 # read with grep and awk: each release's tag_name comes before its draft and prerelease fields; quotes inside text are
 # escaped, so a release's notes cannot be mistaken for them. Releases before 5.0 have no .deb and are left out.
-RELEASES=""; LATEST=""
+RELEASES=""; LATEST=""; OS=""
 read_releases() {
     [ -z "$RELEASES" ] || return 0
     T=$WORK/releases.json; L=$WORK/latest.json
     fetch "$API/repos/$REPO/releases?per_page=30" "$T" 2>/dev/null || return 1
     fetch "$API/repos/$REPO/releases/latest" "$L" 2>/dev/null || :
     LATEST=$(grep -o '"tag_name": *"[^"]*"' "$L" 2>/dev/null | sed -n '1s/.*"v\{0,1\}\([^"]*\)"$/\1/p')
-    RELEASES=$(grep -o '"tag_name": *"[^"]*"\|"draft": *[a-z]*\|"prerelease": *[a-z]*' "$T" | awk -v latest="$LATEST" '
+    FIRST=""; [ "$OS" != arch ] || FIRST=$FIRST_ARCH   # releases before it have no PKGBUILD
+    RELEASES=$(grep -o '"tag_name": *"[^"]*"\|"draft": *[a-z]*\|"prerelease": *[a-z]*' "$T" | awk -v latest="$LATEST" -v first="$FIRST" '
         /"tag_name"/ { if (tag != "" && draft != "true") out(); tag = $0; sub(/.*: *"v?/, "", tag); sub(/"$/, "", tag); draft = ""; pre = "" }
         /"draft"/ { draft = $0; sub(/.*: */, "", draft) }
         /"prerelease"/ { pre = $0; sub(/.*: */, "", pre) }
-        function out() { if (tag ~ /^[0-9]+(\.[0-9]+)*$/ && tag + 0 >= 5) print tag, (tag == latest ? "latest" : pre == "true" ? "prerelease" : "release") }
+        function out() { if (tag ~ /^[0-9]+(\.[0-9]+)*$/ && tag + 0 >= 5 && !(first != "" && older(tag, first))) print tag, (tag == latest ? "latest" : pre == "true" ? "prerelease" : "release") }
+        function older(a, b,   x, y, i) { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) if (x[i] + 0 != y[i] + 0) return x[i] + 0 < y[i] + 0; return 0 }
         END { if (tag != "" && draft != "true") out() }' | sort -t. -k1,1nr -k2,2nr -k3,3nr)
     case " $(echo "$RELEASES" | cut -d' ' -f1 | tr '\n' ' ') " in *" $LATEST "*) ;; *) LATEST=$(echo "$RELEASES" | awk '$2 == "release" { print $1; exit }') ;; esac
     [ -n "$RELEASES" ]
@@ -170,6 +162,13 @@ other_versions() {   # the prerelease newer than the latest (when there is one),
         function lt(a, b,   x, y, i, n) { n = split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) if (x[i] + 0 != y[i] + 0) return x[i] + 0 < y[i] + 0; return 0 }
         latest == "" || $2 == "prerelease" && pre == "" && lt(latest, $1) { pre = $1; print $1, "prerelease" }
         $2 == "release" && lt($1, latest) && n < 2 { n++; print $1, "release" }'
+}
+download_pkgbuild() {   # download_pkgbuild <version>: the release's PKGBUILD and tvwcs.install into $WORK/arch
+    V=$1; D=$WORK/arch; rm -rf "$D"; mkdir -p "$D"
+    say "Downloading TVWCS $V's PKGBUILD..."
+    for F in PKGBUILD tvwcs.install; do
+        fetch "$GITHUB/$REPO/releases/download/v$V/$F" "$D/$F" 2>/dev/null || { warn "Could not download $F for TVWCS $V from GitHub."; return 1; }
+    done
 }
 download_debs() {   # download_debs <version> <packages...>: into $WORK/debs
     V=$1; shift; D=$WORK/debs; rm -rf "$D"; mkdir -p "$D"; chmod 755 "$WORK" "$D"
@@ -184,6 +183,7 @@ download_debs() {   # download_debs <version> <packages...>: into $WORK/debs
 # An unpacked release has its .deb files next to this script.
 PACKAGED=""; PKG_VERSION=""
 find_package() {
+    [ "$OS" != arch ] || return 0
     case "$0" in */*) D=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || return 0 ;; *) return 0 ;; esac   # piped to bash: $0 is "bash"
     for F in "$D"/tvwcs_*_all.deb; do
         [ -f "$F" ] || continue
@@ -215,24 +215,13 @@ choose_version() {   # -> WANT (a version, or "package" for the .deb files next 
 }
 
 ask_questions() {
-    LS=$(login_screen); ME=$(id -un); FROM_4=""; MIGRATE=""; AUTO=""; OLD_CONSOLE=""; DESKTOP=""; OLD_INCLUDE=""
-    [ -d "$OLD_DEST" ] && FROM_4=1
-    if old_greeter || [ -d "$LOCAL/lib/tvwcs-greeter" ]; then MIGRATE=1; fi
+    LS=$(login_screen); ME=$(id -un); AUTO=""; DESKTOP=""; FAKEROOT=""
+    [ "$OS" != arch ] || have fakeroot || FAKEROOT=1
 
     heading "Logging in"
-    if [ -n "$MIGRATE" ]; then
-        OTHER=$(graphical_login_screen); WHO=$(autologin_user)
-        say "TVWCS 5 has no login screen of its own any more, so TVWCS's old one is removed."
-        if [ -n "$OTHER" ]; then say "$(login_screen_name "$OTHER") is installed and takes over from the next start."
-        else say "greetd stays, with its text login after logging out."; fi
-        if [ -n "$WHO" ]; then say "$WHO is still logged in automatically into TVWCS."; AUTO=$WHO
-        elif ask_no "Log $ME in automatically into TVWCS at startup?"; then AUTO=$ME; fi
-    elif [ -z "$LS" ] && [ ! -f "$GETTY_OVERRIDE" ]; then
+    if [ -z "$LS" ]; then
         say "There is no login screen here: log in at the text console and type tvwcs to start TVWCS."
         ask_yes "Log $ME in automatically into TVWCS at startup, on the first text console?" && AUTO=$ME || :
-    elif [ -z "$LS" ]; then
-        say "$ME is logged in on the first console at startup (TVWCS 4.x set this up), and still is, into TVWCS's session."
-        OLD_CONSOLE=1; AUTO=$ME
     else
         WHO=""; [ "$LS" != greetd ] || WHO=$(autologin_user)
         case "$LS" in greetd|lightdm|sddm)
@@ -242,8 +231,7 @@ ask_questions() {
     fi
 
     CFG=$(sway_config)
-    if [ -n "$CFG" ] && has_old_include "$CFG"; then OLD_INCLUDE=$CFG
-    elif [ -n "$CFG" ] && ! has_include "$CFG"; then
+    if [ -n "$CFG" ] && ! has_include "$CFG"; then
         heading "Your usual sway session"
         say "TVWCS has a \"TVWCS\" session of its own at the login screen, which runs it in TV mode."
         ask_no "Also add TVWCS to your usual sway session ($CFG), where it runs in desktop mode?" && DESKTOP=$CFG || :
@@ -287,13 +275,16 @@ purge_ubuntu_extras() {   # after the install: a failure only warns
 
 summary() {
     heading "TVWCS will now"
-    if [ "$WANT" = package ]; then say "  install the TVWCS $PKG_VERSION packages from $PACKAGED"; else say "  download and install TVWCS $WANT"; fi
-    say "  install the packages TVWCS needs with apt (asks for your password)"
-    ! pkg_installed tvwcs-boot-logo || say "  remove the TVWCS logo at startup (TVWCS no longer has one)"
-    [ -z "$MIGRATE" ] || say "  remove TVWCS's old login screen"
+    if [ "$OS" = arch ]; then
+        [ -z "$FAKEROOT" ] || say "  install fakeroot with pacman, which makepkg needs to build the package"
+        say "  download TVWCS $WANT's PKGBUILD, build the package with makepkg (as $ME; it only copies files into place)"
+        say "  install it with pacman, with the packages TVWCS needs (asks for your password)"
+    else
+        if [ "$WANT" = package ]; then say "  install the TVWCS $PKG_VERSION packages from $PACKAGED"; else say "  download and install TVWCS $WANT"; fi
+        say "  install the packages TVWCS needs with apt (asks for your password)"
+        ! pkg_installed tvwcs-boot-logo || say "  remove the TVWCS logo at startup (TVWCS no longer has one)"
+    fi
     [ -z "$AUTO" ] || say "  log $AUTO in automatically into TVWCS at startup$([ -n "$LS" ] || echo ", on the first text console")"
-    [ -z "$FROM_4" ] || say "  remove TVWCS 4.x from $OLD_DEST (your settings in $TVCONF are kept)"
-    [ -z "$OLD_INCLUDE" ] || say "  point TVWCS's include line in $OLD_INCLUDE at the package (backup: $OLD_INCLUDE.tvwcs-backup)"
     [ -z "$DESKTOP" ] || say "  add TVWCS to $DESKTOP (backup: $DESKTOP.tvwcs-backup)"
     [ -z "$PURGE" ] || say "  remove $PURGE_NAMES"
 }
@@ -301,56 +292,43 @@ summary() {
 # ====================================================================== doing it
 loginscreen_root() { as_root env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$LIB" python3 -m tvwcs.loginscreen "$@"; }
 
-remove_old_copy() {   # what TVWCS 4.x put outside its folder, then the folder itself
-    for F in "$DATA_HOME/applications/com.tvwcs.ControlPanel.desktop"; do [ ! -f "$F" ] || rm -f "$F"; done
-    OLD_ROOT=""
-    for F in "$LOCAL/bin/tvwcs-session" "$SHARE/xsessions/tvwcs-i3.desktop" "$SHARE/pixmaps/tvwcs.svg"; do [ ! -e "$F" ] || OLD_ROOT="$OLD_ROOT $F"; done
-    # shellcheck disable=SC2086
-    [ -z "$OLD_ROOT" ] || as_root rm -f $OLD_ROOT
-    for C in "$CONFIG_HOME/i3/config" "$HOME/.i3/config"; do   # i3 is not supported any more: its include line would fail
-        if [ -f "$C" ] && grep -q '^[[:space:]]*include[[:space:]].*\.local/share/tvwcs/tvwcs\.conf' "$C"; then
-            backup "$C"; sed -i -e '/^[[:space:]]*include[[:space:]].*\.local\/share\/tvwcs\/tvwcs\.conf/d' "$C"
-            say "Removed TVWCS from $C (i3 is not supported from TVWCS 5; backup: $C.tvwcs-backup)."
-        fi
-    done
-    remove_old_console_login
-    rm -rf "$OLD_DEST"
-}
-remove_old_console_login() {   # TVWCS 4.x's automatic login on the first console, which started its window manager
-    if [ -f "$GETTY_OVERRIDE" ] && grep -q TVWCS "$GETTY_OVERRIDE"; then as_root rm -f "$GETTY_OVERRIDE"; fi
-    for F in "$HOME/.profile" "$HOME/.bash_profile" "$HOME/.bash_login" "${ZDOTDIR:-$HOME}/.zprofile" "$CONFIG_HOME/fish/conf.d/tvwcs-autostart.fish"; do
-        [ -f "$F" ] && grep -qxF "$START_BEGIN" "$F" || continue
-        awk -v b="$START_BEGIN" -v e="$START_END" '$0 == b {skip=1} !skip {print} $0 == e {skip=0}' "$F" > "$WORK/profile" && cat "$WORK/profile" > "$F"
-    done
-}
 # Without a login screen: the shell profile starts TVWCS's session at a login on the first console (as this user)
 console_profile() { env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$LIB" python3 -m tvwcs.loginscreen profile "$1"; }
 
+install_arch() {
+    if [ -n "$FAKEROOT" ]; then as_root pacman -S --needed --noconfirm fakeroot || fail "pacman could not install fakeroot."; fi
+    download_pkgbuild "$WANT" || fail "the download did not work."
+    say "Building the package..."
+    ( cd "$WORK/arch" && makepkg -f --nodeps --noconfirm ) || fail "makepkg could not build the package."
+    set -- "$WORK"/arch/tvwcs-"$WANT"-*.pkg.tar.*
+    [ -f "$1" ] || fail "makepkg made no package."
+    say "Installing it (pacman installs what TVWCS needs; sudo may ask for your password)..."
+    as_root pacman -U --needed --noconfirm "$1" ||
+        fail "pacman could not install TVWCS. If it could not find a package TVWCS needs, update the system first (sudo pacman -Syu), then run this again."
+    V=$WANT
+}
 install_all() {
-    if [ "$WANT" = package ]; then D=$WORK/debs; mkdir -p "$D"; chmod 755 "$WORK" "$D"
+    if [ "$OS" = arch ]; then install_arch
+    elif [ "$WANT" = package ]; then D=$WORK/debs; mkdir -p "$D"; chmod 755 "$WORK" "$D"
         cp "$PACKAGED/tvwcs_${PKG_VERSION}_all.deb" "$D/"
         chmod 644 "$D"/*.deb; V=$PKG_VERSION
     else download_debs "$WANT" tvwcs || fail "the download did not work."; V=$WANT; fi
+    if [ "$OS" != arch ]; then
     set -- "$WORK/debs/tvwcs_${V}_all.deb"
     say "Installing the packages (apt asks for nothing; sudo may ask for your password)..."
     as_root apt-get update -q || warn "apt-get update did not finish; installing with the package lists there are."
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$@" || fail "apt-get could not install TVWCS."
     if pkg_known tvwcs-boot-logo; then   # 5.0.x's: the tvwcs package conflicts with it, so apt removed it; purged, nothing of it stays
         as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs-boot-logo || warn "The TVWCS logo at startup could not be removed."; fi
-    if [ -n "$MIGRATE" ]; then loginscreen_root migrate $AUTO || fail "TVWCS's old login screen could not be removed."
-    elif [ -n "$AUTO" ] && [ -z "$LS" ]; then
-        [ -z "$OLD_CONSOLE" ] || remove_old_console_login
+    fi
+    if [ -n "$AUTO" ] && [ -z "$LS" ]; then
         if console_profile on && loginscreen_root autologin "$AUTO"; then :; else console_profile off || :; warn "The automatic login could not be set."; fi
     elif [ -n "$AUTO" ]; then loginscreen_root autologin "$AUTO" || warn "The automatic login could not be set."; fi
-    if [ -n "$OLD_INCLUDE" ]; then backup "$OLD_INCLUDE"
-        sed -i -e 's#^\([[:space:]]*include[[:space:]]\).*\.local/share/tvwcs/tvwcs\.conf.*#\1/usr/share/tvwcs/tvwcs.conf#' "$OLD_INCLUDE"; fi
     if [ -n "$DESKTOP" ]; then backup "$DESKTOP"
         { echo; echo "# TVWCS (desktop mode): its hotkeys, window rules and autostart. Added by TVWCS's install.sh."; echo "$INCLUDE"; } >> "$DESKTOP"; fi
-    [ -z "$FROM_4" ] || remove_old_copy
     purge_ubuntu_extras
     heading "TVWCS $V is installed"
-    if [ -n "$FROM_4" ]; then say "TVWCS 4.x still runs until you log out. From the next login (or restart), TVWCS's session runs on sway."
-    elif [ -n "${SWAYSOCK:-}" ] && have swaymsg; then swaymsg reload >/dev/null 2>&1 || :; say "sway has reloaded its config."
+    if [ -n "${SWAYSOCK:-}" ] && have swaymsg; then swaymsg reload >/dev/null 2>&1 || :; say "sway has reloaded its config."
     elif [ -z "$LS" ]; then say "Type tvwcs at the text console to start TVWCS$( [ -n "$AUTO" ] && echo ", or restart: it logs in by itself")."
     else say "Choose \"TVWCS\" at the login screen$( [ -n "$AUTO" ] && echo ", or restart: it logs in by itself")."; fi
 }
@@ -361,7 +339,7 @@ remove_all() {
     say "Your settings in $TVCONF are kept unless you choose to delete them."
     ask_no "Remove TVWCS now?" || { say "Nothing was changed."; exit 0; }
     KEEP=1; ask_no "Also delete your TVWCS settings ($TVCONF)?" && KEEP="" || :
-    if [ "$(login_screen)" = greetd ] && grep -q tvwcs-session "$ETC/greetd/config.toml" 2>/dev/null; then
+    if [ "$OS" != arch ] && [ "$(login_screen)" = greetd ] && grep -q tvwcs-session "$ETC/greetd/config.toml" 2>/dev/null; then   # (Arch's package does this itself)
         say "greetd starts TVWCS's session: that goes from its config, and the rest of it stays."
         # as the package's prerm does: [initial_session] goes, and agreety starts a shell instead of TVWCS
         as_root sh -c 'awk -v greeter="/usr/sbin/agreety --cmd /bin/sh" '"'"'
@@ -374,8 +352,11 @@ remove_all() {
     fi
     for F in "$ETC/lightdm/lightdm.conf.d/50-tvwcs-autologin.conf" "$ETC/sddm.conf.d/50-tvwcs-autologin.conf" "$ETC/systemd/system/getty@tty1.service.d/tvwcs-autologin.conf" "$ETC/tvwcs/server-mode" "$ETC/polkit-1/rules.d/50-tvwcs-server-mode.rules"; do [ ! -f "$F" ] || as_root rm -f "$F"; done
     console_profile off || :
-    # shellcheck disable=SC2046
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_known tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."
+    if [ "$OS" = arch ]; then as_root pacman -R --noconfirm tvwcs || fail "pacman could not remove TVWCS."
+    else
+        # shellcheck disable=SC2046
+        as_root env DEBIAN_FRONTEND=noninteractive apt-get purge -y tvwcs $(pkg_known tvwcs-boot-logo && echo tvwcs-boot-logo) || fail "apt-get could not remove TVWCS."
+    fi
     CFG=$(sway_config)
     if [ -n "$CFG" ] && has_include "$CFG"; then backup "$CFG"
         sed -i -e '/^# TVWCS (desktop mode): its hotkeys/d' -e '/^[[:space:]]*include[[:space:]].*\/usr\/share\/tvwcs\/tvwcs\.conf/d' "$CFG"; fi
@@ -388,20 +369,21 @@ usage() { sed -n '2,/^set -eu/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; }
 main() {
     case "${1:-}" in
         --help|-h) usage; exit 0 ;;
-        --missing) exit 0 ;;   # 4.x's updater asks this first; TVWCS 5 is installed by apt, which finds what is missing
         --remove|"") ;;
         *) warn "Unknown option $1. See --help."; exit 2 ;;
     esac
     find_tty
     if [ -z "$TTY" ]; then
-        warn "TVWCS 5 is installed as Debian packages, which needs your password. Run its installer in a terminal:"
+        warn "Installing TVWCS needs your password. Run its installer in a terminal:"
         warn "    wget -qO- https://raw.githubusercontent.com/$REPO/main/install.sh | bash"
         exit 1
     fi
-    if os_is arch || os_is endeavouros || os_is cachyos || os_is manjaro; then
-        fail "This installer is for Debian and its family. On Arch, build TVWCS's package from its PKGBUILD: https://github.com/$REPO/blob/main/docs/INSTALL-ARCH.md"
+    OS=$(distro)
+    [ "$OS" != unknown ] || fail "TVWCS supports Debian and its family (apt), and Arch and its family (pacman)."
+    if [ "$OS" = arch ] && [ "${1:-}" != --remove ]; then
+        [ "$(id -u)" != 0 ] || fail "On Arch, run this as your own user, not as root: makepkg will not build packages as root. It asks for your password when it installs."
+        have makepkg || fail "makepkg is not installed (it comes with pacman)."
     fi
-    [ "$(distro)" = debian ] || fail "TVWCS supports Debian and its family (apt), and Arch (docs/INSTALL-ARCH.md)."
     [ -d "${TVWCS_RUN:-/run}/systemd/system" ] || fail "TVWCS needs systemd."
     have python3 || fail "python3 is not installed."
     WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT

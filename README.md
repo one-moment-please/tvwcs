@@ -68,17 +68,15 @@ Other distributions and systems without systemd are not supported. [TODO.md](TOD
 
 ## Install
 
-On Arch, follow [Installing TVWCS on Arch](docs/INSTALL-ARCH.md) instead.
+TVWCS comes as a Debian package, **tvwcs**, and for Arch as a PKGBUILD, both attached to each [release](https://github.com/one-moment-please/tvwcs/releases): the Quick Menu, Applications, Settings and the **TVWCS** session. apt or pacman installs what it needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
 
-TVWCS comes as a Debian package, **tvwcs**, attached to each [release](https://github.com/one-moment-please/tvwcs/releases): the Quick Menu, Applications, Settings and the **TVWCS** session. apt installs what it needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
-
-The installer picks the release, asks a few questions and installs the package with apt. Run it in a terminal (not as root):
+The installer picks the release and asks its questions first. Only once you agree does it download anything: then it installs the package with apt, or on Arch builds it from the PKGBUILD with makepkg and installs it with pacman. Run it in a terminal (not as root):
 
 ```bash
 wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
 ```
 
-With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the package next to it, or to download another release. Or install the .deb yourself: `sudo apt install ./tvwcs_5.6.0_all.deb`.
+With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the package next to it, or to download another release. Or install the .deb yourself: `sudo apt install ./tvwcs_5.6.0_all.deb`. On Arch, [Installing TVWCS on Arch](docs/INSTALL-ARCH.md) has the steps by hand and what Arch does differently.
 
 ### Starting TVWCS with the `tvwcs` command
 
@@ -109,9 +107,7 @@ For a computer that is a server first and an HTPC second. One account uses the T
 
 It asks all its questions first and changes nothing until you agree to the list of what it will do. Every file of yours it changes is backed up first as `<file>.tvwcs-backup`. Your own data (channels, favorites, settings, hotkeys) is kept in `~/.config/tvwcs/`.
 
-**Upgrading from 4.x:** run the installer in a terminal once (4.x's updater can't install packages, and says so). It removes the old copy in `~/.local/share/tvwcs` and TVWCS's old login screen: another login screen installed on the computer takes over, or else greetd's text login, and the automatic login is kept. TV mode now runs on sway: the first TVWCS session makes its sway config from sway's standard one, without its bar (`~/.config/tvwcs/sway-session.conf`). TVWCS is taken out of an i3 config.
-
-**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs`). It also takes TVWCS out of your usual sway config, ends the automatic login on the text console, and takes TVWCS out of greetd's config (its automatic login into TVWCS; the rest of the config stays).
+**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs`, or on Arch `sudo pacman -R tvwcs`). It also takes TVWCS out of your usual sway config, ends the automatic login on the text console, and takes TVWCS out of greetd's config (its automatic login into TVWCS; the rest of the config stays).
 
 **For scripted installs:** `TVWCS_VERSION=latest` (or `package`, or a version such as `5.0.0`) answers which version.
 
@@ -160,7 +156,7 @@ Open **TVWCS Settings** with channel 00, from a status panel's settings button, 
 | **Date and time** (`datetime`) | Time zone (one list), network time, 12- or 24-hour clock. |
 | **Software updates** (`updates`) | System updates (apt), and TVWCS's own updates (including prereleases and rolling back), installed as packages. |
 | **System information** (`system`) | Hardware and versions. Turns the SSH server on or off and shows how to connect. |
-| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. An Ethernet port the Debian installer set up (shown as "not managed"), or Ubuntu Server's netplan network, can be handed to NetworkManager; the old setup is kept as a backup, and on Ubuntu saved Wi-Fi networks and fixed addresses carry over. |
+| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. Without NetworkManager, Wi-Fi run by iwd (Arch) can be joined and forgotten, and an address set by hand is pointed out with where to change it. An Ethernet port the Debian installer set up (shown as "not managed"), or Ubuntu Server's netplan network, can be handed to NetworkManager; the old setup is kept as a backup, and on Ubuntu saved Wi-Fi networks and fixed addresses carry over. |
 | **Storage** (`storage`) | Drives, with their partitions under them: mount and unmount partitions and safely remove drives. Partitions of the running system are marked as part of it. |
 
 A page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth BlueZ, and so on). When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.
@@ -173,7 +169,7 @@ A page whose software is missing offers to install it (Sound installs PipeWire, 
 
 **Uninstall:** `install.sh --remove` (see above).
 
-On Arch, see [Installing TVWCS on Arch](docs/INSTALL-ARCH.md) for both.
+On Arch, TVWCS updates aren't installed from Settings: run the installer again (see [Installing TVWCS on Arch](docs/INSTALL-ARCH.md)).
 
 ## Troubleshooting
 

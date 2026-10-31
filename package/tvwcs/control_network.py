@@ -1,12 +1,14 @@
 """Ethernet and Wi-Fi for Settings. No GTK dependency.
 
 Changes go through NetworkManager's `nmcli`, which polkit lets the user at the screen use without a password.
-Without NetworkManager the panel still shows every interface, its addresses and the gateway (from `ip`), read-only."""
+Without NetworkManager the panel still shows every interface, its addresses and the gateway (from `ip`), and whether
+DHCP gave the address or it was set by hand. With iwd running (Arch's systemd-networkd and iwd), Wi-Fi networks can be
+joined and forgotten through it (control_iwd)."""
 from __future__ import annotations
 import ipaddress, json, os, re
 from dataclasses import dataclass, field
 
-from tvwcs import distro
+from tvwcs import control_iwd as iwd, distro
 from tvwcs.control_cmd import have, run, split_terse
 
 @dataclass
@@ -21,6 +23,8 @@ class Interface:
     gateway: str = ""
     dns: list = field(default_factory=list)
     method: str = ""          # the connection's IPv4 method: "auto" (DHCP) or "manual"; "" when there is no connection
+    dynamic: bool = False     # without NetworkManager: its IPv4 address has a lease (DHCP) rather than being set by hand
+    set_by: str = ""          # without NetworkManager: what gives it its address (networkd, dhcpcd, iwd), "" when unknown
     @property
     def connected(self): return self.state.startswith("connected")
 
@@ -41,6 +45,10 @@ class NetState:
     interfaces: list = field(default_factory=list)
     wifi_enabled: bool = False
     networks: list = field(default_factory=list)
+    iwd: bool = False             # without NetworkManager, iwd runs Wi-Fi: networks are joined and forgotten through it
+    iwd_station: str = ""         # then: the D-Bus object of the adapter that joins networks
+    iwd_devices: list = field(default_factory=list)   # and the interfaces iwd runs (not, say, an access point's)
+    iwd_device: str = ""          # the one that joins networks (wlan0)
     def of_kind(self, kind): return [i for i in self.interfaces if i.kind==kind]
 
 @dataclass
@@ -100,6 +108,7 @@ def parse_wifi_list(text):
         if old is None or (net.in_use and not old.in_use) or (net.in_use==old.in_use and signal>old.signal): best[net.ssid]=net
     return sorted(best.values(),key=lambda n:(not n.in_use,-n.signal,n.ssid.casefold()))
 
+_FOREVER=4294967295   # ip's valid_life_time for an address without a lease
 def _physical(name): return os.path.exists(f"/sys/class/net/{name}/device")
 
 def parse_ip_json(addr_json, route_json, physical=_physical):
@@ -117,9 +126,11 @@ def parse_ip_json(addr_json, route_json, physical=_physical):
         if link.get("link_type") not in (None,"ether"): continue   # loopback, tunnels, …
         kind="wifi" if os.path.isdir(f"/sys/class/net/{name}/wireless") else "ethernet"
         up="UP" in link.get("flags",[]) and "LOWER_UP" in link.get("flags",[])
-        addresses=[f"{a['local']}/{a.get('prefixlen',32)}" for a in link.get("addr_info",[]) if a.get("family")=="inet" and a.get("local")]
+        v4=[a for a in link.get("addr_info",[]) if a.get("family")=="inet" and a.get("local")]
+        addresses=[f"{a['local']}/{a.get('prefixlen',32)}" for a in v4]
         found.append(Interface(name,kind,"connected" if up and addresses else "disconnected" if up else "unavailable","",
-                               "",link.get("address",""),addresses,gateways.get(name,"")))
+                               "",link.get("address",""),addresses,gateways.get(name,""),
+                               dynamic=bool(v4) and all(a.get("dynamic") or _FOREVER>a.get("valid_life_time",_FOREVER) for a in v4)))
     return found
 
 def with_unmanaged(interfaces, addr_json, route_json, physical=_physical):
@@ -179,16 +190,66 @@ def fixed_from(settings, iface):
     if not out.dns and iface is not None: out.dns=", ".join(iface.dns)
     return out
 
+def parse_networkctl(text):
+    """`networkctl list --no-legend --no-pager` -> the links systemd-networkd has configured."""
+    out=set()
+    for line in (text or "").splitlines():
+        parts=line.split()
+        if len(parts)>=5 and parts[4] in ("configured","configuring"): out.add(parts[1])
+    return out
+
+def iwd_configures(conf_text):
+    """iwd gives addresses itself ([General] EnableNetworkConfiguration=true in /etc/iwd/main.conf)."""
+    section=""
+    for line in (conf_text or "").splitlines():
+        t=line.strip()
+        if t.startswith("["): section=t.strip("[]").strip(); continue
+        if section=="General" and "=" in t:
+            key,value=(x.strip() for x in t.split("=",1))
+            if key=="EnableNetworkConfiguration": return value.lower() in ("true","yes","1")
+    return False
+
+def _active(unit): return run(["systemctl","is-active","--quiet",unit],timeout=5).ok
+
+def who_sets(interfaces):
+    """Fill in what gives each interface its address: systemd-networkd (when it has configured it), iwd's own network
+    configuration (Wi-Fi), or dhcpcd."""
+    networkd=parse_networkctl(run(["networkctl","list","--no-legend","--no-pager"],timeout=5).out) if have("networkctl") and _active("systemd-networkd.service") else set()
+    iwd_ip=_active("iwd.service") and iwd_configures(_read("/etc/iwd/main.conf"))
+    dhcpcd=_active("dhcpcd.service") or any(_active(f"dhcpcd@{i.device}.service") for i in interfaces)
+    for i in interfaces:
+        i.set_by=("networkd" if i.device in networkd else "iwd" if iwd_ip and i.kind=="wifi" else "dhcpcd" if dhcpcd else "")
+    return interfaces
+
+# Where an address set by hand is changed, by what set it
+HAND_SET={"networkd":"in its .network file in /etc/systemd/network (DHCP=yes, or Address= and Gateway=), then run sudo networkctl reload",
+          "dhcpcd":"in /etc/dhcpcd.conf (remove its static ip_address= lines for DHCP), then run sudo systemctl restart dhcpcd",
+          "iwd":"in the [IPv4] section of the network's file in /var/lib/iwd (remove it for DHCP), then reconnect"}
+def hand_set_note(i):
+    """The warning for an address set by hand, which Settings cannot change without NetworkManager."""
+    where=HAND_SET.get(i.set_by,"with the tool that set it up (systemd-networkd, dhcpcd or iwd)")
+    return (f"{i.device}'s IP address ({i.addresses[0].split('/')[0]}) is set by hand, not by DHCP. Settings cannot change it here: "
+            f"change it from the command line, {where}.")
+
 # ------------------------------------------------------------------ reading
 def read_state(scan=False):
     if not have("nmcli") or not run(["nmcli","-t","-f","RUNNING","general"],timeout=5).out.strip()=="running":
         addr=run(["ip","-j","addr"],timeout=5); route=run(["ip","-j","route"],timeout=5)
+        interfaces=who_sets(parse_ip_json(addr.out,route.out))
+        if iwd.running():
+            st=iwd.read_state(scan=scan)
+            nets=[WifiNetwork(n.ssid,n.signal,iwd.SECURITY.get(n.kind,n.kind),n.connected,n.known or st.known.get(n.ssid,"")) for n in st.networks]
+            why=st.problem or ("iwd runs Wi-Fi here: networks can be joined and forgotten (saving a new password asks for yours). Ethernet and IP "
+                               "addresses are only shown (Settings changes those through NetworkManager).")
+            station=next((d for d in st.devices if d.station and d.powered),None)
+            return NetState(False,why,interfaces,any(d.powered for d in st.devices),nets,iwd=True,iwd_station=station.path if station else "",
+                            iwd_devices=[d.name for d in st.devices],iwd_device=station.name if station else "")
         why=("NetworkManager is not running, so these settings can only be shown here. Start NetworkManager to change them."
              if have("nmcli") else "Changing these settings needs NetworkManager (nmcli). Without it they can only be shown here.")
         if distro.is_arch():   # Arch starts no network manager by itself: the installer picks systemd-networkd, iwd or NetworkManager
             why+=(" On Arch: install networkmanager, turn off what runs the network now (systemd-networkd and iwd, or dhcpcd), then "
                   "turn on NetworkManager: sudo systemctl disable --now systemd-networkd iwd; sudo systemctl enable --now NetworkManager")
-        return NetState(False,why,parse_ip_json(addr.out,route.out))
+        return NetState(False,why,interfaces)
     interfaces=parse_device_list(run(["nmcli","-t","-f","DEVICE,TYPE,STATE,CONNECTION","device"],timeout=8).out)
     connections=parse_connections(run(["nmcli","-t","-f","NAME,UUID,TYPE,DEVICE","connection","show"],timeout=8).out)
     for iface in interfaces:

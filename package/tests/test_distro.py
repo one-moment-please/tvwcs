@@ -80,7 +80,9 @@ class RemoveGreetdTests(unittest.TestCase):
     def remove(self, text, arch_pkg):
         with tempfile.TemporaryDirectory() as d:
             conf=Path(d,"etc","greetd","config.toml"); conf.parent.mkdir(parents=True); conf.write_text(text)
-            script=(REPO/("packaging/arch/tvwcs.install" if arch_pkg else "packaging/tvwcs/prerm")).read_text().replace("/etc/",f"{d}/etc/")
+            script=(REPO/("packaging/arch/tvwcs.install" if arch_pkg else "packaging/tvwcs/prerm")).read_text()
+            for real in ("/etc/","/usr/lib/","/run/"):   # nothing outside the folder: the prerm also removes bytecode in /usr/lib/tvwcs
+                script=script.replace(real,f"{d}{real}")
             if arch_pkg: argv=["sh","-c",script+"\npre_remove"]
             else: argv=["sh","-c",script,"prerm","remove"]
             subprocess.run(argv,check=True,capture_output=True)

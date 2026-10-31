@@ -102,7 +102,11 @@ class Page:
         focused=self.win.get_focus(); old=None
         if focused is not None and self.root is not None and (focused is self.root or focused.is_ancestor(self.root)):
             old=next((i for i,w in self._ids.items() if w is focused or focused.is_ancestor(w)),None)
-        stale={id(w):i for i,w in self._ids.items()}
+        stale={id(w):i for i,w in self._ids.items()}; old_rows=dict(self._ids)
+        def row_of(w):   # a row's id from one of its widgets (its own button, or a ✕ beside it that may be gone after the change)
+            if w is None: return None
+            if id(w) in stale: return stale[id(w)]
+            return next((i for i,ow in old_rows.items() if w.is_ancestor(ow)),None)
         wanted=getattr(self,"focus_after",None); self.focus_after=None   # the row a change turns the focused one into
         if wanted is not None and old is not None: old=wanted
         scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
@@ -114,15 +118,18 @@ class Page:
         if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
             GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
-            w=getattr(self.win,widget_ref,None)
-            if w is not None and id(w) in stale and stale[id(w)] in self._ids: setattr(self.win,widget_ref,self._ids[stale[id(w)]])
-        last=self.win._last_page_focus.get(self.key)
-        if last is not None and id(last) in stale and stale[id(last)] in self._ids: self.win._last_page_focus[self.key]=self._ids[stale[id(last)]]
+            w=getattr(self.win,widget_ref,None); i=row_of(w)
+            if i is not None and i not in self._ids: i=i.split("#")[0]
+            if i in self._ids: setattr(self.win,widget_ref,self._ids[i])
+        i=row_of(self.win._last_page_focus.get(self.key))
+        if i is not None and i not in self._ids: i=i.split("#")[0]
+        if i in self._ids: self.win._last_page_focus[self.key]=self._ids[i]
         ident=getattr(self,"focus_ident",None)
         if ident is not None and old is None and self._ids.get(ident) is not None:
             self.focus_ident=None; GLib.idle_add(lambda w=self._ids[ident]:(usable(w) and w.grab_focus(),GLib.SOURCE_REMOVE)[1])
         if old is not None:
-            target=self._ids.get(old) or (next((w for i,w in self._ids.items() if i.startswith(old)),None) if old==wanted else None)
+            # a row's ✕ (id "row#1") that went with the change: the row itself
+            target=self._ids.get(old) or self._ids.get(old.split("#")[0]) or (next((w for i,w in self._ids.items() if i.startswith(old)),None) if old==wanted else None)
             if target is not None and usable(target): target.grab_focus()
             elif not self.win._focus_first(self.groups): self.win.tab_buttons[self.key].grab_focus()
     def draw(self, state): pass
@@ -432,7 +439,7 @@ class _SelfUpdate:
                  icon="view-refresh-symbolic",fallback="⟳")
         if selfupdate.other_package():
             self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}). This copy was built from TVWCS's "
-                      "Arch package: install a new release by building its package the same way (makepkg -si).")
+                      "Arch package: install a new release by running TVWCS's installer again in a terminal (or with makepkg -si, as in docs/INSTALL-ARCH.md).")
             return
         self.note(f"Looks for a newer release of TVWCS on GitHub ({selfupdate.GITHUB_REPO}) and offers to install it.")
         pre=ConfigStore().settings["update_prereleases"]
@@ -465,8 +472,8 @@ class _SelfUpdate:
         if not selfupdate.is_newer(release.version,__version__): self.update_text=f"Up to date ({__version__})"; self.redraw(); return
         self.update_text=f"{release.version} available"; self.redraw()
         if selfupdate.other_package():
-            self.win.notice("TVWCS updates",f"TVWCS {release.version} is available (you have {__version__}). Build and install its Arch "
-                            "package as you did this one: download its PKGBUILD and tvwcs.install from the release on GitHub, then run makepkg -si."); return
+            self.win.notice("TVWCS updates",f"TVWCS {release.version} is available (you have {__version__}). Install it by running TVWCS's "
+                            "installer again in a terminal:\n\ncurl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash"); return
         if not selfupdate.packaged():
             self.win.notice("TVWCS updates",f"TVWCS {release.version} is available. This copy runs from a source checkout: update it with git pull."); return
         kind=" prerelease" if release.prerelease else ""
@@ -1171,7 +1178,7 @@ class NetworkPage(Page):
     def summary(self):
         s=self.state
         if not s: return ""
-        return "NetworkManager" if s.managed else "Shown only (no NetworkManager)"
+        return "NetworkManager" if s.managed else "Wi-Fi through iwd" if s.iwd else "Shown only (no NetworkManager)"
     def draw(self, s):
         if not s.managed: self.note(s.message)
         unmanaged=[i for i in s.interfaces if i.state.startswith("unmanaged")]
@@ -1185,7 +1192,9 @@ class NetworkPage(Page):
         for i in wired: self.ethernet_row(i,s.managed)
         self.section("WI-FI")
         wireless=s.of_kind("wifi")
+        if s.iwd: wireless=[i for i in wireless if i.device in s.iwd_devices] or wireless   # not an access point's interface
         if not wireless: self.note("No Wi-Fi adapter was found."); return
+        if s.iwd: self.draw_iwd(s,wireless); return
         if not s.managed or wireless[0].state.startswith("unmanaged"):
             for i in wireless: self.ethernet_row(i,s.managed)
             return
@@ -1199,6 +1208,45 @@ class NetworkPage(Page):
         if not s.networks: self.note("Looking…" if self.scanning else "No networks listed. Choose Search for networks to look for them.")
         for n in s.networks: self.wifi_row(n,device)
 
+    def draw_iwd(self, s, wireless):
+        """Wi-Fi run by iwd (no NetworkManager): its adapter, then the networks it sees, to join or forget."""
+        for i in wireless: self.ethernet_row(i,False)
+        if not s.wifi_enabled: self.note("The Wi-Fi adapter is off (iwd). Turn it on with: iwctl device "+wireless[0].device+" set-property Powered on"); return
+        self.row("Search for networks","Searching…" if self.scanning else "",None if self.scanning else self.scan,icon="edit-find-symbolic",fallback="⌕",
+                 detail="Looks for Wi-Fi networks nearby. iwd also looks now and then by itself.",ident="scan")
+        if not s.networks: self.note("Looking…" if self.scanning else "No networks listed. Choose Search for networks to look for them.")
+        device=next((i for i in wireless if i.device==s.iwd_device),wireless[0])
+        for n in s.networks: self.wifi_row(n,device)
+
+    def iwd_do(self, work, args, label, status):
+        """A change iwd may let this user make (work() -> problem); if it refuses, the same as root (args)."""
+        def tried(problem):
+            self.busy=False; self.set_status("")
+            if problem==network.iwd.DENIED: self.iwd_root(args,label,status); return
+            if problem: self.win.notice("Wi-Fi",problem)
+            self.refresh(quiet=True)
+        self.set_status(status); self.busy=True
+        in_background(work,tried,lambda exc:tried(str(exc)))
+
+    def iwd_root(self, args, label, status, cleanup=""):
+        """One of control_iwd's root commands (it asks for the password), then the page is read again."""
+        self.set_status(status); lines=[]
+        def done(code,tail):
+            self.set_status("")
+            if cleanup:
+                try: os.unlink(cleanup)
+                except OSError: pass
+            if code: self.win.notice("Wi-Fi",("\n".join(lines[-4:]) or tail or f"{label} did not work.").strip())
+            self.refresh(quiet=True)
+        self.win.run_as_root(network.iwd.root_argv(*args),label,lines.append,done)
+
+    def plain_ip_row(self, i):
+        """Without NetworkManager: whether DHCP gave the address, with a warning when it was set by hand."""
+        if not i.addresses: return
+        self.row(f"IP settings ({i.device})","Automatic (DHCP)" if i.dynamic else "Set by hand",None,ident=f"ip:{i.device}",
+                 detail={"networkd":"Set up by systemd-networkd","dhcpcd":"Set up by dhcpcd","iwd":"Set up by iwd"}.get(i.set_by,""))
+        if not i.dynamic: self.note(network.hand_set_note(i),"error")
+
     @staticmethod
     def _details(i):
         return " · ".join(x for x in (", ".join(i.addresses),f"Gateway {i.gateway}" if i.gateway else "",
@@ -1206,6 +1254,7 @@ class NetworkPage(Page):
     @staticmethod
     def _state_text(i):
         if i.connected: return "Connected"
+        if i.kind=="wifi" and not i.state.startswith("unmanaged"): return "Not connected"
         return {"unavailable":"No cable","disconnected":"Not connected","unmanaged":"Not managed"}.get(i.state.split(" ")[0],i.state.capitalize() or "Unknown")
 
     def ethernet_row(self, i, managed):
@@ -1222,6 +1271,7 @@ class NetworkPage(Page):
         self.row(label,self._state_text(i),go,detail=detail,icon="network-wired-symbolic" if i.kind=="ethernet" else "network-wireless-symbolic",
                  fallback="⇄",ident=f"if:{i.device}",extras=extras,value_css="state-on" if i.connected else "setting-value")
         if managed: self.ip_row(i)
+        elif i.connected: self.plain_ip_row(i)
 
     def take_over(self, i):
         """Hand a port that NetworkManager leaves alone to it (control_network: with ifupdown, a minimal Debian
@@ -1267,16 +1317,25 @@ class NetworkPage(Page):
     def wifi_row(self, n, device):
         detail=f"{network.signal_bars(n.signal)}  {n.signal} %"+(f" · {n.security}" if n.secured else " · Open")
         if n.in_use and device.addresses: detail+=" · "+self._details(device)
-        extras=[]
+        extras=[]; s=self.state
+        if s.iwd:   # each change is a root command (it asks for the password)
+            iw=network.iwd
+            forget=lambda n=n:self.iwd_do(lambda:iw.forget(n.ssid),["forget",n.ssid],f"Forgetting {n.ssid}",f"Forgetting {n.ssid}…")
+            disconnect=lambda n=n:self.iwd_do(lambda:iw.disconnect(s.iwd_station),["disconnect",s.iwd_station],f"Disconnecting from {n.ssid}",f"Disconnecting from {n.ssid}…")
+            connect=lambda n=n:self.iwd_do(lambda:iw.join(n.ssid),["join",n.ssid],f"Connecting to {n.ssid}",f"Connecting to {n.ssid}…")
+        else:
+            forget=lambda n=n:self.act(lambda:network.forget(n.saved_uuid),f"Forgetting {n.ssid}…","Wi-Fi")
+            disconnect=lambda n=n:self.act(lambda:network.disconnect_device(device.device),f"Disconnecting from {n.ssid}…","Wi-Fi")
+            connect=lambda n=n:self.act(lambda:network.activate(n.saved_uuid),f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
         if n.saved_uuid:
-            extras.append(self.button("user-trash-symbolic","✕",f"Forget {n.ssid}",lambda n=n:self.win.confirm(f"Forget {n.ssid}?",
+            extras.append(self.button("user-trash-symbolic","✕",f"Forget {n.ssid}",lambda n=n,forget=forget:self.win.confirm(f"Forget {n.ssid}?",
                           f"The saved password and settings for {n.ssid} are removed"+(", and this computer leaves it." if n.in_use else "."),
-                          "Forget",lambda:self.act(lambda:network.forget(n.saved_uuid),f"Forgetting {n.ssid}…","Wi-Fi")),danger=True))
+                          "Forget",forget),danger=True))
         if n.in_use:
-            go=lambda n=n:self.win.confirm(f"Disconnect from {n.ssid}?","Anything using the network will lose it until you connect again.","Disconnect",
-                                          lambda:self.act(lambda:network.disconnect_device(device.device),f"Disconnecting from {n.ssid}…","Wi-Fi"))
-        elif n.saved_uuid: go=lambda n=n:self.act(lambda:network.activate(n.saved_uuid),f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
+            go=lambda n=n:self.win.confirm(f"Disconnect from {n.ssid}?","Anything using the network will lose it until you connect again.","Disconnect",disconnect)
+        elif n.saved_uuid: go=connect
         elif n.secured: go=lambda n=n:self.ask_password(n)
+        elif s.iwd: go=connect
         else: go=lambda n=n:self.act(lambda:network.join_wifi(n.ssid),f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
         locked=n.secured
         self.row(n.ssid,"Connected" if n.in_use else "Saved" if n.saved_uuid else "",go,detail=detail,
@@ -1286,12 +1345,17 @@ class NetworkPage(Page):
     def ask_password(self, n, error=""):
         def join(password):
             if not password: return
+            if self.state.iwd:
+                try: secret=network.iwd.password_file(password)
+                except (ValueError,OSError) as exc: self.ask_password(n,str(exc)); return
+                self.iwd_root(["join",n.ssid,secret],f"Connecting to {n.ssid}",f"Connecting to {n.ssid}…",cleanup=secret); return
             def work():
                 problem=network.join_wifi(n.ssid,password)
                 if problem!="The password was not accepted.": return problem
                 GLib.idle_add(lambda:(self.ask_password(n,"The password was not accepted. Try again."),GLib.SOURCE_REMOVE)[1]); return ""
             self.act(work,f"Connecting to {n.ssid}…",f"Connect to {n.ssid}")
-        self.win.ask_text(f"Password for {n.ssid}",f"{n.security} network. NetworkManager saves the password for next time.",join,secret=True,ok_label="Connect",error=error)
+        keeper="iwd saves it (in /var/lib/iwd) for next time. Then Settings asks for your own password, since that needs administrator rights." if self.state.iwd else "NetworkManager saves the password for next time."
+        self.win.ask_text(f"Password for {n.ssid}",f"{n.security} network. {keeper}",join,secret=True,ok_label="Connect",error=error)
 
     def scan(self):
         self.scanning=True; self.redraw(); self.set_status("Searching for networks…")
