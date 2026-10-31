@@ -119,14 +119,17 @@ class Page:
             GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
             w=getattr(self.win,widget_ref,None); i=row_of(w)
+            if i is not None and i not in self._ids: i=i.split("#")[0]
             if i in self._ids: setattr(self.win,widget_ref,self._ids[i])
         i=row_of(self.win._last_page_focus.get(self.key))
+        if i is not None and i not in self._ids: i=i.split("#")[0]
         if i in self._ids: self.win._last_page_focus[self.key]=self._ids[i]
         ident=getattr(self,"focus_ident",None)
         if ident is not None and old is None and self._ids.get(ident) is not None:
             self.focus_ident=None; GLib.idle_add(lambda w=self._ids[ident]:(usable(w) and w.grab_focus(),GLib.SOURCE_REMOVE)[1])
         if old is not None:
-            target=self._ids.get(old) or (next((w for i,w in self._ids.items() if i.startswith(old)),None) if old==wanted else None)
+            # a row's ✕ (id "row#1") that went with the change: the row itself
+            target=self._ids.get(old) or self._ids.get(old.split("#")[0]) or (next((w for i,w in self._ids.items() if i.startswith(old)),None) if old==wanted else None)
             if target is not None and usable(target): target.grab_focus()
             elif not self.win._focus_first(self.groups): self.win.tab_buttons[self.key].grab_focus()
     def draw(self, state): pass

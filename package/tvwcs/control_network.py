@@ -239,7 +239,7 @@ def read_state(scan=False):
         if iwd.running():
             st=iwd.read_state(scan=scan)
             nets=[WifiNetwork(n.ssid,n.signal,iwd.SECURITY.get(n.kind,n.kind),n.connected,n.known or st.known.get(n.ssid,"")) for n in st.networks]
-            why=st.problem or ("iwd runs Wi-Fi here: networks can be joined and forgotten, which asks for your password. Ethernet and IP "
+            why=st.problem or ("iwd runs Wi-Fi here: networks can be joined and forgotten (saving a new password asks for yours). Ethernet and IP "
                                "addresses are only shown (Settings changes those through NetworkManager).")
             station=next((d for d in st.devices if d.station and d.powered),None)
             return NetState(False,why,interfaces,any(d.powered for d in st.devices),nets,iwd=True,iwd_station=station.path if station else "",
