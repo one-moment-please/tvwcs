@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.13.1 — 2026-10-31
+
+- **Shorter docs.** README's install, update and removal steps are one section, with the installer's questions in it, and the Quick Menu and Settings descriptions are tighter. PROJECT_OVERVIEW.md is now only for people working on TVWCS (how it works inside, the code, releases, sending it to the AUR), brought up to date for sway, Arch and server mode, and it takes in docs/RELEASES.md. The Debian guide no longer mentions the startup logo.
+- **TODO.md is gone.** Tablet mode and a dedicated passwordless TV user won't be built, and other distributions won't come back. Its research is in git history (`git show 1055fc0:TODO.md`).
+
 ## 5.13.0 — 2026-10-31
 
 - **Wi-Fi through iwd.** On a computer whose network NetworkManager doesn't run, such as Arch with systemd-networkd and iwd, Settings › Network lists the Wi-Fi networks iwd sees and joins and forgets them. The new `control_iwd.py` reads iwd over D-Bus (`busctl`) as you. Joining, connecting, leaving and forgetting run as root (iwd's D-Bus policy only promises that to root), so each asks for your password. A password is saved where iwd keeps it (`/var/lib/iwd/<network>.psk`) and handed over in a file only you can read, never on a command line. A network that doesn't connect the first time is forgotten again, so a mistyped password isn't kept, and typing the right one straight after works (Settings waits until iwd has let the wrong one go). Connecting to a saved or open network, leaving and forgetting are tried without your password first: Arch's iwd lets the wheel group do those. Only a new password always needs it.

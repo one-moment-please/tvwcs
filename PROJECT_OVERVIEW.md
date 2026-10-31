@@ -1,141 +1,56 @@
 # TVWCS: project overview
 
-*Updated for 3.0.*
-
-This document is for people working on TVWCS: what it is meant to do, how it behaves, and how the code is laid out. The user guide is [README.md](README.md).
+This document is for people working on TVWCS: what it is for, how it works inside, how the code is laid out and how releases are made. What it does for the user, page by page and key by key, is in [README.md](README.md).
 
 ## Goal
 
 **Make a Linux computer as easy to use from the couch as a TV, without taking control away from Linux or its apps.**
 
-A normal desktop assumes a mouse, a keyboard and a screen at arm's length. On a TV across the room, small controls and taskbars are hard to use. Media centers help, but often need a plugin for each service. TVWCS keeps the computer general-purpose and adds one remote-friendly way to find, start and return to apps.
-
-**TVWCS is:** a TV-style launcher and app switcher; one search for apps, profiles, channels and open windows; a user-made channel list and favorites; a Settings app for what a TV computer needs; built on standard `.desktop` metadata and the sway IPC.
+**TVWCS is:** a TV-style launcher and app switcher on sway; one search for apps, profiles, channels and open windows; a user-made channel list and favorites; a Settings app for what a TV computer needs; built on standard `.desktop` metadata and the sway IPC.
 
 **TVWCS is not:** an operating system or window manager; a media player (Kodi, VLC, Jellyfin); a promise that every app becomes D-pad friendly; a plugin system; a fixed channel list.
 
 ## Design
 
-The look follows Metro (Modern UI): flat and typographic.
+The look follows Metro (Modern UI): flat and typographic. The Retro theme swaps in an old CRT TV's menus but keeps the same layout.
 
-- **Square.** No rounded corners, gradients or shadows.
-- **Solid colour.** Dark surfaces by default (a light mode is an option), one accent colour (chosen in Settings), large light type, small spaced capitals for section titles. Text contrast is kept high.
+- **Square, solid colour.** No rounded corners, gradients or shadows. Dark by default (light is an option), one accent colour, high text contrast.
 - **Clear focus.** The selected item is a solid accent block with a white frame. Dangerous actions turn red.
-- **Real icons.** App logos wherever an app is listed; a coloured letter tile when there is none. Symbols where the meaning is universal (⏻ ✕ ⋯ ≡ ☆ ✎), words elsewhere.
-- **Scales to the room.** Interface sizes 1 to 5 (3 the desktop size, 4 the TV size), and sized for a 4K TV with a switch. The size applies at once.
-- **Calm motion.** Short fades, turned off by **Reduce motion**.
+- **Real icons.** App logos wherever an app is listed, a coloured letter tile when there is none. Symbols where the meaning is universal (⏻ ✕ ⋯ ☆ ✎ ⊞), words elsewhere.
+- **Scales to the room.** Interface sizes 1 to 5, plus a 4K switch. A change applies at once.
 - **Everything in one window.** Dialogs, editors, messages and the on-screen keyboard are drawn inside the TVWCS window, so they cannot get lost behind it.
-- **Remote first.** Every control is reachable with arrows, OK and Back. In TV mode the key hints name the remote's keys (OK, Back).
+- **Remote first.** Every control is reachable with arrows, OK and Back. Navigation is spatial; Back steps back one level (dialog, Applications, Quick Menu); typing anywhere goes into search.
 
-## How it behaves
+## How it works
 
-### Layout
+**The window.** TVWCS is one borderless floating sway window (plain GTK 4 through python3-gi, no libadwaita or layer-shell), placed over IPC in the usable area of the focused monitor. It holds the Quick Menu and, beside it, Applications. TVWCS computes the exact position at run time from the Quick Menu corner and the screen edge margin (which also handles overscan). `tvwcs.conf` maps it with opacity 0 until it is placed, so it never flashes in the centre. TVWCS recognises its own windows by the exact title `TVWCS` or the prefix `TVWCS · `.
 
-TVWCS is one borderless floating window placed in the usable area of the workspace on the monitor under the pointer (sway already excludes the bar). It holds up to two panels:
+**TV mode and desktop mode.** TV mode is the TVWCS session (`tvwcs-session` exports `TVWCS_SESSION`); any other sway session with the `include /usr/share/tvwcs/tvwcs.conf` line is desktop mode. TV mode adds what a TV needs: no swaybar (`tvwcs-session` writes its sway config with the bar commented out), the pointer hidden (`seat * hide_cursor`, `cursor.py`), the Quick Menu kept open while no app is, and the TVWCS lock screen.
 
-- **Quick Menu:** a column at the left, always shown when TVWCS is open. It is full height on a TV and whenever Applications is open. At a desk with Applications closed it is only as tall as its contents, kept in the bottom-left corner with the same margins, and it grows upwards as search results appear.
-- **Applications:** opens to the right of it and fills the rest on a TV. At a desk it is only as wide as its rows need (the widest row without its description, plus room for four in five descriptions); a longer description is cut with … and scrolls by while its row is selected, and the pointer shows all of it.
+**Launch profiles.** An application is the installed program; a launch profile is one way to start it (a name and, optionally, a command, a `.desktop` action, a channel, a favorite flag, a launch mode, a description, a hotkey and a PIN). A custom command runs as an argument list, never through a shell. A profile with no changes of its own follows its app when the `.desktop` file is renamed. The PIN is a convenience lock, not security. Channels (1 to 4 digits, `channel_digits`, 2 by default) are unique and optional.
 
-The same margin (the **Screen edge margin**, which also handles TV overscan) separates panels from each other and from the screen edges. TVWCS computes the exact position at run time.
+**Where apps open** (`apps_open`): full screen one per workspace (the TV default), side by side (the desktop default), or as each profile says. Nothing is moved, closed or minimized; other workspaces just aren't shown. TVWCS focuses an existing window rather than starting a second copy when it can match one by class, instance, `StartupWMClass` and name, which is best-effort. sway stays in charge of windows; TVWCS only sends it commands.
 
-Navigation is spatial. → past the Quick Menu opens Applications; ← goes back. Back/Esc steps back one level: dialog, Applications, Quick Menu. Typing anywhere goes into search.
+**Hotkeys** (`hotkeys.py`) are written to `~/.config/tvwcs/hotkeys.conf`, which `tvwcs.conf` includes. A modifier tapped alone (Super) is bound by keycode on release, so Super combinations keep working. Remote media keys are written with their `XF86` names.
 
-### Quick Menu
+**Power and locking.** Power actions use `systemctl`. When polkit refuses, TVWCS uses a no-password sudo or doas rule if there is one, else asks for the sudo password in its own dialog and passes it to `sudo -S` without storing it. Idle times (screen off, lock, sleep, and a second set on battery) go to `swayidle`, whose timeouts call `tvwcs idle <action>` back; sound playing or an inhibiting app keeps the computer awake. The lock screen (`lockscreen.py`, TV mode only) is swaylock with an SVG made at lock time from the theme. A desktop session's lock screen is never changed.
 
-The header is at the top; everything else sits at the bottom, nearest the search field, with any spare height above it. From top to bottom:
+**Server mode** (`servermode.py`) is a root-owned `/etc/tvwcs/server-mode` naming the account, plus a polkit rule that refuses logind, UDisks2 and NetworkManager actions for it. Settings hides admin-only rows and turns off Power, Software updates and Network there.
 
-- **Header:** the title and ✕ close (it can be hidden).
-- **Favorites and open applications, in one list without headings.** Favorites (pinned launch profiles) come first, in their order; a favorite that is open stands in its place as the open app. Favorites have a grey ★; open apps (and workspaces) a 3 px band down their left side. The other open applications follow, by workspace. A workspace is the unit you "change channel" between. An app alone on its workspace is listed as that app. Several apps on one workspace are one entry named after its contents ("Brave + Text Editor"). With neither favorites nor open apps, a note points to Applications (→) for the installed apps.
-- **Search results**, listed upwards from the search field: the best match is the one nearest it, and ↑ moves on to the next.
-- **Search:** profiles, app names, commands, channel numbers and open windows. Typing a channel number and pressing OK opens it. On a TV the field starts three characters wide (**___**) with a short hint beside it, and widens for a letter or a fourth digit. OK on the empty field opens the on-screen keyboard (or number keypad).
-- **Status rows:** above, waiting updates, network, volume, Bluetooth, the battery with its charge (charging, plugged in or on battery; only on a computer with a battery), and ⏻ power at the right; below, the time with the date to its right, and ⊞. The clock and the updates icon open their Settings page. The others unfold a panel above the row, indented a little, like a row's options:
-  - **⏻ Power:** Lock (nearest the button), Sleep, Reboot, Shut down, and Log out when there is a login screen.
-  - **Network:** the connection in use (Wi-Fi network and signal, or the wired connection) with its address, Wi-Fi on or off, and Network settings.
-  - **Volume:** mute, − and + (and a slider) for the output and the input, and Sound settings.
-  - **Bluetooth:** the connected devices, each with Disconnect, Bluetooth on or off, and Bluetooth settings.
-  - **Battery:** the charge and about how long until it is empty (or charged), from the kernel's estimate or the rate it drains at, and Power settings.
-  Details that need a command (network, Bluetooth, sound) are read in the background; the selection moves into the panel once they arrive. A panel folds away when the selection leaves it and its icon, with Back, or with its icon again.
-- **Applications button:** ⊞ in the Quick Menu's bottom-right corner, beside the clock, opens or closes Applications (highlighted while it is open). With a remote, → past the end of a row does the same.
-
-Each row has a menu button (⋯), also opened with ← on the row or a right-click. Its options unfold upwards, above the row, indented a little on both sides, close to their row and with a small gap to the row above. From the top: the app's own `.desktop` actions, opening it the other way, and Close nearest the row (the selection lands on the option just above Close). ↑ from the row goes into them; they fold away when the selection leaves them and their row, with Back, or with ⋯ again:
-
-- **App:** its own `.desktop` actions, open it the other way (alongside the apps on screen, or in its own workspace), Close when it is open.
-- **Workspace:** move it to another monitor, or close it and everything on it (asks first). Its ▴ button unfolds its individual apps upwards, above it.
-- **Favorite:** its launch mode and `.desktop` actions.
-
-Messages and errors are shown in the window. While an app starts, a spinner takes the place of its icon in its button (a "Starting <app>…" card only when it was started with no button on screen, such as by its hotkey). The first time TVWCS opens it asks whether it is used on a TV or at a desk.
-
-In **TV mode** the sway bar is hidden (the status row replaces it), and while no app is open the Quick Menu stays on screen and returns when the last app closes. Both can be turned off.
-
-### Applications
-
-- **Channels:** every profile with a channel number.
-- **All applications:** every installed graphical app from XDG `.desktop` entries, in foldable categories (Media, Internet, Games, Office, Graphics, Development, Utilities, System, Other). Each row shows logo, channel, name and description, then ☆ favorite and ✎ edit.
-
-A **secondary profile** (a second way to start the same app) sits under its app with ↳ in place of the logo, and shows what makes it different (its action or command, or its own description). A lock mark shows a PIN. Edits never make the list jump or fold.
-
-### Launch profiles
-
-An application is the installed program. A launch profile is one way to start it, such as a browser opened on a streaming site. A profile has a name and, optionally, a command, a `.desktop` action, a channel, a favorite flag, a launch mode, a description, a hotkey and a PIN.
-
-- An empty command uses the app's standard launcher. A custom command runs as an argument list, not through a shell.
-- The editor opens inside the TVWCS window. Each field is a row that opens the on-screen keyboard, the keypad, a list or hotkey capture. Nothing is stored until **Save**; **Cancel** and **Delete** are beside it. An app's profile list opens the same way.
-- **PIN:** asked when launching, or also when showing the app on a workspace that is not on screen. Editing or deleting a protected profile asks for it first. It is a convenience lock, not security.
-- **Plain profiles follow renamed apps:** a profile with no changes of its own keeps working when its `.desktop` file is renamed (such as the old Control Panel launcher).
-
-### Where apps open
-
-One setting, **Where apps open**:
-
-- **Full screen, one per workspace:** every app, launched or selected, gets a workspace of its own. The TV default.
-- **Side by side:** every app opens tiled beside what is on screen. The desktop default.
-- **As each app's profile says:** each profile chooses "tiled here" or "always in a new workspace". The default for config files from before 3.0.
-
-Nothing is moved, closed or minimized: other workspaces are just not shown. An app's options always offer the opposite for one time. TVWCS restores fullscreen on an app that was fullscreen when TVWCS opened over it.
-
-### Switching to open apps
-
-TVWCS focuses an existing window rather than starting a second copy when it can match one. Matching uses window class, instance, `StartupWMClass` and names, so it is best-effort. The window manager stays in charge of windows and workspaces; TVWCS only sends it commands.
-
-### Channels and favorites
-
-Channel numbers (1 to 4 digits, the `channel_digits` setting, 2 by default: 00 to 99) are the user's own shortcuts to profiles. They are unique, optional and stored locally. Channel 0 goes to Settings once, on a new install or the first start of 3.1, when nothing else has it. Favorites are independent of channels.
-
-### Hotkeys
-
-Three sets: keyboard (default: tap Super for the Quick Menu), remote (default: F2) and gamepad (none; needs a mapper such as AntiMicroX). Each has a Quick Menu key and an Applications key; the remote also has a fullscreen key. Any profile can have its own hotkey. A key does one thing: choosing a key already in use warns and asks before moving it. A modifier tapped alone is bound by keycode on release, so Super combinations keep working. While a key is being chosen, the D-pad, OK and Back keep navigating the dialog. Remote media keys are written with their `XF86` names.
-
-### Power and locking
-
-The power menu has Lock, Sleep, Reboot and Shut down, and Log out when there is a login screen. Reboot, Shut down and Log out ask first, with Cancel selected. Power actions use `systemctl`. When polkit refuses, TVWCS uses a no-password sudo or doas rule if there is one, else asks for the sudo password in its own dialog and passes it to `sudo -S` without storing it.
-
-Settings keeps idle times for screen off, lock and sleep, which TVWCS hands to `swayidle` (each timeout calls `tvwcs idle <action>` back), and a second set for a laptop on battery, plus what to do when its battery is nearly empty (`power.py` reads `/sys/class/power_supply`). Nothing happens while sound plays or an app inhibits idle.
-
-The mouse pointer is hidden by sway (`seat * hide_cursor`, `cursor.py`), in TV mode only.
-
-The **lock screen** (`lockscreen.py`), used in TV mode only, is swaylock with a picture per screen (an SVG made at lock time from the theme: padlock, "Locked", how to unlock; the Retro fonts reach swaylock through its own fontconfig file) and its ring always visible, in the theme's colours. The power menu's Lock, the idle lock and `tvwcs lock` use it. With the `lock_at_start` setting (Settings › User), `tvwcs.conf` runs `tvwcs lock-at-start` as sway starts, which locks straight away in a TVWCS session, never for an account `passwd -S` says has no usable password. The launcher runs both without loading GTK. A desktop session's lock screen is never changed.
-
-## Settings app
-
-A separate GTK app (`tvwcs settings [page]`, launcher "TVWCS Settings", hidden in GNOME and KDE menus) in the same style. Pages are tabs on the left: Appearance, User, Remote and hotkeys, Sound, Displays, Power and sleep, Bluetooth, Date and time, Software updates, System information, Network, Storage. Each page is also a `.desktop` action, so it can be a channel or favorite.
-
-It drives standard tools rather than services: `pactl` (PipeWire/PulseAudio), `swaymsg`, `bluetoothctl`, `nmcli` (read-only `ip` fallback), `timedatectl`, apt, `udisksctl` and OpenSSH via `systemctl`. A page whose tool is missing says what to install. Changes TVWCS needs to know about are sent with `tvwcs reload`.
-
-**Software a page needs** (`features.py`): a page whose software is missing (sound, Bluetooth) offers to install it with apt; there is no on/off switch, and its Quick Menu icon is hidden until it is installed.
+**Settings** is a separate GTK app (`tvwcs settings [page]`) in the same style. It drives standard tools rather than services of its own: `pactl`, `swaymsg`, `bluetoothctl`, `nmcli` (or iwd over `busctl`, and a read-only `ip` fallback), `timedatectl`, apt or pacman, `udisksctl`, and OpenSSH through `systemctl`. A page whose software is missing offers to install it (`features.py`). Each page is also a `.desktop` action, so it can be a channel or a favorite. Changes the running TVWCS needs to know about are sent with `tvwcs reload`.
 
 ## Supported systems
 
-Debian and its family (apt), with systemd. Support for Arch, Fedora, Void, Alpine, Gentoo and non-systemd init systems was removed in 3.0, and openSUSE in 3.0.2. [TODO.md](TODO.md) lists, place by place, what bringing them back would take (the last commit with that code is `9e7ef12`), and holds researched but unstarted work on a tablet mode and a dedicated passwordless TV user.
+Debian and its family (Ubuntu LTS, Mint, Pop!_OS, Raspberry Pi OS) with apt, and Arch and its family with pacman, all with systemd and sway. `distro.py` holds each family's package names, install commands and greetd details. Other distributions, non-systemd init systems, i3/X11 and Flatpak were removed along the way; the CHANGELOG says when, and git history has the code.
 
 ## Packages and installer
 
-One repository and one Debian package, built by `scripts/build-debs.sh` with plain `dpkg-deb` (no compiling) and attached to each GitHub release:
-
-**tvwcs**: the Python package in `/usr/lib/tvwcs`, `/usr/bin/tvwcs`, `/usr/bin/tvwcs-session` (TVWCS's sway session: it makes `~/.config/tvwcs/sway-session.conf` from `/etc/sway/config` the first time, with its bar commented out so swaybar never starts, writes default hotkeys, exports `TVWCS_SESSION` and runs sway), the session entry `tvwcs-sway.desktop`, `/usr/share/tvwcs/tvwcs.conf` and the Settings launcher. Its dependencies are what apt installs with it. It conflicts with 5.0.x's tvwcs-boot-logo, so apt removes that.
-
-There is no login screen of TVWCS's own (from 5.0). `loginscreen.py` sets the automatic login where the login screen in use keeps it: greetd's initial session, LightDM's or SDDM's settings. Without a login screen, the installer sets up greetd with its text login (agreety). `loginscreen.py migrate` removes 4.x's greeter: another graphical login screen takes over, else greetd's text login, keeping the automatic login.
-
-`install.sh` (POSIX sh, at the repository root) runs in a terminal, on its own (`wget -qO- …/main/install.sh | bash`, then it downloads the chosen release's packages) or from an unpacked `tvwcs.tar.gz` (it then offers the packages next to it). It asks everything first (version, automatic login, desktop mode in the usual sway config), then installs with apt. Upgrading from 4.x it removes `~/.local/share/tvwcs` and what 4.x put elsewhere (its session files, i3 include lines, console start lines). Without a terminal (4.x's in-app updater) it says to run it in one. `--remove` purges the packages. The in-app updater (`selfupdate.py`) downloads the release's .deb files and installs them with `apt-get install` as root.
+- **Debian:** one package, `tvwcs_<version>_all.deb`, built by `scripts/build-debs.sh` with plain `dpkg-deb` (nothing is compiled) from `packaging/tvwcs/`. It conflicts with 5.0.x's `tvwcs-boot-logo`, so apt removes that.
+- **Arch:** `scripts/build-arch.sh` fills in `packaging/arch/PKGBUILD.in` and `tvwcs.install` with the version and the source tarball's checksum. `--package` also runs makepkg.
+- **What's installed:** the Python package in `/usr/lib/tvwcs`, `/usr/bin/tvwcs`, `/usr/bin/tvwcs-session` (it makes `~/.config/tvwcs/sway-session.conf` from `/etc/sway/config` the first time, writes default hotkeys and runs sway), the session entry `tvwcs-sway.desktop`, `/usr/share/tvwcs/tvwcs.conf` and the Settings launcher. Installing changes no settings.
+- **Login:** TVWCS has no login screen of its own and never installs one. `loginscreen.py` sets the automatic login where the login screen in use keeps it (greetd's initial session, LightDM's or SDDM's settings), or without one a console autologin (`getty@tty1` drop-in plus a `~/.profile` block).
+- **`install.sh`** (POSIX sh, at the repository root) runs in a terminal, on its own (`wget -qO- …/main/install.sh | bash`, then it downloads the chosen release) or from an unpacked `tvwcs.tar.gz`. It asks everything first, then installs with apt, or on Arch builds the PKGBUILD with makepkg and installs it with pacman. `--remove` removes the package and TVWCS's changes to sway, greetd and the console login.
+- **Self-update** (`selfupdate.py`, Debian only) downloads a release's .deb and installs it with `apt-get install` as root. On Arch it only says a release is out.
 
 ## Where things live
 
@@ -147,9 +62,10 @@ There is no login screen of TVWCS's own (from 5.0). `loginscreen.py` sets the au
 | Hotkeys, written by TVWCS | `~/.config/tvwcs/hotkeys.conf` |
 | Kept display settings | `~/.config/tvwcs/displays.json` |
 | TVWCS's own session config (TV mode) | `~/.config/tvwcs/sway-session.conf` |
+| Server mode | `/etc/tvwcs/server-mode` |
 | PID file and per-session files | `$XDG_RUNTIME_DIR` |
 
-User data is kept apart from the program so upgrades never touch it. TVWCS recognises its own windows by the exact title `TVWCS` or the prefix `TVWCS · `.
+User data is kept apart from the program, so upgrades never touch it.
 
 ## Code
 
@@ -158,24 +74,42 @@ Logic modules have no GTK dependency and are tested without a display.
 | Area | Modules |
 |---|---|
 | Core | `model` (profiles, settings, layout, search), `applications` (discovery, window matching), `workspaces`, `ownership`, `profile_draft`, `pinlock`, `hotkeys` |
-| System | `window_manager` (sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `cursor`, `features`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `loginscreen`, `account`, `appearance` (light/dark for apps, background colour) |
-| Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_datetime`, `control_storage`, `control_updates`, `control_ssh`, `control_sysinfo` |
-| GTK interface | `main` (app, CLI), `ui_window` (Quick Menu, Applications, dialogs, on-screen keyboard), `ui_editors` (profile editor), `ui_control` and `ui_control_pages` (Settings), `widgets`, `theme` |
+| System | `window_manager` (sway IPC), `system_actions`, `privilege`, `power`, `lockscreen`, `cursor`, `features`, `session`, `tv_mode`, `quick_status`, `selfupdate`, `loginscreen`, `account`, `servermode`, `sway_include`, `distro`, `appearance`, `usage` |
+| Settings back ends | `control_cmd`, `control_sound`, `control_display`, `control_bluetooth`, `control_network`, `control_iwd`, `control_datetime`, `control_storage`, `control_updates`, `control_ubuntu`, `control_ssh`, `control_sysinfo` |
+| GTK interface | `main` (app, CLI), `ui_window` (Quick Menu, Applications, dialogs, on-screen keyboard), `ui_editors` (profile editor), `ui_margin`, `ui_control`, `ui_control_pages` and `ui_control_login` (Settings), `widgets`, `theme`, `retro` |
 
 ```
 package/tvwcs/   modules                  package/tests/  unit tests
-package/bin/     the tvwcs launcher       data/           tvwcs.conf, the session, the Settings .desktop file
-scripts/         tests, packages, release packaging/      each package's control file and scripts
-docs/            Debian guide, release process
+package/bin/     the tvwcs launcher       data/           tvwcs.conf, the session, .desktop files, icons
+scripts/         tests, packages, release packaging/      the Debian control files and the Arch PKGBUILD
+docs/            install guides for Debian and Arch
 ```
 
 ```sh
 ./scripts/run-tests.sh            # unit tests (no display needed)
-./scripts/build-debs.sh           # the .deb packages in resources/
+./scripts/build-debs.sh           # resources/tvwcs_<version>_all.deb
+./scripts/build-arch.sh           # resources/arch/: PKGBUILD, tvwcs.install, the source tarball (--package on Arch builds it)
+./scripts/make-release.sh         # all of that, plus resources/tvwcs.tar.gz and resources/TVWCS-<version>.zip
 ```
 
-Release steps are in [docs/RELEASES.md](docs/RELEASES.md).
+CI (`.github/workflows/ci.yml`) runs the unit tests on Ubuntu, and on Arch also builds the package, installs it with pacman, runs namcap and removes it.
 
-## In one paragraph
+## Releases
 
-TVWCS is a Metro-styled, TV-like layer for a Linux computer on a television. A menu at the left shows your favorites, open apps and search; a full list of applications opens beside it. You give apps your own channel numbers and choose whether they open full screen or side by side. It does not replace Linux or apps like Jellyfin and Steam; it sits on top of sway and makes them usable with a remote, without a plugin for every app.
+Versions are `MAJOR.MINOR.PATCH`: MAJOR for big or breaking changes, MINOR for new features, PATCH for fixes.
+
+1. **Bump the version** in `VERSION` and add a dated section at the top of `CHANGELOG.md`.
+2. **Merge to `main`.** If that version has no release yet, `.github/workflows/release.yml` runs the tests, builds everything above and publishes it as the **prerelease** `v<version>`. TVWCS offers it only to people who turned on **Include prereleases**.
+3. **Test it** on a TV computer if it has changes that couldn't be checked before merging.
+4. **Promote it** with the **Promote** workflow (Actions tab) and the tag, such as `v5.13.0`. It marks the release **latest**, which Check for TVWCS updates, Roll back and the installer use by default.
+
+Other ways: a push to the `beta` branch builds a prerelease tagged `beta-<run number>`; a tag such as `v5.13.0` pushed by hand is published as latest straight away.
+
+### Sending it to the AUR
+
+Each release's `PKGBUILD` and `tvwcs.install` are ready for the AUR. Only promoted releases should go there, since every new version is an update for everyone who installed it.
+
+1. Make an account at <https://aur.archlinux.org/register> and an SSH key just for it (`ssh-keygen -t ed25519 -f ~/.ssh/aur`). Paste `~/.ssh/aur.pub` into My Account › SSH Public Key, and add `Host aur.archlinux.org`, `IdentityFile ~/.ssh/aur` and `User aur` to `~/.ssh/config`.
+2. On Arch, `git clone ssh://aur@aur.archlinux.org/tvwcs.git` (the first push creates it).
+3. Copy in the release's `PKGBUILD` and `tvwcs.install` and run `makepkg --printsrcinfo > .SRCINFO`. Check with `makepkg -si`, `namcap PKGBUILD` and `namcap tvwcs-*.pkg.tar.zst`; `pkgctl build` (from `devtools`) shows whether a dependency is missing.
+4. Put your name on the `# Maintainer:` line, then commit `PKGBUILD`, `.SRCINFO` and `tvwcs.install` and `git push` to `master`. For each later promoted release, copy in the new files, regenerate `.SRCINFO` and push again.

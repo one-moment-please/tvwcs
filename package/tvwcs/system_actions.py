@@ -1,6 +1,6 @@
 """System actions offered by the Quick Menu's power menu; no GTK dependency.
 
-Power actions use systemd's systemctl (TVWCS supports systemd systems only; TODO.md lists what others would need)."""
+Power actions use systemd's systemctl (TVWCS supports systemd systems only)."""
 from __future__ import annotations
 import os, shlex, shutil, subprocess
 from dataclasses import dataclass

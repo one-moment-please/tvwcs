@@ -23,7 +23,7 @@ TVWCS has two modes:
     <td valign="top"><img src="assets/guide-menu.png" alt="The Quick Menu with the Applications pane open beside it" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top">In desktop mode, "TVWCS" and ✕ close at the top (TV mode has no header). Below: one list of your favorites, then the other open applications (by workspace; ▴ unfolds the apps that share one, above it), then the search field. Favorites have a grey ★, and open apps a thin band down their left side. At the bottom, two rows: icons for network, volume, Bluetooth and the battery that each unfold a panel, with ⏻ power at the right; below them the time with the date beside it and, in the bottom-right corner, ⊞, which opens Applications.</td>
+    <td valign="top">Your favorites (★) and open apps in one list, search, and the status row: network, volume, Bluetooth, battery, ⏻ power, the time, and ⊞ for Applications. In desktop mode a header with ✕ sits at the top.</td>
     <td valign="top"><b>Channels</b> lists apps you gave a number. <b>All applications</b> lists every app by category; OK/Enter folds a category. ☆ makes an app a favorite, ✎ edits it.</td>
   </tr>
   <tr>
@@ -58,58 +58,52 @@ The apps in these videos are mockups made for the demo (a window with a still pi
 
 ## What you need
 
-- **Debian, Ubuntu LTS (tested on 26.04), or another Debian-based system** (Linux Mint, Pop!_OS, Raspberry Pi OS), with **systemd**. On Ubuntu the installer offers to remove Snap, cloud-init and the Ubuntu Pro client (so does Settings > Software updates), and Settings > Network can hand Ubuntu Server's network (netplan with systemd-networkd) to NetworkManager.
-- **Or Arch Linux, or a system built on it** (EndeavourOS, CachyOS, Manjaro). TVWCS isn't in the AUR yet: you build its package from the PKGBUILD attached to each release. See [Installing TVWCS on Arch](docs/INSTALL-ARCH.md).
-- **sway.** apt or pacman installs it with TVWCS. (i3 was supported until 4.x.)
+- **Debian, Ubuntu LTS (tested on 26.04), or another Debian-based system** (Linux Mint, Pop!_OS, Raspberry Pi OS), or **Arch Linux or a system built on it** (EndeavourOS, CachyOS, Manjaro). Other distributions are not supported.
+- **systemd** and **sway**. apt or pacman installs sway with TVWCS.
 
-Other distributions and systems without systemd are not supported. [TODO.md](TODO.md) records what it would take to bring them back.
-
-**New computer?** [Setting up a TV computer with Debian](docs/INSTALL-DEBIAN.md) goes from an empty computer to one that boots into TVWCS.
+**New computer?** [Setting up a TV computer with Debian](docs/INSTALL-DEBIAN.md) goes from an empty computer to one that boots into TVWCS. On Arch, see [Installing TVWCS on Arch](docs/INSTALL-ARCH.md) for the steps by hand and what Arch does differently.
 
 ## Install
 
-TVWCS comes as a Debian package, **tvwcs**, and for Arch as a PKGBUILD, both attached to each [release](https://github.com/one-moment-please/tvwcs/releases): the Quick Menu, Applications, Settings and the **TVWCS** session. apt or pacman installs what it needs with it (sway, swayidle, swaylock, GTK 4 for Python and so on).
-
-The installer picks the release and asks its questions first. Only once you agree does it download anything: then it installs the package with apt, or on Arch builds it from the PKGBUILD with makepkg and installs it with pacman. Run it in a terminal (not as root):
+Run the installer in a terminal, as your own user (not root):
 
 ```bash
 wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
 ```
 
-With curl: `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`. Over SSH, sign in with `ssh -t` so the installer can ask its questions and sudo can ask for your password. You can also unpack a release's `tvwcs.tar.gz` and run its `./tvwcs/install.sh`: it then offers to install the package next to it, or to download another release. Or install the .deb yourself: `sudo apt install ./tvwcs_5.6.0_all.deb`. On Arch, [Installing TVWCS on Arch](docs/INSTALL-ARCH.md) has the steps by hand and what Arch does differently.
+(or `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`). Over SSH, sign in with `ssh -t` so it can ask its questions. It asks everything first and changes nothing until you agree to its list of what it will do:
 
-### Starting TVWCS with the `tvwcs` command
+1. **Which version:** the latest release, the prerelease when there is one, or one of the two releases before the latest. (`TVWCS_VERSION=latest`, `package` or a version such as `5.13.0` answers this for scripted installs.)
+2. **Logging in automatically into TVWCS.** With no login screen, it offers to log you in on the first text console at startup, straight into TVWCS. With greetd, LightDM or SDDM, it offers their automatic login. With another login screen, choose **TVWCS** there.
+3. **Your usual sway session:** whether to add TVWCS to it too, in desktop mode (one `include /usr/share/tvwcs/tvwcs.conf` line in its config).
+4. **On Ubuntu:** whether to remove Snap, cloud-init and the Ubuntu Pro client.
 
-Installing the package only adds the **TVWCS** session to the login screen. It changes no settings: no automatic login, and nothing in your sway config. Then `tvwcs` does what fits where you type it:
+Then it downloads the release's package and installs it with apt, or on Arch builds it from the PKGBUILD with makepkg and installs it with pacman. Every file of yours it changes is backed up first as `<file>.tvwcs-backup`. Your own data (channels, favorites, settings, hotkeys) is kept in `~/.config/tvwcs/`.
 
-- **At a text console** (no graphical session, as on a computer with no login screen): it starts the TVWCS session, in TV mode. To have it start by itself, turn on **Settings › User › Log in automatically after startup**.
-- **In your usual sway session:** it opens Settings and offers to add TVWCS to that session (one `include /usr/share/tvwcs/tvwcs.conf` line in your sway config), then asks for the key that opens the Quick Menu. Once TVWCS is part of the session, `tvwcs` shows the Quick Menu.
-- **In another desktop** (GNOME, KDE, an X11 session): it opens Settings. The pages that only work in sway (Appearance, Remote and hotkeys, Displays, Power and sleep, and logging in) are shown turned off.
+The package (a .deb, and a PKGBUILD for Arch) is also attached to each [release](https://github.com/one-moment-please/tvwcs/releases) if you'd rather install it yourself (`sudo apt install ./tvwcs_<version>_all.deb`). Installing it on its own only adds the **TVWCS** session to the login screen and changes no settings.
+
+**Update:** **Settings › Software updates › Check for TVWCS updates** (or run the installer again; on Arch, run the installer again). Your data is never changed.
+
+**Remove:** `install.sh --remove` (or `sudo apt purge tvwcs`, or `sudo pacman -R tvwcs`). It also takes TVWCS out of your usual sway config, ends its automatic login on the text console and in greetd, LightDM or SDDM, and leaves the rest of their settings alone.
+
+### The `tvwcs` command
+
+`tvwcs` does what fits where you type it:
+
+- **At a text console:** it starts the TVWCS session, in TV mode. To have it start by itself, turn on **Settings › User › Log in automatically after startup**.
+- **In your usual sway session:** it opens Settings and offers to add TVWCS to that session, then asks for the key that opens the Quick Menu. Once TVWCS is part of the session, `tvwcs` shows the Quick Menu.
+- **In another desktop** (GNOME, KDE, an X11 session): it opens Settings, with the pages that only work in sway turned off.
 - **Over SSH:** it offers to start TVWCS on the computer's own screen, or to turn server mode on or off.
 
-Each of these also has its own command, for scripts or when you want one in particular: `tvwcs session` (TVWCS's session, at a text console), `tvwcs settings [page]`, `tvwcs server-mode on|off|status` and `tvwcs start-session`. `tvwcs help` lists them all.
+`tvwcs help` lists the other commands, such as `tvwcs settings [page]`, `tvwcs lock`, `tvwcs server-mode on|off|status` and `tvwcs start-session`.
 
 ### Server mode
 
-For a computer that is a server first and an HTPC second. One account uses the TV: it logs in automatically into TVWCS, and from TVWCS nobody can put the computer to sleep, restart it or shut it down, update it, change its network, or unmount its drives. The Quick Menu's power menu keeps only Lock (and Log out with a login screen). In Settings, Power and sleep, Software updates and Network are turned off, and every other setting that needs an administrator is hidden. A polkit rule backs this up for that account, whatever program asks.
+For a computer that is a server first and an HTPC second. One account uses the TV: it logs in automatically into TVWCS, and from TVWCS nobody can put the computer to sleep, restart it or shut it down, update it, change its network, or unmount its drives. The power menu keeps only Lock (and Log out with a login screen); in Settings, Power and sleep, Software updates and Network are turned off and every other setting that needs an administrator is hidden. A polkit rule backs this up for that account, whatever program asks.
 
-- **Turn it on:** Settings › User › Server mode (an administrator, who chooses the account), or `tvwcs server-mode on --user=NAME` in a terminal or over SSH (`NAME` is you by default; sudo asks for your password).
-- **Turn it off:** Settings › User › Server mode asks for an administrator's password (and which administrator, from a standard account), or `tvwcs server-mode off`. The automatic login stays. `tvwcs server-mode status` says whether it is on, and for whom.
-- **Start TVWCS on the screen now,** for example over SSH: `tvwcs start-session --user=NAME`. It starts on the first free text console and logs NAME in there once.
-- **A separate account for the TV** keeps the TV away from your own files. Create it yourself as a standard account (not an administrator), for example `sudo adduser tv`, then turn server mode on for it: `tvwcs server-mode on --user=tv`.
-- **Its password:** for a standard account that cannot sign in over SSH with a password, a numeric password of 6 digits (4 at the least) is enough for everyday use, and it is quick to type on a remote's number keys. Stop password sign-ins over SSH with Settings › System information › Sign in with › Keys only (for every account), or for this account alone with a `DenyUsers tv` line in a file in `/etc/ssh/sshd_config.d/`. Never give an administrator account a short numeric password: anyone at the TV could use it with sudo.
-
-### What the installer asks
-
-1. **Which version:** the latest release, the prerelease when there is one, or one of the two releases before the latest.
-2. **Logging in automatically into TVWCS.** With no login screen, it offers to log you in on the first text console at startup, straight into TVWCS (logging out starts TVWCS again). With greetd, LightDM or SDDM, it offers the automatic login. With another login screen, choose **TVWCS** there.
-3. **Your usual sway session.** TVWCS always has its own **TVWCS** session at the login screen, in TV mode. It asks whether to also add TVWCS to your usual sway session, in desktop mode (one `include /usr/share/tvwcs/tvwcs.conf` line in its config).
-
-It asks all its questions first and changes nothing until you agree to the list of what it will do. Every file of yours it changes is backed up first as `<file>.tvwcs-backup`. Your own data (channels, favorites, settings, hotkeys) is kept in `~/.config/tvwcs/`.
-
-**Removing TVWCS:** `install.sh --remove` (or `sudo apt purge tvwcs`, or on Arch `sudo pacman -R tvwcs`). It also takes TVWCS out of your usual sway config, ends the automatic login on the text console, and takes TVWCS out of greetd's config (its automatic login into TVWCS; the rest of the config stays).
-
-**For scripted installs:** `TVWCS_VERSION=latest` (or `package`, or a version such as `5.0.0`) answers which version.
+- **On or off:** Settings › User › Server mode, or `tvwcs server-mode on --user=NAME` / `tvwcs server-mode off` (sudo asks for your password). Turning it off from Settings asks for an administrator's password. The automatic login stays.
+- **Start TVWCS on the screen now,** for example over SSH: `tvwcs start-session --user=NAME`.
+- **A separate account for the TV** keeps it away from your own files: create a standard account (`sudo adduser tv`), then `tvwcs server-mode on --user=tv`. A 6-digit numeric password is quick to type on a remote and enough for it, as long as it can't sign in over SSH with a password (Settings › System information › Sign in with › Keys only, or a `DenyUsers tv` line in `/etc/ssh/sshd_config.d/`). Never give an administrator a short numeric password: anyone at the TV could use it with sudo.
 
 ## Using it with a remote
 
@@ -122,23 +116,18 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 | **OK** / Enter | Open, switch to or choose the selected item |
 | **Back** / Esc | Go back one step |
 | **OK** on the empty search field | Open the on-screen keyboard (or number keypad) |
-| Any letter or digit | Search. A channel number (00 to 99) then OK opens that channel, or typing all its digits and waiting a second. On a TV the search field starts as wide as a channel number; typing a letter or one digit too many widens it |
+| Any letter or digit | Search. A channel number then OK (or all its digits and a second's wait) opens that channel |
 | **←** on a Quick Menu row (or right-click) | Open that row's menu |
 
-- **Quick Menu layout:** it sits in the bottom-left corner, only as tall as what it shows. **Settings › Appearance › Quick Menu corner** puts it in any corner, mirrored to match: in a right-hand corner it runs right to left (← and → swap, and Applications opens to its left); in a top corner the status rows are at the top and its lists, search results and row options open downwards. What follows describes the bottom-left corner. Your favorites and open apps (one list, favorites first), search and the status row are at the bottom, with search results appearing above the search field. Favorites have a grey ★ and open apps a thin band down their left side, so a favorite that is open (shown once, in its place) has both. A name too long to fit scrolls by after it has been selected for 3 seconds. In TV mode the search field is three characters wide and shows **___** for a channel number. The date is short, such as "Sat, Oct 17".
-- **Row options (⋯):** they unfold upwards, just above their row and indented a little. From the top: the app's own shortcuts (such as Settings' pages), open it this once the other way (**Open in new workspace** in desktop mode, **Open alongside …** the apps on screen in TV mode), and **Close this application** at the bottom, nearest the row. A workspace's can move it to another monitor. Back folds them away. **Settings › Appearance › Options buttons (⋯)** can hide the ⋯ buttons; ← on a row (or a right-click) still opens its options.
-- **Workspaces with several apps:** the square ▴ button between ⋯ and the workspace's name unfolds its individual apps above it, to open just one; ▾ folds them again. On the name, ← moves onto it; ← again opens the row's menu.
-- **Channels:** two digits, 00 to 99. **Settings › Appearance › Channel number digits** chooses 1 to 4 digits (0 to 9 up to 0000 to 9999). Channel 00 opens Settings unless you give it to another app. Setting a channel shows a box per digit; typing replaces the number.
-- **Slow apps:** while an app takes a few seconds to open, a spinner turns in place of its icon in its button, so the screen is never blank, and the Quick Menu still opens.
-- **Editing an app (✎):** opens its launch profile: a channel number, a hotkey, a Desktop Action (one of the app's own shortcuts), a custom command, a description and a PIN. **Copy** makes another profile from what is shown, such as Firefox in a private window; it is listed as "Firefox 2" (rename it to "Firefox Private"). The app's name itself never changes. A PIN-protected profile asks for its PIN first. The PIN is a lock for a shared TV, not real security.
-- **Status panels:** network, volume, Bluetooth and battery icons unfold a panel above the status row: the connection and its address, **Find Wi-Fi networks** (choose one to connect; a password is asked when needed) and Wi-Fi on/off; mute and volume for output and input; the connected Bluetooth devices with Disconnect, **Find Bluetooth devices** (choose one to pair) and Bluetooth on/off; the battery's time left or time to full. Each has a button for its Settings page.
-- **Power menu (⏻):** at the bottom right: Lock, Sleep, Reboot, Shut down; Log out when there is a login screen.
-- **Applications:** ⊞ in the Quick Menu's bottom-right corner (or → on a row) opens Applications; ⊞ again closes it. If a power action needs your password, TVWCS asks for it on screen and never stores it.
-- **Mouse and remote:** clicking with the mouse does not move the remote's selection.
-- **On-screen keyboard:** wherever text is typed, the on-screen keyboard can be hidden (it starts that way), full, or a number pad; buttons on it switch, and it opens next time as you left it.
-- **Other keys:** set the Quick Menu key for a keyboard, a remote or a gamepad in **Settings › Remote and hotkeys**, where the apps with hotkeys of their own are listed too. A gamepad needs a key mapper such as AntiMicroX.
-
-From a terminal, `tvwcs` on its own does what fits where it runs (see [Starting TVWCS](#starting-tvwcs-with-the-tvwcs-command)); it also takes `start` (the launcher itself), `-s`/`--server-mode [--user=NAME]`, `--no-server-mode`, `--start [--user=NAME]`, `toggle`, `guide`, `stop`, `lock`, `launch <profile id>` or `settings [page]`.
+- **Quick Menu corner:** the bottom left by default. **Settings › Appearance › Quick Menu corner** puts it in any corner, mirrored to match (in a right-hand corner ← and → swap and Applications opens to its left; in a top corner the lists open downwards). The rest of this section describes the bottom left.
+- **The list:** your favorites (grey ★) and then the other open apps (a thin band down their left side), by workspace. A workspace with several apps has a ▴ button that unfolds them, to open just one. Search results appear above the search field. A name too long to fit scrolls by once it has been selected for 3 seconds.
+- **Row options (⋯, or ← on a row):** the app's own shortcuts (such as Settings' pages), opening it this once the other way (**Open in new workspace** in desktop mode, **Open alongside …** in TV mode), and **Close this application** nearest the row. A workspace's can move it to another monitor. **Settings › Appearance › Options buttons** can hide the ⋯ buttons.
+- **Channels:** two digits by default, 00 to 99 (**Settings › Appearance › Channel number digits** chooses 1 to 4). Channel 00 opens Settings unless you give it to another app.
+- **Editing an app (✎):** its launch profile has a channel number, a hotkey, one of the app's own shortcuts, a custom command, a description and a PIN. **Copy** makes a second profile, such as Firefox in a private window (listed as "Firefox 2" until you rename it). The PIN is a lock for a shared TV, not real security.
+- **Status row:** the network, volume, Bluetooth and battery icons each unfold a panel (Wi-Fi networks to join, output and input volume, Bluetooth devices to connect or pair, the time left on the battery) with a button for its Settings page. ⏻ at the right has Lock, Sleep, Reboot and Shut down (and Log out when there is a login screen); if one needs your password, TVWCS asks on screen and never stores it. ⊞ in the corner opens and closes Applications.
+- **Slow apps:** a spinner turns in place of the app's icon while it opens.
+- **On-screen keyboard:** wherever text is typed, it can be hidden (it starts that way), full, or a number pad, and opens next time as you left it.
+- **Other keys:** set the Quick Menu key for a keyboard, a remote or a gamepad in **Settings › Remote and hotkeys**. A gamepad needs a key mapper such as AntiMicroX. Clicking with the mouse does not move the remote's selection.
 
 ## Settings
 
@@ -146,30 +135,22 @@ Open **TVWCS Settings** with channel 00, from a status panel's settings button, 
 
 | Page (`tvwcs settings …`) | What it does |
 |---|---|
-| **Appearance** (`appearance`) | Interface size from 1 to 5 (3 is the desktop size and 4 the TV size; Auto is 4 in TV mode and 3 otherwise, a size smaller in Retro; a 4K switch doubles it for a 4K TV), the theme: Modern (dark or light, passed on to apps that follow the system's choice, with an accent colour and a background colour) or Retro (an old CRT TV's menus in green, amber or white, in pixel fonts, VT323 or Inter with icons to match, on a gray, blue or TV static background), closing TVWCS when it loses focus (on by default), and the screen edge margin for TVs that cut off the edges (overscan), set on a full-screen preview with a slider. |
-| **User** (`user`) | Your name and password, server mode (see above), with "Administrator" or "Standard User" beside the page's title. Logging in automatically into TVWCS after start-up, on or off (greetd, LightDM or SDDM; without a login screen, on the first text console). The login screen in use, and switching to another one installed. The application to open at login (none, the last one used, or one you choose). |
-| **Remote and hotkeys** (`hotkeys`) | In a sway session TVWCS isn't part of yet, **Add TVWCS to sway**. The Quick Menu key for the keyboard, remote and gamepad (clearing one asks first), and the apps that have a hotkey of their own (give one with ✎ on the app). **Reset all hotkeys** puts back the defaults and removes the app hotkeys. |
-| **Sound** (`sound`) | Volume and mute for the output and the input in use. The others are folded under "2 inactive outputs" or "1 inactive input", which open and close. **Allow over-amplification** lets volumes go up to 150 % (off by default: volumes stop at 100 %, with the volume keys of a remote or keyboard too). |
+| **Appearance** (`appearance`) | Interface size 1 to 5 (Auto is 4 in TV mode and 3 otherwise; a 4K switch doubles it), the theme: Modern (dark or light with an accent and a background colour, passed on to apps) or Retro (an old CRT TV's menus in green, amber or white, in a choice of fonts and backgrounds), the Quick Menu corner, channel digits, closing TVWCS when it loses focus, and the screen edge margin for TVs that cut off the edges (overscan). |
+| **User** (`user`) | Your name and password, server mode, logging in automatically into TVWCS, locking when TVWCS starts, the login screen in use, and the app to open at login. |
+| **Remote and hotkeys** (`hotkeys`) | **Add TVWCS to sway** (in a sway session without it), the Quick Menu key for keyboard, remote and gamepad, the apps with hotkeys of their own, and **Reset all hotkeys**. |
+| **Sound** (`sound`) | Volume and mute for each output and input (the inactive ones folded away), and **Allow over-amplification** up to 150 %. |
 | **Displays** (`displays`) | Resolution, refresh rate, arrangement and scale for each display: a row of buttons from 75 % to 200 %. A change goes back after 15 seconds unless you keep it. |
 | **Power and sleep** (`power`) | When the screen turns off, the computer locks and it sleeps (sway's swayidle times them; sound playing and apps that ask keep it awake). A laptop has these times twice, plugged in and on battery, and a choice of what to do when the battery is nearly empty. |
 | **Bluetooth** (`bluetooth`) | Pair, connect and forget devices. Shows battery levels. |
 | **Date and time** (`datetime`) | Time zone (one list), network time, 12- or 24-hour clock. |
-| **Software updates** (`updates`) | System updates (apt), and TVWCS's own updates (including prereleases and rolling back), installed as packages. |
+| **Software updates** (`updates`) | System updates (apt or pacman, with AUR helpers on Arch) and TVWCS's own updates, including prereleases and rolling back. |
 | **System information** (`system`) | Hardware and versions. Turns the SSH server on or off and shows how to connect. |
-| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. Without NetworkManager, Wi-Fi run by iwd (Arch) can be joined and forgotten, and an address set by hand is pointed out with where to change it. An Ethernet port the Debian installer set up (shown as "not managed"), or Ubuntu Server's netplan network, can be handed to NetworkManager; the old setup is kept as a backup, and on Ubuntu saved Wi-Fi networks and fixed addresses carry over. |
-| **Storage** (`storage`) | Drives, with their partitions under them: mount and unmount partitions and safely remove drives. Partitions of the running system are marked as part of it. |
+| **Network** (`network`) | Ethernet and Wi-Fi, and fixed IP settings. Without NetworkManager, Wi-Fi through iwd can be joined and forgotten. A port the Debian installer set up, or Ubuntu Server's netplan, can be handed to NetworkManager, keeping the old setup as a backup. |
+| **Storage** (`storage`) | Drives and their partitions: mount, unmount and safely remove. |
 
 A page whose software is missing offers to install it (Sound installs PipeWire, Bluetooth BlueZ, and so on). When the Settings window is taller than it is wide (a tile, or a monitor turned on its side), the tabs show only their icons.
 
-**Locking in TV mode:** the TVWCS session locks with swaylock. The lock screen follows your theme (Modern light or dark with your accent colour, or Retro with its colour, pixel fonts and background) and says it's locked and how to unlock it. A desktop session's own lock screen is not changed. `tvwcs lock` locks by hand. If the computer logs in automatically, **Settings › User › Lock the screen when TVWCS starts** has the session start locked, so your password is still needed after a restart.
-
-## Update and uninstall
-
-**Update:** **Settings › Software updates › Check for TVWCS updates** downloads the new packages and installs them with apt (it asks for your password), or run the installer again. Your data is never changed.
-
-**Uninstall:** `install.sh --remove` (see above).
-
-On Arch, TVWCS updates aren't installed from Settings: run the installer again (see [Installing TVWCS on Arch](docs/INSTALL-ARCH.md)).
+**Locking in TV mode:** the TVWCS session locks with swaylock, in your theme (`tvwcs lock` locks by hand). A desktop session's own lock screen is not changed. With the automatic login, **Settings › User › Lock the screen when TVWCS starts** keeps a password between a restart and your apps.
 
 ## Troubleshooting
 
@@ -181,7 +162,7 @@ On Arch, TVWCS updates aren't installed from Settings: run the installer again (
 - **Letters instead of icons:** install `adwaita-icon-theme` or `papirus-icon-theme`.
 - **Check for updates fails:** TVWCS needs internet access to `api.github.com`.
 
-Developer notes (code layout, tests, releases) are in [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) and [docs/RELEASES.md](docs/RELEASES.md).
+How it works inside, the code layout, tests and releases are in [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md).
 
 ## License
 
