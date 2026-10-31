@@ -33,7 +33,7 @@ class SystemActionTests(unittest.TestCase):
         self.assertIsNone(command_for("refresh"))
     def test_power_without_systemd(self):
         have=lambda names:(lambda c: "/usr/bin/"+c if c in names else None)
-        # only systemd is supported: systemctl installed but not in charge, or plain commands, do nothing (TODO.md)
+        # only systemd is supported: systemctl installed but not in charge, or plain commands, do nothing
         self.assertIsNone(command_for("shutdown",which=have({"systemctl","loginctl","reboot","poweroff"}),systemd=False))
         self.assertIsNone(command_for("sleep",which=have(set()),systemd=True))
         self.assertIn("systemd",unavailable_message("reboot")); self.assertIn("lock_command",unavailable_message("lock"))

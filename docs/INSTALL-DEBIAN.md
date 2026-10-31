@@ -73,7 +73,6 @@ The rest is done from the other computer.
    | Question | Answer |
    |---|---|
    | **Which version?** | Enter (the latest release). |
-   | **Show the TVWCS logo at startup?** | `y` for the logo instead of lines of text while the computer starts. |
    | **Log … in automatically into TVWCS at startup?** | Enter (yes). On a fresh Debian with no desktop there is no login screen, so the first text console logs you in and starts TVWCS. |
    | **Go ahead?** | Enter (yes). sudo asks for your password. |
 

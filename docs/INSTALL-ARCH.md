@@ -26,15 +26,13 @@ makepkg -si
 
 `makepkg -si` downloads the source, checks its checksum, builds the package and installs it with pacman, which asks for your password. Read the PKGBUILD first if you like: it only copies files into place.
 
-Until a release with these files has been marked latest, use a version's own address, such as `https://github.com/one-moment-please/tvwcs/releases/download/v5.11.0/PKGBUILD` (and the same for `tvwcs.install`).
-
 **From a copy of the repository** (to try a branch): `scripts/build-arch.sh --package`, then `sudo pacman -U resources/arch/tvwcs-*.pkg.tar.zst`.
 
 ## Start it
 
 - **With a login screen** (greetd, LightDM, SDDM, GDM): pick the **TVWCS** session. Settings › User can log you in to it automatically.
 - **Without one:** type `tvwcs` at a text console. Settings › User can then log you in automatically on the first console. TVWCS never installs a login screen itself: if you want one, install greetd (or another) and Settings › User sets up its automatic login.
-- **In your usual sway session:** Settings › Hotkeys › Add TVWCS to sway adds one line to your sway config, and TVWCS then runs in desktop mode.
+- **In your usual sway session:** Settings › Remote and hotkeys › Add TVWCS to sway adds one line to your sway config, and TVWCS then runs in desktop mode.
 
 ## Things Arch does differently
 
@@ -68,19 +66,3 @@ sudo pacman -R tvwcs
 (or the installer's `--remove`, which also takes TVWCS out of your usual sway config and can delete your TVWCS settings).
 
 This also ends an automatic login into TVWCS and turns server mode off. greetd keeps its config, greeter and all: only the automatic login into TVWCS goes (and agreety, if it was starting TVWCS after the password, starts a shell instead). Your settings in `~/.config/tvwcs` are kept.
-
-## For the maintainer: sending it to the AUR
-
-Each release's `PKGBUILD` and `tvwcs.install` are ready for the AUR. `scripts/build-arch.sh` makes them from `packaging/arch/` and fills in the version and the source tarball's checksum. To publish it:
-
-1. Make an account at <https://aur.archlinux.org/register>, then an SSH key just for it: `ssh-keygen -t ed25519 -f ~/.ssh/aur`. Paste `~/.ssh/aur.pub` into My Account › SSH Public Key, and add this to `~/.ssh/config`:
-
-   ```
-   Host aur.archlinux.org
-     IdentityFile ~/.ssh/aur
-     User aur
-   ```
-2. On Arch, clone the package's repository (it is created by the first push): `git clone ssh://aur@aur.archlinux.org/tvwcs.git`.
-3. Copy in the release's `PKGBUILD` and `tvwcs.install`, then run `makepkg --printsrcinfo > .SRCINFO`. Check the package with `makepkg -si`, `namcap PKGBUILD` and `namcap tvwcs-*.pkg.tar.zst`. A clean build (`pkgctl build`, from `devtools`) shows whether any dependency is missing.
-4. Put your name and email on the `# Maintainer:` line, then `git add PKGBUILD .SRCINFO tvwcs.install`, commit and `git push` (to `master`). The package is public straight away.
-5. For each release marked latest: copy in the new files, regenerate `.SRCINFO`, commit and push. Prereleases are best left out, since every new version is an update for everyone who installed it.
