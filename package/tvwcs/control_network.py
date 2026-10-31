@@ -47,6 +47,8 @@ class NetState:
     networks: list = field(default_factory=list)
     iwd: bool = False             # without NetworkManager, iwd runs Wi-Fi: networks are joined and forgotten through it
     iwd_station: str = ""         # then: the D-Bus object of the adapter that joins networks
+    iwd_devices: list = field(default_factory=list)   # and the interfaces iwd runs (not, say, an access point's)
+    iwd_device: str = ""          # the one that joins networks (wlan0)
     def of_kind(self, kind): return [i for i in self.interfaces if i.kind==kind]
 
 @dataclass
@@ -239,8 +241,9 @@ def read_state(scan=False):
             nets=[WifiNetwork(n.ssid,n.signal,iwd.SECURITY.get(n.kind,n.kind),n.connected,n.known or st.known.get(n.ssid,"")) for n in st.networks]
             why=st.problem or ("iwd runs Wi-Fi here: networks can be joined and forgotten, which asks for your password. Ethernet and IP "
                                "addresses are only shown (Settings changes those through NetworkManager).")
-            station=next((d.path for d in st.devices if d.station and d.powered),"")
-            return NetState(False,why,interfaces,any(d.powered for d in st.devices),nets,iwd=True,iwd_station=station)
+            station=next((d for d in st.devices if d.station and d.powered),None)
+            return NetState(False,why,interfaces,any(d.powered for d in st.devices),nets,iwd=True,iwd_station=station.path if station else "",
+                            iwd_devices=[d.name for d in st.devices],iwd_device=station.name if station else "")
         why=("NetworkManager is not running, so these settings can only be shown here. Start NetworkManager to change them."
              if have("nmcli") else "Changing these settings needs NetworkManager (nmcli). Without it they can only be shown here.")
         if distro.is_arch():   # Arch starts no network manager by itself: the installer picks systemd-networkd, iwd or NetworkManager

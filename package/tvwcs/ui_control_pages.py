@@ -102,7 +102,11 @@ class Page:
         focused=self.win.get_focus(); old=None
         if focused is not None and self.root is not None and (focused is self.root or focused.is_ancestor(self.root)):
             old=next((i for i,w in self._ids.items() if w is focused or focused.is_ancestor(w)),None)
-        stale={id(w):i for i,w in self._ids.items()}
+        stale={id(w):i for i,w in self._ids.items()}; old_rows=dict(self._ids)
+        def row_of(w):   # a row's id from one of its widgets (its own button, or a ✕ beside it that may be gone after the change)
+            if w is None: return None
+            if id(w) in stale: return stale[id(w)]
+            return next((i for i,ow in old_rows.items() if w.is_ancestor(ow)),None)
         wanted=getattr(self,"focus_after",None); self.focus_after=None   # the row a change turns the focused one into
         if wanted is not None and old is not None: old=wanted
         scroll=getattr(self,"scroll",None); top=scroll.get_vadjustment().get_value() if scroll is not None else 0
@@ -114,10 +118,10 @@ class Page:
         if top and scroll is not None:   # rows drawn again (a dialog open over the page, say) stay where they were
             GLib.idle_add(lambda:(scroll.get_vadjustment().set_value(top),GLib.SOURCE_REMOVE)[1]); self.subtitle.set_text(self.status or self.summary())
         for widget_ref in ("_return_focus",):   # a dialog open over this page goes back to the row's new button
-            w=getattr(self.win,widget_ref,None)
-            if w is not None and id(w) in stale and stale[id(w)] in self._ids: setattr(self.win,widget_ref,self._ids[stale[id(w)]])
-        last=self.win._last_page_focus.get(self.key)
-        if last is not None and id(last) in stale and stale[id(last)] in self._ids: self.win._last_page_focus[self.key]=self._ids[stale[id(last)]]
+            w=getattr(self.win,widget_ref,None); i=row_of(w)
+            if i in self._ids: setattr(self.win,widget_ref,self._ids[i])
+        i=row_of(self.win._last_page_focus.get(self.key))
+        if i in self._ids: self.win._last_page_focus[self.key]=self._ids[i]
         ident=getattr(self,"focus_ident",None)
         if ident is not None and old is None and self._ids.get(ident) is not None:
             self.focus_ident=None; GLib.idle_add(lambda w=self._ids[ident]:(usable(w) and w.grab_focus(),GLib.SOURCE_REMOVE)[1])
@@ -1185,6 +1189,7 @@ class NetworkPage(Page):
         for i in wired: self.ethernet_row(i,s.managed)
         self.section("WI-FI")
         wireless=s.of_kind("wifi")
+        if s.iwd: wireless=[i for i in wireless if i.device in s.iwd_devices] or wireless   # not an access point's interface
         if not wireless: self.note("No Wi-Fi adapter was found."); return
         if s.iwd: self.draw_iwd(s,wireless); return
         if not s.managed or wireless[0].state.startswith("unmanaged"):
@@ -1207,8 +1212,18 @@ class NetworkPage(Page):
         self.row("Search for networks","Searching…" if self.scanning else "",None if self.scanning else self.scan,icon="edit-find-symbolic",fallback="⌕",
                  detail="Looks for Wi-Fi networks nearby. iwd also looks now and then by itself.",ident="scan")
         if not s.networks: self.note("Looking…" if self.scanning else "No networks listed. Choose Search for networks to look for them.")
-        device=next((i for i in wireless if i.connected),wireless[0])
+        device=next((i for i in wireless if i.device==s.iwd_device),wireless[0])
         for n in s.networks: self.wifi_row(n,device)
+
+    def iwd_do(self, work, args, label, status):
+        """A change iwd may let this user make (work() -> problem); if it refuses, the same as root (args)."""
+        def tried(problem):
+            self.busy=False; self.set_status("")
+            if problem==network.iwd.DENIED: self.iwd_root(args,label,status); return
+            if problem: self.win.notice("Wi-Fi",problem)
+            self.refresh(quiet=True)
+        self.set_status(status); self.busy=True
+        in_background(work,tried,lambda exc:tried(str(exc)))
 
     def iwd_root(self, args, label, status, cleanup=""):
         """One of control_iwd's root commands (it asks for the password), then the page is read again."""
@@ -1236,6 +1251,7 @@ class NetworkPage(Page):
     @staticmethod
     def _state_text(i):
         if i.connected: return "Connected"
+        if i.kind=="wifi" and not i.state.startswith("unmanaged"): return "Not connected"
         return {"unavailable":"No cable","disconnected":"Not connected","unmanaged":"Not managed"}.get(i.state.split(" ")[0],i.state.capitalize() or "Unknown")
 
     def ethernet_row(self, i, managed):
@@ -1300,9 +1316,10 @@ class NetworkPage(Page):
         if n.in_use and device.addresses: detail+=" · "+self._details(device)
         extras=[]; s=self.state
         if s.iwd:   # each change is a root command (it asks for the password)
-            forget=lambda n=n:self.iwd_root(["forget",n.ssid],f"Forgetting {n.ssid}",f"Forgetting {n.ssid}…")
-            disconnect=lambda n=n:self.iwd_root(["disconnect",s.iwd_station],f"Disconnecting from {n.ssid}",f"Disconnecting from {n.ssid}…")
-            connect=lambda n=n:self.iwd_root(["join",n.ssid],f"Connecting to {n.ssid}",f"Connecting to {n.ssid}…")
+            iw=network.iwd
+            forget=lambda n=n:self.iwd_do(lambda:iw.forget(n.ssid),["forget",n.ssid],f"Forgetting {n.ssid}",f"Forgetting {n.ssid}…")
+            disconnect=lambda n=n:self.iwd_do(lambda:iw.disconnect(s.iwd_station),["disconnect",s.iwd_station],f"Disconnecting from {n.ssid}",f"Disconnecting from {n.ssid}…")
+            connect=lambda n=n:self.iwd_do(lambda:iw.join(n.ssid),["join",n.ssid],f"Connecting to {n.ssid}",f"Connecting to {n.ssid}…")
         else:
             forget=lambda n=n:self.act(lambda:network.forget(n.saved_uuid),f"Forgetting {n.ssid}…","Wi-Fi")
             disconnect=lambda n=n:self.act(lambda:network.disconnect_device(device.device),f"Disconnecting from {n.ssid}…","Wi-Fi")

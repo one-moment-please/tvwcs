@@ -1,10 +1,10 @@
 """Wi-Fi through iwd, for computers whose network NetworkManager does not run (Arch with systemd-networkd and iwd,
 or iwd alone). No GTK dependency.
 
-Settings reads iwd's state over D-Bus with `busctl` (systemd's), as the user. Joining, connecting to, leaving and
-forgetting a network go through `python3 -m tvwcs.control_iwd` as root (iwd's D-Bus policy only promises root those):
-a password is written the way iwd keeps it (/var/lib/iwd/<name>.psk), which iwd sees at once, and the network is then
-connected. A network that fails to connect the first time is forgotten again, so a mistyped password is not kept.
+Settings reads iwd's state over D-Bus with `busctl` (systemd's), as the user. Connecting to a saved or open network,
+leaving and forgetting one are tried as the user too (Arch's iwd lets the wheel group); when iwd refuses (DENIED) they
+go through `python3 -m tvwcs.control_iwd` as root. A new password always does: it is written the way iwd keeps it
+(/var/lib/iwd/<name>.psk), which iwd sees at once, and the network is then connected. A network that fails to connect the first time is forgotten again, so a mistyped password is not kept.
 
 IP addresses are not iwd's business here: systemd-networkd, dhcpcd or iwd's own network configuration give them, and
 Settings only says which (control_network.address_source)."""
@@ -160,17 +160,26 @@ def password_file(passphrase):
     with os.fdopen(fd,"w",encoding="utf-8") as f: f.write(passphrase)
     return path
 
+DENIED="iwd did not let this user do that."   # its D-Bus policy: then Settings asks for the password and does it as root
+# busctl prints a failed call's message, not its error name: both are matched
+_ERRORS=((("net.connman.iwd.Failed","Operation failed"),"It could not connect. Check the password."),
+         (("InvalidFormat","Invalid format"),"The password was not accepted."),
+         (("NotFound","Not found"),"The network is no longer in range."),
+         (("Aborted","Operation aborted"),"Connecting was cancelled."),
+         (("Busy","Operation already in progress"),"Wi-Fi is busy. Try again in a moment."),
+         (("NoAgent","No Agent"),"The network needs a password."),
+         (("AccessDenied","Access denied","not allowed","NotAuthorized"),DENIED))
+
+def explain(err):
+    err=(err or "").strip()
+    for keys,text in _ERRORS:
+        if any(k in err for k in keys): return text
+    return re.sub(r"^Call failed:\s*","",err) or "It did not work."
+
 def _call(path, iface, method, timeout=60):
-    """A D-Bus call to iwd as root -> "" or why it failed, in words."""
+    """A D-Bus call to iwd -> "" or why it failed, in words."""
     r=run(["busctl","--system",f"--timeout={timeout}","call",SERVICE,path,iface,method],timeout=timeout+5)
-    if r.ok: return ""
-    err=(r.err or r.out).strip()
-    for key,text in (("net.connman.iwd.Failed","It could not connect. Check the password."),
-                     ("InvalidFormat","The password was not accepted."),("NotFound","The network is no longer in range."),
-                     ("Aborted","Connecting was cancelled."),("Busy","Wi-Fi is busy. Try again in a moment."),
-                     ("NoAgent","The network needs a password.")):
-        if key in err: return text
-    return err or "It did not work."
+    return "" if r.ok else explain(r.err or r.out)
 
 def _find(ssid):
     objects=parse_objects(_busctl("call",SERVICE,"/","org.freedesktop.DBus.ObjectManager","GetManagedObjects").out)
@@ -178,8 +187,32 @@ def _find(ssid):
     known=known_networks(objects).get(ssid)
     return net,known
 
+def _wait(ssid, known, seconds=6):
+    """Until iwd lists `ssid` as a known network (known=True) or no longer does: it reads and drops its files a moment
+    after they change (inotify), and a file written before it has finished dropping the old one fails to load."""
+    for _ in range(int(seconds/0.25)):
+        if bool(_find(ssid)[1])==known: return True
+        time.sleep(0.25)
+    return False
+
+def _forget_quietly(ssid, written=""):
+    known=_find(ssid)[1]
+    if known: _call(known,f"{SERVICE}.KnownNetwork","Forget",timeout=10)
+    if written:
+        try: os.unlink(written)
+        except OSError: pass
+    _wait(ssid,False)
+
+def _write_psk(path, passphrase):
+    tmp=path+".tvwcs-new"
+    fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+    with os.fdopen(fd,"w",encoding="utf-8") as f: f.write(psk_text(passphrase))
+    os.replace(tmp,path)
+
 def join(ssid, secret_file=""):
-    """Connect to `ssid`, first saving the password in secret_file (removed afterwards) the way iwd keeps it."""
+    """Connect to `ssid` (as root with secret_file: first saving the password in it, which is removed, the way iwd
+    keeps it). A network saved here that fails to connect is forgotten again, and waited for until iwd has let it go,
+    so a retry with the right password straight away loads cleanly."""
     written=""
     if secret_file:
         try:
@@ -187,28 +220,27 @@ def join(ssid, secret_file=""):
         finally:
             try: os.unlink(secret_file)
             except OSError: pass
+        if _find(ssid)[1]: _forget_quietly(ssid)   # an old password for it (a new one is being typed)
         written=os.path.join(STORAGE,storage_name(ssid,"psk"))
         os.makedirs(STORAGE,mode=0o700,exist_ok=True)
-        tmp=written+".tvwcs-new"
-        fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
-        with os.fdopen(fd,"w",encoding="utf-8") as f: f.write(psk_text(passphrase))
-        os.replace(tmp,written)
-        for _ in range(10):   # iwd notices the file (inotify) and lists it as a known network
-            time.sleep(0.5)
-            if _find(ssid)[1]: break
+        _write_psk(written,passphrase)
+        _wait(ssid,True)
     net,_known=_find(ssid)
     if net is None: problem="The network is no longer in range."
-    else: problem=_call(net,f"{SERVICE}.Network","Connect")
-    if problem and written:   # a wrong password is not kept, so it is not tried again by itself
-        _known=_find(ssid)[1]
-        if _known: _call(_known,f"{SERVICE}.KnownNetwork","Forget",timeout=10)
-        try: os.unlink(written)
-        except OSError: pass
+    else:
+        problem=_call(net,f"{SERVICE}.Network","Connect")
+        if problem=="The network needs a password." and written:   # iwd had not loaded the file yet: once more
+            time.sleep(1); _write_psk(written,passphrase); _wait(ssid,True)
+            problem=_call(net,f"{SERVICE}.Network","Connect")
+    if problem and written: _forget_quietly(ssid,written)   # a wrong password is not kept, so it is not tried again by itself
     return problem
 
 def forget(ssid):
     _net,known=_find(ssid)
-    if known: return _call(known,f"{SERVICE}.KnownNetwork","Forget",timeout=10)
+    if known:
+        problem=_call(known,f"{SERVICE}.KnownNetwork","Forget",timeout=10)
+        if not problem: _wait(ssid,False)
+        return problem
     for kind in ("psk","open","8021x"):   # saved, but iwd has not read it
         try: os.unlink(os.path.join(STORAGE,storage_name(ssid,kind)))
         except OSError: pass

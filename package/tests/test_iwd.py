@@ -72,6 +72,29 @@ class FileTests(unittest.TestCase):
             self.assertFalse(os.path.exists(secret)); self.assertEqual(os.listdir(d),[])   # neither the secret nor New.psk is left
             self.assertIn(["busctl","--system","--timeout=10","call","net.connman.iwd","/net/connman/iwd/4e6577_psk","net.connman.iwd.KnownNetwork","Forget"],calls)
             self.assertTrue(any(a[-1]=="Connect" and a[-3]==f"{DEV}/4e6577_psk" for a in calls))
+    def test_busctl_messages_in_words(self):
+        self.assertEqual(iwd.explain("Call failed: Operation failed"),"It could not connect. Check the password.")
+        self.assertEqual(iwd.explain("Call failed: No Agent registered"),"The network needs a password.")
+        self.assertEqual(iwd.explain("Call failed: Access denied"),iwd.DENIED)
+        self.assertEqual(iwd.explain("Call failed: Something new"),"Something new")
+    def test_a_password_iwd_has_not_loaded_yet_is_tried_again(self):
+        connects=[]
+        def fake(argv,timeout=15,**_k):
+            if "GetManagedObjects" in argv:
+                objs=json.loads(json.dumps(OBJECTS))
+                if connects or os.path.exists(os.path.join(d,"New.psk")):
+                    objs["data"][0]["/net/connman/iwd/4e6577_psk"]={"net.connman.iwd.KnownNetwork":{"Name":v("s","New"),"Type":v("s","psk")}}
+                objs["data"][0][f"{DEV}/4e6577_psk"]={"net.connman.iwd.Network":{"Name":v("s","New"),"Type":v("s","psk"),"Device":v("o",DEV)}}
+                return Result(True,0,json.dumps(objs),"")
+            if argv[-1]=="Connect":
+                connects.append(1)
+                return Result(len(connects)>1,1,"","" if len(connects)>1 else "Call failed: No Agent registered")
+            return Result(True,0,"","")
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(iwd,"STORAGE",d), mock.patch.object(iwd,"run",fake), \
+             mock.patch.object(iwd.time,"sleep",lambda _s:None):
+            secret=os.path.join(d,"secret"); open(secret,"w").write("right password")
+            self.assertEqual(iwd.join("New",secret),""); self.assertEqual(len(connects),2)
+            self.assertEqual(open(os.path.join(d,"New.psk")).read(),"[Security]\nPassphrase=right password\n")
     def test_root_argv_and_usage(self):
         argv=iwd.root_argv("forget","Home")
         self.assertEqual(argv[-4:],["-m","tvwcs.control_iwd","forget","Home"])
