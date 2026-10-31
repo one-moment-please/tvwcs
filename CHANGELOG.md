@@ -2,7 +2,7 @@
 
 ## 5.12.0 — 2026-10-30
 
-- **Channel numbers have two digits,** 00 to 99, instead of three. Settings is channel 00. **Settings › Options › Channel number digits** chooses 1 to 4 digits; the Quick Menu's search field, the digit boxes for setting a channel, the numbers in every list and typing a full number to open its channel follow it.
+- **Channel numbers have two digits,** 00 to 99, instead of three. Settings is channel 00. **Settings › Appearance › Channel number digits** chooses 1 to 4 digits; the Quick Menu's search field, the digit boxes for setting a channel, the numbers in every list and typing a full number to open its channel follow it.
   - Updating keeps three digits when an app already has a channel over 99, so no channel is lost. Otherwise it moves to two (channel 007 is now 07).
   - Choosing fewer digits than some channels need asks first and names them; their numbers are then removed.
 

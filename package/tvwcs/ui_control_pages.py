@@ -338,7 +338,7 @@ class AppearancePage(_ConfigPage):
             self.win.confirm("Remove the longer channel numbers?",
                              f"With {digits_label(digits).lower()}, channels run from {channel_range(digits)}. "
                              f"{'This channel is' if len(lost)==1 else 'These channels are'} too long and will be removed: {names}. "
-                             "You can give those apps new numbers afterwards.",
+                             f"You can give {'that app a new number' if len(lost)==1 else 'those apps new numbers'} afterwards.",
                              "Remove",lambda:self.change(lambda s:s.set_channel_digits(digits)))
         self.win.choose_option("Channel number digits",[(d,f"{digits_label(d)}: {channel_range(d)}") for d in CHANNEL_DIGITS],
                                self.state.settings["channel_digits"],chosen)
