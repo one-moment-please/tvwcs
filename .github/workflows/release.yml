@@ -70,6 +70,7 @@ jobs:
           files: |
             ${{ steps.build.outputs.file }}
             resources/tvwcs.tar.gz
+            install.sh
             resources/*.deb
             resources/arch/PKGBUILD
             resources/arch/tvwcs.install

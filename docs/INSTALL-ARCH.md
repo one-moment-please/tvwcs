@@ -7,7 +7,7 @@ TVWCS runs on Arch Linux and on systems built on it (EndeavourOS, CachyOS, Manja
 The installer does it all, asking its questions first (which version, logging in automatically, adding TVWCS to your usual sway session). Once you agree, it downloads the release's PKGBUILD, builds the package with `makepkg` as you, and installs it with pacman (installing `fakeroot` first if it's missing). Run it in a terminal, as your own user (not root), who can use `sudo`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
+curl -fsSL https://github.com/one-moment-please/tvwcs/releases/latest/download/install.sh | bash
 ```
 
 If pacman says it can't find a package TVWCS needs, update the system first (`sudo pacman -Syu`) and run it again.

@@ -49,7 +49,7 @@ Debian and its family (Ubuntu LTS, Mint, Pop!_OS, Raspberry Pi OS) with apt, and
 - **Arch:** `scripts/build-arch.sh` fills in `packaging/arch/PKGBUILD.in` and `tvwcs.install` with the version and the source tarball's checksum. `--package` also runs makepkg.
 - **What's installed:** the Python package in `/usr/lib/tvwcs`, `/usr/bin/tvwcs`, `/usr/bin/tvwcs-session` (it makes `~/.config/tvwcs/sway-session.conf` from `/etc/sway/config` the first time, writes default hotkeys and runs sway), the session entry `tvwcs-sway.desktop`, `/usr/share/tvwcs/tvwcs.conf` and the Settings launcher. Installing changes no settings.
 - **Login:** TVWCS has no login screen of its own and never installs one. `loginscreen.py` sets the automatic login where the login screen in use keeps it (greetd's initial session, LightDM's or SDDM's settings), or without one a console autologin (`getty@tty1` drop-in plus a `~/.profile` block).
-- **`install.sh`** (POSIX sh, at the repository root) runs in a terminal, on its own (`wget -qO- …/main/install.sh | bash`, then it downloads the chosen release) or from an unpacked `tvwcs.tar.gz`. It asks everything first, then installs with apt, or on Arch builds the PKGBUILD with makepkg and installs it with pacman. `--remove` removes the package and TVWCS's changes to sway, greetd and the console login.
+- **`install.sh`** (POSIX sh, at the repository root) runs in a terminal, on its own (`wget -qO- …/releases/latest/download/install.sh | bash`, then it downloads the chosen release; each release has its own copy attached, so an installer change reaches new installs only once its release is promoted) or from an unpacked `tvwcs.tar.gz`. It asks everything first, then installs with apt, or on Arch builds the PKGBUILD with makepkg and installs it with pacman. `--remove` removes the package and TVWCS's changes to sway, greetd and the console login.
 - **Self-update** (`selfupdate.py`, Debian only) downloads a release's .deb and installs it with `apt-get install` as root. On Arch it only says a release is out.
 
 ## Where things live
@@ -98,10 +98,12 @@ CI (`.github/workflows/ci.yml`) runs the unit tests on Ubuntu, and on Arch also 
 
 Versions are `MAJOR.MINOR.PATCH`: MAJOR for big or breaking changes, MINOR for new features, PATCH for fixes.
 
-1. **Bump the version** in `VERSION` and add a dated section at the top of `CHANGELOG.md`.
+1. **Bump the version** in `VERSION` and add a dated section at the top of `CHANGELOG.md`. A change to docs, tests or CI only can skip this: without a new version, nothing is published.
 2. **Merge to `main`.** If that version has no release yet, `.github/workflows/release.yml` runs the tests, builds everything above and publishes it as the **prerelease** `v<version>`. TVWCS offers it only to people who turned on **Include prereleases**.
 3. **Test it** on a TV computer if it has changes that couldn't be checked before merging.
 4. **Promote it** with the **Promote** workflow (Actions tab) and the tag, such as `v5.13.0`. It marks the release **latest**, which Check for TVWCS updates, Roll back and the installer use by default.
+
+**Installer:** README installs with `releases/latest/download/install.sh`, the copy attached to the latest release, so `install.sh` on `main` reaches new installs only once its release is promoted.
 
 Other ways: a push to the `beta` branch builds a prerelease tagged `beta-<run number>`; a tag such as `v5.13.0` pushed by hand is published as latest straight away.
 

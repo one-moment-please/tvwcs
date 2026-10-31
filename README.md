@@ -37,9 +37,9 @@ TVWCS has two modes:
   </tr>
 </table>
 
-### Demo videos
+### Demos
 
-The apps in these videos are mockups made for the demo (a window with a still picture), labelled MOCKUP on screen. The previews below play on their own; click one to download the full-quality video (MP4).
+The apps in these demos are mockups (a window with a still picture), labelled MOCKUP on screen.
 
 <table>
   <tr>
@@ -47,12 +47,12 @@ The apps in these videos are mockups made for the demo (a window with a still pi
     <th width="50%">Desktop mode</th>
   </tr>
   <tr>
-    <td valign="top"><a href="https://github.com/one-moment-please/tvwcs/raw/main/assets/demo-tv-mode.mp4"><img src="assets/demo-tv-mode.gif" alt="The TV mode demo" width="100%"></a></td>
-    <td valign="top"><a href="https://github.com/one-moment-please/tvwcs/raw/main/assets/demo-desktop-mode.mp4"><img src="assets/demo-desktop-mode.gif" alt="The desktop mode demo" width="100%"></a></td>
+    <td valign="top"><img src="assets/demo-tv-mode.gif" alt="The TV mode demo" width="100%"></td>
+    <td valign="top"><img src="assets/demo-desktop-mode.gif" alt="The desktop mode demo" width="100%"></td>
   </tr>
   <tr>
     <td valign="top">With the remote: open an app by its channel number, open a second one by channel, go back to the first from the Quick Menu's list, and open a third by searching its name. Each app gets a workspace of its own.</td>
-    <td valign="top">With the keyboard and mouse, in the light theme: open apps by name so they tile side by side, fill a second workspace, switch between workspaces from the Quick Menu, then close one app and a whole workspace, unfold the power options above ⏻, and open Applications from ⊞ in the corner.</td>
+    <td valign="top">With the keyboard, in the light theme: open apps by name so they tile side by side, fill a second workspace, switch between workspaces from the Quick Menu, close one app and then a whole workspace, open Applications from ⊞ in the corner, and unfold the power options above ⏻.</td>
   </tr>
 </table>
 
@@ -68,10 +68,10 @@ The apps in these videos are mockups made for the demo (a window with a still pi
 Run the installer in a terminal, as your own user (not root):
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash
+wget -qO- https://github.com/one-moment-please/tvwcs/releases/latest/download/install.sh | bash
 ```
 
-(or `curl -fsSL https://raw.githubusercontent.com/one-moment-please/tvwcs/main/install.sh | bash`). Over SSH, sign in with `ssh -t` so it can ask its questions. It asks everything first and changes nothing until you agree to its list of what it will do:
+(or `curl -fsSL https://github.com/one-moment-please/tvwcs/releases/latest/download/install.sh | bash`). Over SSH, sign in with `ssh -t` so it can ask its questions. It asks everything first and changes nothing until you agree to its list of what it will do:
 
 1. **Which version:** the latest release, the prerelease when there is one, or one of the two releases before the latest. (`TVWCS_VERSION=latest`, `package` or a version such as `5.13.0` answers this for scripted installs.)
 2. **Logging in automatically into TVWCS.** With no login screen, it offers to log you in on the first text console at startup, straight into TVWCS. With greetd, LightDM or SDDM, it offers their automatic login. With another login screen, choose **TVWCS** there.
