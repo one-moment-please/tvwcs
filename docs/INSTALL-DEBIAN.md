@@ -77,9 +77,9 @@ The rest is done from the other computer.
    | **Log … in automatically into TVWCS at startup?** | Enter (yes). On a fresh Debian with no desktop there is no login screen, so the first text console logs you in and starts TVWCS. |
    | **Go ahead?** | Enter (yes). sudo asks for your password. |
 
-5. Restart (`sudo reboot`). The computer logs straight into TVWCS. To log in by hand instead, open **Settings › User** (channel 000) and turn off **Log in automatically after startup**; the text console then asks for your user name and password, and typing `tvwcs` starts TVWCS. Anyone who switches the computer on gets your session with the automatic login, which suits a TV.
+5. Restart (`sudo reboot`). The computer logs straight into TVWCS. To log in by hand instead, open **Settings › User** (channel 00) and turn off **Log in automatically after startup**; the text console then asks for your user name and password, and typing `tvwcs` starts TVWCS. Anyone who switches the computer on gets your session with the automatic login, which suits a TV.
 
-Type channel 000 in the Quick Menu to open **Settings**.
+Type channel 00 in the Quick Menu to open **Settings**.
 
 ## 5. Optional: sign in with a key instead of a password
 

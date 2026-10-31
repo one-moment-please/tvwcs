@@ -1,11 +1,17 @@
 # Changelog
 
-## 5.12.0 — 2026-10-30
+## 5.13.0 — 2026-10-31
 
 - **Wi-Fi through iwd.** On a computer whose network NetworkManager doesn't run, such as Arch with systemd-networkd and iwd, Settings › Network lists the Wi-Fi networks iwd sees and joins and forgets them. The new `control_iwd.py` reads iwd over D-Bus (`busctl`) as you. Joining, connecting, leaving and forgetting run as root (iwd's D-Bus policy only promises that to root), so each asks for your password. A password is saved where iwd keeps it (`/var/lib/iwd/<network>.psk`) and handed over in a file only you can read, never on a command line. A network that doesn't connect the first time is forgotten again, so a mistyped password isn't kept.
 - **The installer works on Arch.** `install.sh` asks the same questions there, then downloads the release's PKGBUILD, builds it with makepkg as you (installing fakeroot first if it's missing) and installs it with pacman. As before, it downloads and changes nothing until you agree to its list. It only offers releases that have a PKGBUILD (5.11.0 on), refuses to run as root on Arch (makepkg won't build as root), and `--remove` uses pacman there.
 - **Upgrading from TVWCS 4.x is gone** from the installer: its old copy, login screen, console login and include-line handling, and the `--missing` option 4.x's updater asked.
 - **DHCP or set by hand.** Without NetworkManager, the Network page says for each connected port whether DHCP gave its address, and what set it up (systemd-networkd, dhcpcd or iwd). An address set by hand gets a warning saying where to change it from the command line, since Settings can't change it there.
+
+## 5.12.0 — 2026-10-30
+
+- **Channel numbers have two digits,** 00 to 99, instead of three. Settings is channel 00. **Settings › Appearance › Channel number digits** chooses 1 to 4 digits; the Quick Menu's search field, the digit boxes for setting a channel, the numbers in every list and typing a full number to open its channel follow it.
+  - Updating keeps three digits when an app already has a channel over 99, so no channel is lost. Otherwise it moves to two (channel 007 is now 07).
+  - Choosing fewer digits than some channels need asks first and names them; their numbers are then removed.
 
 ## 5.11.0 — 2026-10-30
 

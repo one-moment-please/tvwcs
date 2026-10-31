@@ -1,5 +1,5 @@
 """The TVWCS window: Quick Menu | Applications, remote-friendly navigation and dialogs.
-TVWCS's own options are a page of the Settings app (channel 000, or a status panel's settings button)."""
+TVWCS's own options are a page of the Settings app (channel 0, or a status panel's settings button)."""
 from __future__ import annotations
 import sys, threading, types
 import gi
@@ -10,7 +10,7 @@ from gi.repository import Gdk, GLib, Gtk
 from tvwcs import control_bluetooth, control_network, control_sound, power, quick_status, servermode
 from tvwcs.control_datetime import clock_text, short_date_text
 from tvwcs.hotkeys import HotkeyCapture, describe, is_navigation
-from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, corner_right, corner_top, extract_badge, profile_detail, row_description, search_items, startup_choices
+from tvwcs.model import LAUNCH_NEW_WORKSPACE, LAUNCH_SAME, MAIN_TITLE, channel_range, corner_right, corner_top, extract_badge, profile_detail, row_description, search_items, startup_choices
 from tvwcs.system_actions import power_menu
 from tvwcs.theme import render_css
 from tvwcs import cursor
@@ -18,8 +18,7 @@ from tvwcs.workspaces import quick_list
 from tvwcs.widgets import (KEEP_LTR, NO_ICON, NavGroup, PointerWatch, S, app_icon, child_marker, clear_box, flip_children, glyph, held_modifiers, icon_button, Marquee, mirror, muted_label, scroll_to_show, section_title, usable, use_retro)
 
 NAME_SCROLL_DELAY=3000                   # ms a selected Quick Menu row waits before a name too long to fit scrolls by
-CHANNEL_DIGITS=3                         # typing this many digits of a channel number ...
-CHANNEL_DELAY=1000                       # ... and nothing else for this many ms launches that channel
+CHANNEL_DELAY=1000                       # a full channel number and nothing else for this many ms launches that channel
 
 def pointer_only(*widgets):
     """A click on these buttons does not move the remote's selection onto them: the mouse and the D-pad are
@@ -150,8 +149,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.results_scroll.get_vadjustment().connect("changed",self._keep_at_bottom)
         self.search_entry=Gtk.SearchEntry(); self.search_entry.connect("search-changed",lambda *_:self._refresh_search_results()); self.search_entry.connect("activate",self._activate_search)
         self.search_entry.connect("changed",self._search_typed)
-        # On a TV the field is three characters wide, with what to type beside it; it stretches once letters (or a fourth
-        # digit) show it is a search. At a desk it is one full-width field.
+        # On a TV the field is as wide as a channel number, with what to type beside it; it stretches once letters (or
+        # one digit too many) show it is a search. At a desk it is one full-width field.
         line=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); line.append(self.search_entry)
         self.channel_hint=Gtk.Label(label="Channel number or search"); self.channel_hint.add_css_class("channel-hint")
         self.channel_hint.set_xalign(0); self.channel_hint.set_hexpand(True); self.channel_hint.set_wrap(True); line.append(self.channel_hint)
@@ -175,17 +174,17 @@ class TVWCSWindow(Gtk.ApplicationWindow):
 
     def _shape_search(self):
         """TV: a narrow channel field with its hint while the text could still be a channel number (empty, or up to
-        three digits); the full width otherwise. Desktop: always the full width, without the hint."""
-        e=self.search_entry; q=e.get_text(); tv=self.app.tv
-        narrow=tv and (q=="" or (q.isdigit() and len(q)<=CHANNEL_DIGITS))
-        if getattr(self,"_search_narrow",None)==narrow: return
-        self._search_narrow=narrow
+        the channel_digits setting's digits); the full width otherwise. Desktop: always the full width, without the hint."""
+        e=self.search_entry; q=e.get_text(); tv=self.app.tv; digits=self.app.store.channel_digits()
+        narrow=tv and (q=="" or (q.isdigit() and len(q)<=digits))
+        if getattr(self,"_search_narrow",None)==(narrow,digits): return
+        self._search_narrow=(narrow,digits)
         e.set_hexpand(not narrow); e.set_halign(Gtk.Align.START if narrow else Gtk.Align.FILL)
-        # three digits, + a little for the field's padding (the theme hides the ✕ while narrow)
-        e.set_width_chars(CHANNEL_DIGITS+1 if narrow else -1); e.set_max_width_chars(CHANNEL_DIGITS+1 if narrow else -1)
+        # the digits, + a little for the field's padding (the theme hides the ✕ while narrow)
+        e.set_width_chars(digits+1 if narrow else -1); e.set_max_width_chars(digits+1 if narrow else -1)
         (e.add_css_class if narrow else e.remove_css_class)("channel-entry")
         (e.add_css_class if tv else e.remove_css_class)("tv-search")   # the app buttons' fill, no magnifier
-        e.set_placeholder_text("_"*CHANNEL_DIGITS if narrow else "Search, or type a channel number")
+        e.set_placeholder_text("_"*digits if narrow else "Search, or type a channel number")
         self.channel_hint.set_visible(narrow)
 
     # ---------------------------------------------------------- the bottom: clock, status icons and power
@@ -542,7 +541,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         main=Gtk.Button(); main.add_css_class("launch-row"); main.set_hexpand(True)
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12)); self._launch_slot(p,inner,app_icon(app.icon if app else None,p.name,32),32)
         if p.channel is not None:
-            ch=Gtk.Label(label=f"{p.channel:03d}"); ch.add_css_class("channel-number"); inner.append(ch)
+            ch=Gtk.Label(label=self.app.store.channel_text(p.channel)); ch.add_css_class("channel-number"); inner.append(ch)
         inner.append(Marquee(self.app.profile_name(p,app),delay=NAME_SCROLL_DELAY).follow(main))
         if p.pin_hash: inner.append(self._lock_mark())
         inner.append(self._star_mark())
@@ -783,7 +782,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         main=Gtk.Button(); main.set_hexpand(True); main.add_css_class("launch-row")
         inner=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(12))
         self._launch_slot(p,inner,app_icon(app.icon if app else None,p.name,32) if (primary or lineup) else child_marker(32),32)
-        ch=Gtk.Label(label=f"{p.channel:03d}" if p.channel is not None else ""); ch.set_width_chars(4); ch.set_xalign(0); ch.add_css_class("channel-number"); inner.append(ch)
+        ch=Gtk.Label(label=self.app.store.channel_text(p.channel) if p.channel is not None else ""); ch.set_width_chars(self.app.store.channel_digits()+1); ch.set_xalign(0); ch.add_css_class("channel-number"); inner.append(ch)
         name=Gtk.Label(label=self.app.profile_name(p,app)); name.set_xalign(0); name.set_ellipsize(3); inner.append(name)
         # Each profile has its own description; without one the main profile shows its application's, another its launch options.
         description=row_description(p,app,primary,self.app.store.app_descriptions.get(p.desktop_id,""))
@@ -865,7 +864,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.results_scroll.set_visible(bool(q.strip()))
         self._shape_search()
         if not q.strip(): self._search_results=[]; self.app.fit_quick_menu(); return
-        self._search_results=search_items(q,self.app.store.profiles,self.app.catalogue.by_id(),self.app.wm.windows())[:12]
+        self._search_results=search_items(q,self.app.store.profiles,self.app.catalogue.by_id(),self.app.wm.windows(),self.app.store.channel_digits())[:12]
         if not self._search_results:
             self.results_box.append(muted_label("No matches. Try an app name, profile name, channel number, or window title.")); self._mirror(self.results_box); self.app.fit_quick_menu(); return
         for i,result in enumerate(self._search_results):
@@ -896,10 +895,10 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             if p: self.app.launch_profile(p); return
         if self._search_results: self.app.activate_result(self._search_results[self._selected_result])
     def _search_typed(self,*_):
-        """A full channel number (three digits) left alone for a second launches its channel, without Enter."""
+        """A full channel number (all its digits) left alone for a second launches its channel, without Enter."""
         if self._channel_source: GLib.source_remove(self._channel_source); self._channel_source=0
         q=self.search_entry.get_text().strip()
-        if len(q)==CHANNEL_DIGITS and q.isdigit() and any(p.channel==int(q) for p in self.app.store.profiles):
+        if len(q)==self.app.store.channel_digits() and q.isdigit() and any(p.channel==int(q) for p in self.app.store.profiles):
             self._channel_source=GLib.timeout_add(CHANNEL_DELAY,self._launch_typed_channel,q)
     def _launch_typed_channel(self,q):
         self._channel_source=0
@@ -1182,7 +1181,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             self.app.set_use(use)
             self.show_message(f"{self.guide_hint()} to see every application. Press ☆ beside the ones "
                               "you use most to add them to this menu, and ✎ to give one a channel number or a hotkey. Everything else is in "
-                              "Settings, channel 000.",
+                              f"Settings, channel {self.app.store.channel_text(0)}.",
                               "Welcome to TVWCS",done)
         self._begin_modal(); self._title("Welcome to TVWCS")
         self.modal_card.append(muted_label("Where is this computer used? You can change this later in Settings."))
@@ -1248,21 +1247,22 @@ class TVWCSWindow(Gtk.ApplicationWindow):
         self.ask_pin(profile,st["on_ok"],"Wrong PIN." if status=="wrong" else f"Too many wrong tries. Try again in {wait} seconds.")
 
     def ask_channel(self,title,callback,current="",back=None):
-        """A channel number in three boxes of one digit each, typed on the keypad (or the remote's number keys). The
-        boxes start empty, so a new number replaces the old one without deleting it first. callback(text) gets the
-        digits typed ("7" is channel 007), the current number when OK is pressed with nothing typed, or "" for No channel."""
-        self._begin_modal(); self._title(title)
-        m=muted_label("000 to 999. Type it in the Quick Menu to open this app."+(f" Now: {int(current):03d}." if str(current).strip().isdigit() else ""))
+        """A channel number in a box per digit (the channel_digits setting), typed on the keypad (or the remote's number
+        keys). The boxes start empty, so a new number replaces the old one without deleting it first. callback(text) gets
+        the digits typed ("7" is channel 07), the current number when OK is pressed with nothing typed, or "" for No channel."""
+        self._begin_modal(); self._title(title); digits=self.app.store.channel_digits()
+        m=muted_label(f"{channel_range(digits)}. Type it in the Quick Menu to open this app."
+                      +(f" Now: {self.app.store.channel_text(int(current))}." if str(current).strip().isdigit() else ""))
         m.set_margin_bottom(S(8)); self.modal_card.append(m)
         boxes=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(8)); boxes.set_halign(Gtk.Align.CENTER); boxes.set_margin_bottom(S(10)); cells=[]
-        for _ in range(3):
+        for _ in range(digits):
             c=Gtk.Label(); c.add_css_class("digit-box"); boxes.append(c); cells.append(c)
         self.modal_card.append(boxes)
         cancelled=back or self.close_modal
         def submit():
             typed=self._chan["digits"]; self.close_modal(); callback(typed if typed else str(current or ""))
         def none(): self.close_modal(); callback("")
-        self._chan={"digits":"","cells":cells}; self._chan_refresh()
+        self._chan={"digits":"","cells":cells,"length":digits}; self._chan_refresh()
         groups=[]
         def key(text,handler,css=None):
             b=Gtk.Button(label=text); b.add_css_class("pin-key")
@@ -1286,8 +1286,8 @@ class TVWCSWindow(Gtk.ApplicationWindow):
             c.set_text(digits[i] if i<len(digits) else "–")
             (c.add_css_class if i==len(digits) else c.remove_css_class)("current")
     def _chan_press(self,digit):
-        if len(self._chan["digits"])<3: self._chan["digits"]+=digit; self._chan_refresh()
-        if len(self._chan["digits"])==3 and self._chan.get("ok") is not None: self._chan["ok"].grab_focus()   # complete: OK is next
+        if len(self._chan["digits"])<self._chan["length"]: self._chan["digits"]+=digit; self._chan_refresh()
+        if len(self._chan["digits"])==self._chan["length"] and self._chan.get("ok") is not None: self._chan["ok"].grab_focus()   # complete: OK is next
     def _chan_back(self):
         self._chan["digits"]=self._chan["digits"][:-1]; self._chan_refresh()
     def _chan_key(self,keyval):
@@ -1432,7 +1432,7 @@ class TVWCSWindow(Gtk.ApplicationWindow):
                 a=apps.get(p.desktop_id); b=Gtk.Button(); b.add_css_class("launch-row")
                 row=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=S(10)); row.append(app_icon(a.icon if a else None,p.name,28))
                 if p.channel is not None:
-                    ch=Gtk.Label(label=f"{p.channel:03d}"); ch.add_css_class("channel-number"); row.append(ch)
+                    ch=Gtk.Label(label=self.app.store.channel_text(p.channel)); ch.add_css_class("channel-number"); row.append(ch)
                 l=Gtk.Label(label=p.name); l.set_xalign(0); l.set_hexpand(True); l.set_ellipsize(3); row.append(l)
                 detail=profile_detail(p,a)
                 if detail:

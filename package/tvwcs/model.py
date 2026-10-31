@@ -78,8 +78,14 @@ ACCENT_NAMES={"#0078d7":"Blue","#e81123":"Red","#00b294":"Teal","#ff8c00":"Orang
 def accent_name(colour) -> str: return ACCENT_NAMES.get((colour or "").lower(),colour or "")
 # Settings > Appearance > Screen edge margin, in px at desktop scale: many TVs crop the picture's edges (overscan).
 MARGIN_RANGE=(0,120)
-# Channels run from 000 to 999. Channel 000 goes to TVWCS's own Settings app, once, on a new or updated install.
-CHANNEL_MIN,CHANNEL_MAX=0,999
+# Channel numbers have 1 to 4 digits (the channel_digits setting, 2 by default): 00 to 99 with two. Channel 0 goes to
+# TVWCS's own Settings app, once, on a new or updated install.
+CHANNEL_DIGITS=(1,2,3,4)
+DEFAULT_CHANNEL_DIGITS=2
+CHANNEL_MIN,CHANNEL_MAX=0,10**max(CHANNEL_DIGITS)-1   # what any number of digits allows
+def channel_max(digits): return 10**digits-1
+def channel_text(number, digits): return f"{number:0{digits}d}"   # 7 with two digits: "07"
+def channel_range(digits): return f"{channel_text(0,digits)} to {channel_text(channel_max(digits),digits)}"
 SETTINGS_DESKTOP_ID="com.tvwcs.ControlPanel.desktop"
 # Settings > Appearance > Quick Menu corner: the corner of the screen the Quick Menu sits in. Its layout mirrors to
 # match: on the right its rows run right to left (Applications opens to its left), at the top its lists grow downwards.
@@ -138,7 +144,8 @@ DEFAULT_SETTINGS={
     "theme":"dark",                 # THEMES: the Modern theme's light or dark, passed on to applications that follow the desktop's colour scheme
     "wallpaper":DEFAULT_WALLPAPER,  # WALLPAPERS: the background where no application is open
     "keyboard":"hidden",            # KEYBOARDS: the on-screen keyboard as it was last left (hidden, full or the number pad)
-    "channel_zero_done":False,      # channel 000 has been given to Settings (once; afterwards it is the user's)
+    "channel_digits":DEFAULT_CHANNEL_DIGITS,   # CHANNEL_DIGITS: how many digits a channel number has
+    "channel_zero_done":False,      # channel 0 has been given to Settings (once; afterwards it is the user's)
     "audio_boost":False,            # Settings > Sound: volumes may go over 100% (else they stop there)
     "lock_at_start":False,          # Settings > User: a TVWCS session starts locked (for the automatic login), see lockscreen.py
     "idle":{"screen_off":0,"lock":0,"sleep":0},   # seconds without input before each (0 never), see power.py
@@ -195,6 +202,7 @@ def _clean_settings(raw) -> dict:
     if raw.get("quick_corner") in CORNERS: s["quick_corner"]=raw["quick_corner"]
     if isinstance(raw.get("wallpaper"),str) and raw["wallpaper"].lower() in WALLPAPERS: s["wallpaper"]=raw["wallpaper"].lower()
     if raw.get("keyboard") in KEYBOARDS: s["keyboard"]=raw["keyboard"]
+    if raw.get("channel_digits") in CHANNEL_DIGITS and not isinstance(raw["channel_digits"],bool): s["channel_digits"]=raw["channel_digits"]
     for key in ("close_on_click_outside","hide_options_buttons","update_prereleases","clock_24h","channel_zero_done",
                 "audio_boost","lock_at_start"):
         if isinstance(raw.get(key),bool): s[key]=raw[key]
@@ -240,6 +248,12 @@ class ConfigStore:
                                                   raw["pin_hash"] if valid_hash(raw.get("pin_hash")) else "",raw["pin_scope"] if raw.get("pin_scope") in PIN_SCOPES else PIN_LAUNCH,_clean_text(raw.get("description")),
                                                   raw["hotkey"] if isinstance(raw.get("hotkey"),str) and valid_spec(raw["hotkey"]) else ""))
             except (KeyError, TypeError, ValueError, AttributeError): continue
+        if not (isinstance(data.get("settings"),dict) and "channel_digits" in data["settings"]):
+            # Before 5.12 every channel had three digits: keep enough of them for the channels already set
+            top=max((p.channel for p in self.profiles if p.channel is not None),default=0)
+            self.settings["channel_digits"]=max(DEFAULT_CHANNEL_DIGITS,len(str(top)))
+        for p in self.profiles:
+            if p.channel is not None and p.channel>self.channel_max(): p.channel=None
         self._deduplicate_channels(); self._deduplicate_hotkeys()
     def save(self):
         self.path.parent.mkdir(parents=True,exist_ok=True)
@@ -266,13 +280,24 @@ class ConfigStore:
         if self._give_settings_channel_zero(): changed=True
         if changed: self.save()
     def _give_settings_channel_zero(self):
-        """Channel 000 opens Settings: given once (a new install, or the first start after updating to 3.1), to the
+        """Channel 0 opens Settings: given once (a new install, or the first start after updating to 3.1), to the
         Settings app's main profile, when no other profile has it. The user may change it afterwards."""
         if self.settings["channel_zero_done"]: return False
         main=next((p for p in self.for_app(SETTINGS_DESKTOP_ID) if not p.command and not p.desktop_action),None)
         if main is None: return False   # Settings is not installed (yet): try again next time
         if not any(p.channel==0 for p in self.profiles): main.channel=0
         self.settings["channel_zero_done"]=True; return True
+    def channel_digits(self): return self.settings["channel_digits"]
+    def channel_max(self): return channel_max(self.channel_digits())
+    def channel_text(self, number): return channel_text(number,self.channel_digits())
+    def too_long_channels(self, digits):
+        """The profiles whose channel numbers do not fit in this many digits, lowest number first."""
+        return sorted((p for p in self.profiles if p.channel is not None and p.channel>channel_max(digits)),key=lambda p:p.channel)
+    def set_channel_digits(self, digits):
+        """Channel numbers get this many digits; those too long for them are removed."""
+        if digits not in CHANNEL_DIGITS: raise ValueError("A channel number has 1 to 4 digits.")
+        for p in self.too_long_channels(digits): p.channel=None
+        self.settings["channel_digits"]=digits
     def get(self, profile_id):
         return next((p for p in self.profiles if p.id==profile_id),None)
     def for_app(self, desktop_id):
@@ -281,7 +306,8 @@ class ConfigStore:
     def favorites(self): return sorted((p for p in self.profiles if p.favorite),key=lambda p:(p.channel is None,p.channel or 0,p.name.casefold()))
     def set_profile(self, profile: LaunchProfile):
         if profile.channel is not None:
-            if not CHANNEL_MIN <= int(profile.channel) <= CHANNEL_MAX: raise ValueError("The channel must be from 000 to 999.")
+            if not CHANNEL_MIN <= int(profile.channel) <= self.channel_max():
+                raise ValueError(f"The channel must be from {channel_range(self.channel_digits())}.")
             for other in self.profiles:
                 if other.id != profile.id and other.channel == profile.channel:
                     raise ValueError(f"Channel {profile.channel} is already assigned to {other.name}.")
@@ -425,7 +451,7 @@ def extract_badge(title, urgent=False):
 
 # ---------------------------------------------------------------- search
 
-def search_items(query, profiles, applications, windows):
+def search_items(query, profiles, applications, windows, digits=DEFAULT_CHANNEL_DIGITS):
     """Return tagged search results as dictionaries; search is case-insensitive."""
     q=(query or "").strip().casefold()
     results=[]
@@ -442,7 +468,7 @@ def search_items(query, profiles, applications, windows):
         for p in profiles:
             if p.channel==number:
                 a=applications.get(p.desktop_id)
-                results.append({"kind":"profile","id":p.id,"label":f"{p.channel:03d}  {p.name}","detail":detail_of(p,a),"profile":p})
+                results.append({"kind":"profile","id":p.id,"label":f"{channel_text(p.channel,digits)}  {p.name}","detail":detail_of(p,a),"profile":p})
     else:
         for p in profiles:
             a=applications.get(p.desktop_id)
@@ -450,7 +476,7 @@ def search_items(query, profiles, applications, windows):
             detail=detail_of(p,a)
             hay=" ".join([label,a.name if a else "",detail,p.desktop_id,p.command]).casefold()
             if not q or q in hay:
-                results.append({"kind":"profile","id":p.id,"label":(f"{p.channel:03d}  " if p.channel is not None else "")+label,"detail":detail,"profile":p})
+                results.append({"kind":"profile","id":p.id,"label":(f"{channel_text(p.channel,digits)}  " if p.channel is not None else "")+label,"detail":detail,"profile":p})
         for w in windows:
             hay=f"{w.get('title','')} {w.get('class','')} {w.get('instance','')}".casefold()
             if not q or q in hay: results.append(window_result(w))
