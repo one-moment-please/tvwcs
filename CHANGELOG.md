@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.14.0 — 2026-10-31
+
+- **The installer comes from the latest release.** Each release now has `install.sh` attached, and the README, the install guides, Settings and the installer's own hints download it from `releases/latest/download/install.sh` instead of the `main` branch. A change to the installer now reaches new installs only once its release is marked latest, like the package it installs.
+- **New README screenshots and demos,** for the current Quick Menu (two-digit channels, status rows) and Settings › Appearance. The demos are GIFs only: the MP4 copies are gone from the repository, since the GIFs show the whole demo. They are recorded in a headless sway session with mockup apps.
+- PROJECT_OVERVIEW.md: a change to docs, tests or CI only can skip the version bump. pyproject.toml no longer describes TVWCS as an i3 app.
+
 ## 5.13.1 — 2026-10-31
 
 - **Shorter docs.** README's install, update and removal steps are one section, with the installer's questions in it, and the Quick Menu and Settings descriptions are tighter. PROJECT_OVERVIEW.md is now only for people working on TVWCS (how it works inside, the code, releases, sending it to the AUR), brought up to date for sway, Arch and server mode, and it takes in docs/RELEASES.md. The Debian guide no longer mentions the startup logo.
