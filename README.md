@@ -126,13 +126,13 @@ Most remotes act like a keyboard. TVWCS names their keys in its hints: **OK** is
 | **OK** / Enter | Open, switch to or choose the selected item |
 | **Back** / Esc | Go back one step |
 | **OK** on the empty search field | Open the on-screen keyboard (or number keypad) |
-| Any letter or digit | Search. A channel number (000 to 999) then OK opens that channel. On a TV the search field starts three digits wide; typing a letter or a fourth digit widens it |
+| Any letter or digit | Search. A channel number (00 to 99) then OK opens that channel, or typing all its digits and waiting a second. On a TV the search field starts as wide as a channel number; typing a letter or one digit too many widens it |
 | **←** on a Quick Menu row (or right-click) | Open that row's menu |
 
 - **Quick Menu layout:** it sits in the bottom-left corner, only as tall as what it shows. **Settings › Appearance › Quick Menu corner** puts it in any corner, mirrored to match: in a right-hand corner it runs right to left (← and → swap, and Applications opens to its left); in a top corner the status rows are at the top and its lists, search results and row options open downwards. What follows describes the bottom-left corner. Your favorites and open apps (one list, favorites first), search and the status row are at the bottom, with search results appearing above the search field. Favorites have a grey ★ and open apps a thin band down their left side, so a favorite that is open (shown once, in its place) has both. A name too long to fit scrolls by after it has been selected for 3 seconds. In TV mode the search field is three characters wide and shows **___** for a channel number. The date is short, such as "Sat, Oct 17".
 - **Row options (⋯):** they unfold upwards, just above their row and indented a little. From the top: the app's own shortcuts (such as Settings' pages), open it this once the other way (**Open in new workspace** in desktop mode, **Open alongside …** the apps on screen in TV mode), and **Close this application** at the bottom, nearest the row. A workspace's can move it to another monitor. Back folds them away. **Settings › Appearance › Options buttons (⋯)** can hide the ⋯ buttons; ← on a row (or a right-click) still opens its options.
 - **Workspaces with several apps:** the square ▴ button between ⋯ and the workspace's name unfolds its individual apps above it, to open just one; ▾ folds them again. On the name, ← moves onto it; ← again opens the row's menu.
-- **Channels:** 000 to 999. Channel 000 opens Settings unless you give it to another app. Setting a channel shows three digit boxes; typing replaces the number.
+- **Channels:** two digits, 00 to 99. **Settings › Appearance › Channel number digits** chooses 1 to 4 digits (0 to 9 up to 0000 to 9999). Channel 00 opens Settings unless you give it to another app. Setting a channel shows a box per digit; typing replaces the number.
 - **Slow apps:** while an app takes a few seconds to open, a spinner turns in place of its icon in its button, so the screen is never blank, and the Quick Menu still opens.
 - **Editing an app (✎):** opens its launch profile: a channel number, a hotkey, a Desktop Action (one of the app's own shortcuts), a custom command, a description and a PIN. **Copy** makes another profile from what is shown, such as Firefox in a private window; it is listed as "Firefox 2" (rename it to "Firefox Private"). The app's name itself never changes. A PIN-protected profile asks for its PIN first. The PIN is a lock for a shared TV, not real security.
 - **Status panels:** network, volume, Bluetooth and battery icons unfold a panel above the status row: the connection and its address, **Find Wi-Fi networks** (choose one to connect; a password is asked when needed) and Wi-Fi on/off; mute and volume for output and input; the connected Bluetooth devices with Disconnect, **Find Bluetooth devices** (choose one to pair) and Bluetooth on/off; the battery's time left or time to full. Each has a button for its Settings page.
@@ -146,7 +146,7 @@ From a terminal, `tvwcs` on its own does what fits where it runs (see [Starting 
 
 ## Settings
 
-Open **TVWCS Settings** with channel 000, from a status panel's settings button, from Applications (under System), or with `tvwcs settings [page]`. Pages are tabs on the left: **→** enters a page, **Back** returns to the tabs. Text is typed on a keyboard or on the on-screen keyboard.
+Open **TVWCS Settings** with channel 00, from a status panel's settings button, from Applications (under System), or with `tvwcs settings [page]`. Pages are tabs on the left: **→** enters a page, **Back** returns to the tabs. Text is typed on a keyboard or on the on-screen keyboard.
 
 | Page (`tvwcs settings …`) | What it does |
 |---|---|

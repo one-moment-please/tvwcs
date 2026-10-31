@@ -701,7 +701,7 @@ class TVWCSApp(Gtk.Application):
         moved=self.store.settings["quick_corner"]!=corner   # placed and laid out again, like a new size
         if self.window.is_visible(): self.apply_scale() if scale_key(self.store.settings)!=old or moved else self.window._build()
     def open_settings(self,page=None):
-        """A status icon or panel's settings button, opening its page (or channel 000, with no page): the Settings app, a
+        """A status icon or panel's settings button, opening its page (or channel 0, with no page): the Settings app, a
         separate application. It opens where any app would in this mode: an open Settings window is brought up that way,
         else a new one starts (in TV mode in a workspace of its own)."""
         app=self.catalogue.by_id().get(SETTINGS_DESKTOP_ID)

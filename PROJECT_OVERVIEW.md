@@ -99,7 +99,7 @@ TVWCS focuses an existing window rather than starting a second copy when it can 
 
 ### Channels and favorites
 
-Channel numbers (000 to 999) are the user's own shortcuts to profiles. They are unique, optional and stored locally. Channel 000 goes to Settings once, on a new install or the first start of 3.1, when nothing else has it. Favorites are independent of channels.
+Channel numbers (1 to 4 digits, the `channel_digits` setting, 2 by default: 00 to 99) are the user's own shortcuts to profiles. They are unique, optional and stored locally. Channel 0 goes to Settings once, on a new install or the first start of 3.1, when nothing else has it. Favorites are independent of channels.
 
 ### Hotkeys
 

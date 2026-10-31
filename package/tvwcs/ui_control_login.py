@@ -216,7 +216,7 @@ def pick_startup(page, mode):
 def choose_startup_app(page):
     store=ConfigStore(); options=[]
     for _heading,profiles in startup_choices(store.profiles):
-        for p in profiles: options.append((p.id,(f"{p.channel:03d}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
+        for p in profiles: options.append((p.id,(f"{store.channel_text(p.channel)}  " if p.channel is not None else "")+p.name+("  ★" if p.favorite else "")))
     if not options: page.win.notice("Application to open at login","There are no applications to choose from yet."); return
     page.win.choose_option("Application to open at login",options,store.settings["startup"]["profile_id"],lambda pid:_save_startup(page,profile_id=pid,mode="app"))
 

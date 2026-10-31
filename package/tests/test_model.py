@@ -10,6 +10,33 @@ class ModelTests(unittest.TestCase):
             store.set_profile(LaunchProfile("1","firefox.desktop","Firefox",channel=42))
             with self.assertRaises(ValueError): store.set_profile(LaunchProfile("2","chromium.desktop","Chromium",channel=42))
             self.assertEqual(ConfigStore(Path(d)/"config.json").assigned()[0].channel,42)
+    def test_channel_digits(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"config.json"; store=ConfigStore(path)
+            self.assertEqual((store.channel_digits(),store.channel_text(7)),(2,"07"))   # two digits by default
+            with self.assertRaises(ValueError): store.set_profile(LaunchProfile("1","a.desktop","A",channel=100))
+            store.set_profile(LaunchProfile("1","a.desktop","A",channel=99)); store.set_profile(LaunchProfile("2","b.desktop","B",channel=5))
+            self.assertEqual([p.id for p in store.too_long_channels(1)],["1"])
+            store.set_channel_digits(1); store.save(); store=ConfigStore(path)
+            self.assertEqual((store.channel_digits(),store.get("1").channel,store.get("2").channel,store.channel_text(5)),(1,None,5,"5"))
+            store.set_channel_digits(4); store.set_profile(LaunchProfile("1","a.desktop","A",channel=9999)); store.save()
+            self.assertEqual((ConfigStore(path).channel_digits(),ConfigStore(path).channel_text(42)),(4,"0042"))
+            with self.assertRaises(ValueError): store.set_channel_digits(5)
+    def test_channel_digits_from_before_the_setting(self):
+        # before 5.12 channels had three digits: a config with one over 99 keeps three, one without goes to two
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/"config.json"
+            for channels,digits in (([150,3],3),([42,0],2),([],2)):
+                path.write_text(json.dumps({"settings":{},"profiles":[{"id":str(i),"desktop_id":f"{i}.desktop","name":"A","channel":c} for i,c in enumerate(channels)]}))
+                store=ConfigStore(path)
+                self.assertEqual((store.channel_digits(),[p.channel for p in store.profiles]),(digits,channels))
+            path.write_text(json.dumps({"settings":{"channel_digits":2},"profiles":[{"id":"x","desktop_id":"a.desktop","name":"A","channel":150}]}))
+            self.assertIsNone(ConfigStore(path).get("x").channel)   # too long for the digits chosen
+    def test_numeric_search_labels(self):
+        p=LaunchProfile("1","firefox.desktop","Stream",channel=7)
+        app=Application("firefox.desktop","Firefox",None,None,None,("Internet",),"/fake","firefox")
+        self.assertEqual(search_items("7",[p],{app.desktop_id:app},[])[0]["label"],"07  Stream")
+        self.assertEqual(search_items("007",[p],{app.desktop_id:app},[],3)[0]["label"],"007  Stream")
     def test_launch_mode_defaults_to_same_workspace(self):
         self.assertEqual(LaunchProfile("1","a.desktop","A").launch_mode,LAUNCH_SAME)
     def test_launch_mode_persists_and_toggles(self):
@@ -321,21 +348,21 @@ class SearchDetailTests(unittest.TestCase):
         self.assertEqual(search_items("tvwcs",[other],apps,[])[0]["id"],"q")   # still found by its app's name
 
 class ChannelZeroTests(unittest.TestCase):
-    def test_channel_000_is_allowed_and_1000_is_not(self):
+    def test_channel_000_is_allowed_and_100_is_not(self):
         with tempfile.TemporaryDirectory() as d:
             store=ConfigStore(Path(d)/"config.json")
             store.set_profile(LaunchProfile("z","a.desktop","A",channel=0))
             self.assertEqual(ConfigStore(Path(d)/"config.json").get("z").channel,0)
-            with self.assertRaisesRegex(ValueError,"000 to 999"): store.set_profile(LaunchProfile("y","b.desktop","B",channel=1000))
+            with self.assertRaisesRegex(ValueError,"00 to 99"): store.set_profile(LaunchProfile("y","b.desktop","B",channel=100))
             with self.assertRaises(ValueError): store.set_profile(LaunchProfile("x","c.desktop","C",channel=-1))
     def test_settings_gets_channel_000_once(self):
         from tvwcs.model import SETTINGS_DESKTOP_ID
         settings=Application(SETTINGS_DESKTOP_ID,"TVWCS Settings",None,None,None,("Settings",),"/x","tvwcs settings")
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"config.json"; store=ConfigStore(path)
-            store.set_profile(LaunchProfile("s",SETTINGS_DESKTOP_ID,"TVWCS Settings",channel=999))
+            store.set_profile(LaunchProfile("s",SETTINGS_DESKTOP_ID,"TVWCS Settings",channel=99))
             store.ensure_defaults([settings])
-            self.assertEqual(store.get("s").channel,0)                 # moved from 999 the first time
+            self.assertEqual(store.get("s").channel,0)                 # moved from 99 the first time
             store.get("s").channel=7; store.save(); store=ConfigStore(path); store.ensure_defaults([settings])
             self.assertEqual(store.get("s").channel,7)                 # the user's later choice stays
     def test_channel_000_already_taken_is_left_alone(self):
@@ -344,9 +371,9 @@ class ChannelZeroTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             store=ConfigStore(Path(d)/"config.json")
             store.set_profile(LaunchProfile("a","a.desktop","A",channel=0))
-            store.set_profile(LaunchProfile("s",SETTINGS_DESKTOP_ID,"TVWCS Settings",channel=999))
+            store.set_profile(LaunchProfile("s",SETTINGS_DESKTOP_ID,"TVWCS Settings",channel=99))
             store.ensure_defaults([settings])
-            self.assertEqual(store.get("s").channel,999); self.assertTrue(store.settings["channel_zero_done"])
+            self.assertEqual(store.get("s").channel,99); self.assertTrue(store.settings["channel_zero_done"])
     def test_new_settings_are_cleaned(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"config.json"

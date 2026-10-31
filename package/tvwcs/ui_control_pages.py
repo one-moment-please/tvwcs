@@ -13,7 +13,7 @@ from tvwcs import control_bluetooth as bluetooth, control_datetime as timedate, 
 from tvwcs import __version__, distro, features, power, privilege, selfupdate, servermode, sway_include
 from tvwcs import ui_control_login as login_ui
 from tvwcs.hotkeys import ACTION_LABELS, DEFAULT_HOTKEYS, DEVICE_ACTIONS, DEVICE_LABELS, DEVICES, describe
-from tvwcs.model import (AUTO_SIZE, CORNERS, PHOSPHORS, RETRO_FONTS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SIZES, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, auto_size, corner_right, is_4k,
+from tvwcs.model import (AUTO_SIZE, CHANNEL_DIGITS, CORNERS, PHOSPHORS, RETRO_FONTS, RETRO_WALLPAPER_LABELS, RETRO_WALLPAPERS, SIZES, STYLES, THEMES, WALLPAPERS, ConfigStore, accent_name, auto_size, channel_range, corner_right, is_4k,
                          size_label, tv_mode)
 from tvwcs.session import runtime_dir
 from tvwcs.system_actions import command_for
@@ -197,6 +197,8 @@ SERVER_OFF=("This computer is in server mode, so these settings are left to its 
             "server mode off in Settings › User.")
 SERVER_HIDDEN="This computer is in server mode: changes that need an administrator are left to them."
 
+def digits_label(digits): return f"{digits} digit{'s' if digits!=1 else ''}"
+
 def _on_off(flag): return "On" if flag else "Off"
 def _outcome(result, otherwise):
     """A control_cmd.Result as act() wants it: "" when it worked, else why not."""
@@ -273,6 +275,8 @@ class AppearancePage(_ConfigPage):
         self.row("Quick Menu corner",CORNERS[st["quick_corner"]],self.choose_corner,ident="opt:quick_corner")
         self.note("The corner of the screen the Quick Menu sits in. Its layout mirrors to match: in a right-hand corner it runs "
                   "right to left and Applications opens to its left; in a top corner its lists and menus open downwards.")
+        self.row("Channel number digits",digits_label(st["channel_digits"]),self.choose_channel_digits,ident="opt:channel_digits")
+        self.note("How many digits a channel number has. Typing them all in the Quick Menu opens that channel a second later.")
         self.row("Screen edge margin",f"{st['margin']} px",self.choose_margin,ident="opt:margin")
         self.note("Many TVs cut off the edges of the picture (overscan). This opens a full-screen preview: move the slider until the "
                   "Quick Menu and Applications are fully on screen.")
@@ -325,6 +329,19 @@ class AppearancePage(_ConfigPage):
     def choose_corner(self):
         self.win.choose_option("Quick Menu corner",list(CORNERS.items()),self.state.settings["quick_corner"],
                                lambda c:self.change(lambda s:s.settings.update(quick_corner=c)))
+    def choose_channel_digits(self):
+        def chosen(digits):
+            if digits==self.state.settings["channel_digits"]: return
+            lost=ConfigStore().too_long_channels(digits)
+            if not lost: self.change(lambda s:s.set_channel_digits(digits)); return
+            names=", ".join(f"{p.channel} ({p.name})" for p in lost[:6])+(f" and {len(lost)-6} more" if len(lost)>6 else "")
+            self.win.confirm("Remove the longer channel numbers?",
+                             f"With {digits_label(digits).lower()}, channels run from {channel_range(digits)}. "
+                             f"{'This channel is' if len(lost)==1 else 'These channels are'} too long and will be removed: {names}. "
+                             f"You can give {'that app a new number' if len(lost)==1 else 'those apps new numbers'} afterwards.",
+                             "Remove",lambda:self.change(lambda s:s.set_channel_digits(digits)))
+        self.win.choose_option("Channel number digits",[(d,f"{digits_label(d)}: {channel_range(d)}") for d in CHANNEL_DIGITS],
+                               self.state.settings["channel_digits"],chosen)
     def choose_margin(self):
         from tvwcs.ui_margin import MarginPreview
         st=self.state.settings
